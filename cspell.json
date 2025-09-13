@@ -6,6 +6,7 @@
     "contrib",
     "phpunit",
     "phpcs",
+    "phpcbf",
     "phpstan",
     "drush",
     "yaml",

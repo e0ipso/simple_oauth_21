@@ -93,6 +93,10 @@ vendor/bin/phpunit --testsuite=functional-javascript
 # Static analysis
 vendor/bin/phpstan analyze
 
+# Coding standards checks and fixes
+composer run-script lint:check    # Check coding standards with PHPCS
+composer run-script lint:fix      # Fix coding standards with PHPCBF
+
 # JavaScript linting
 npm run lint
 
