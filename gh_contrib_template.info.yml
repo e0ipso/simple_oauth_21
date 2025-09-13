@@ -1,0 +1,5 @@
+name: GitHub Contrib Template
+description: A template module for creating GitHub-based Drupal contributed modules
+type: module
+core_version_requirement: ^10 || ^11
+package: Templates

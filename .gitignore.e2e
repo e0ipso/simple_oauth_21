@@ -1,0 +1,15 @@
+# Playwright Test Results
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Screenshots and videos
+*.png
+*.webm
+*.mp4
+
+# Playwright dependencies
+node_modules/
+
+# Test artifacts
+/e2e-results.xml

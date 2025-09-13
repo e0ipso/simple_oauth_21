@@ -1,0 +1,7 @@
+node_modules/**/*
+vendor/**/*
+coverage/**/*
+.git/*
+ci-artifacts/**/*
+playwright-report/**/*
+test-results/**/*

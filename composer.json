@@ -1,0 +1,30 @@
+{
+  "name": "example/gh_contrib_template",
+  "description": "A comprehensive Drupal module template with development infrastructure",
+  "type": "drupal-module",
+  "license": "GPL-2.0-or-later",
+  "authors": [
+    {
+      "name": "Template Author",
+      "email": "template@example.com"
+    }
+  ],
+  "require-dev": {
+    "drupal/coder": "^8",
+    "phpstan/phpstan": "^2.1",
+    "mglaman/phpstan-drupal": "^2.0",
+    "phpstan/phpstan-deprecation-rules": "^2.0",
+    "phpstan/extension-installer": "^1.4"
+  },
+  "scripts": {
+    "lint:check": "php ./vendor/bin/phpcs --ignore=vendor/*,node_modules/* --standard=Drupal,DrupalPractice --extensions=php,module/php,install/php,inc/php,yml .",
+    "lint:fix": "php ./vendor/bin/phpcbf --ignore=vendor/*,node_modules/* --standard=Drupal,DrupalPractice --extensions=php,module/php,install/php,inc/php,yml .",
+    "release": "npm run semantic-release"
+  },
+  "config": {
+    "allow-plugins": {
+      "dealerdirect/phpcodesniffer-composer-installer": true,
+      "phpstan/extension-installer": true
+    }
+  }
+}

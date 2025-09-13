@@ -1,0 +1,7 @@
+name: GitHub Contrib Template Test
+type: module
+description: 'Test module for GitHub Contrib Template functional tests'
+core_version_requirement: ^10 || ^11
+package: Testing
+dependencies:
+  - drupal:gh_contrib_template

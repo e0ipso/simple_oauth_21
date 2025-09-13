@@ -1,0 +1,18 @@
+/**
+ * @file
+ * Dummy CSS file for Stylelint testing purposes.
+ * 
+ * This file exists solely to provide Stylelint with content to validate
+ * during CI testing. It prevents the "no-empty-source" error when no
+ * CSS files are found in the module.
+ * 
+ * This ensures the Stylelint job runs successfully and validates the
+ * CI pipeline's CSS linting capabilities.
+ */
+
+.proxy-block-dummy {
+  /* Basic styling to satisfy Stylelint validation */
+  display: block;
+  margin: 0;
+  padding: 0;
+}
