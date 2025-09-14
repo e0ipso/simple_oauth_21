@@ -17,7 +17,7 @@ class TrivialUnitTrivialTest extends TestCase {
    * Tests that unit tests can run.
    */
   public function testTrivial(): void {
-    $this->assertTrue(TRUE);
+    $this->assertEquals('trivial', strtolower('TRIVIAL'));
   }
 
 }
