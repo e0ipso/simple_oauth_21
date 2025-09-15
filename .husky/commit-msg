@@ -1,0 +1,29 @@
+#!/bin/sh
+
+# Validate commit messages follow conventional commits format
+# https://www.conventionalcommits.org/
+
+echo "🔍 Validating commit message format..."
+
+# Run commitlint on the commit message
+npx --no -- commitlint --edit "$1"
+
+if [ $? -eq 0 ]; then
+    echo "✅ Commit message follows conventional format!"
+else
+    echo ""
+    echo "❌ Commit message doesn't follow conventional commits format!"
+    echo ""
+    echo "📝 Expected format: <type>(<scope>): <subject>"
+    echo ""
+    echo "Examples:"
+    echo "  feat: add user authentication"
+    echo "  fix: resolve memory leak in data processor"
+    echo "  docs: update API documentation"
+    echo "  chore(deps): update dependencies"
+    echo ""
+    echo "Allowed types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert"
+    echo ""
+    echo "Learn more: https://www.conventionalcommits.org/"
+    exit 1
+fi

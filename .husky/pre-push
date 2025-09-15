@@ -1,0 +1,63 @@
+#!/bin/bash
+
+# Pre-push hook to validate branch naming conventions
+# Based on Lullabot ADR: https://architecture.lullabot.com/adr/20220920-git-branch-naming/
+
+echo "🔍 Validating branch naming convention..."
+
+# Get the current branch name
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+# List of branches that are exempt from naming rules
+EXEMPT_BRANCHES="^(main|master|develop|staging|production)$"
+
+# Check if branch is exempt
+if echo "$BRANCH" | grep -qE "$EXEMPT_BRANCHES"; then
+    echo "✅ Branch '$BRANCH' is exempt from naming rules"
+    exit 0
+fi
+
+# Check if branch follows the naming convention
+# Pattern: [ticket-id]--[description]
+# ticket-id can be alphanumeric with hyphens, or special keywords
+VALID_PATTERN="^([A-Za-z0-9]+-[0-9]+|NOTICKET|HOTFIX|0)--[a-z0-9-]+$"
+
+if echo "$BRANCH" | grep -qE "$VALID_PATTERN"; then
+    echo "✅ Branch name follows convention: $BRANCH"
+
+    # Warn if branch name contains slashes (even though we allow it)
+    if echo "$BRANCH" | grep -q "/"; then
+        echo "⚠️  Warning: Branch contains slashes. Consider using hyphens instead."
+    fi
+else
+    echo ""
+    echo "❌ Branch name doesn't follow naming convention!"
+    echo ""
+    echo "Current branch: $BRANCH"
+    echo ""
+    echo "📝 Expected format: [ticket-id]--[short-description]"
+    echo ""
+    echo "Valid examples:"
+    echo "  PROJECT-123--add-user-authentication"
+    echo "  DRUPAL-456--fix-memory-leak"
+    echo "  NOTICKET--update-documentation"
+    echo "  HOTFIX--fix-critical-bug"
+    echo "  0--experimental-feature"
+    echo ""
+    echo "Rules:"
+    echo "  • Use lowercase for descriptions"
+    echo "  • Use hyphens to separate words"
+    echo "  • Use double dash (--) to separate ticket from description"
+    echo "  • Avoid forward slashes (/)"
+    echo "  • If no ticket exists, use: NOTICKET, HOTFIX, or 0"
+    echo ""
+    echo "Reference: https://architecture.lullabot.com/adr/20220920-git-branch-naming/"
+    echo ""
+    echo "To rename your branch:"
+    echo "  git branch -m PROJECT-123--your-feature-description"
+    echo ""
+    echo "To push anyway (not recommended):"
+    echo "  git push --no-verify"
+    echo ""
+    exit 1
+fi

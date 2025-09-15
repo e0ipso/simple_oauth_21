@@ -18,12 +18,15 @@
     "e2e:test": "playwright test",
     "e2e:test:headed": "playwright test --headed",
     "e2e:test:debug": "playwright test --debug",
-    "e2e:report": "playwright show-report"
+    "e2e:report": "playwright show-report",
+    "prepare": "husky"
   },
   "engines": {
     "node": ">=18.0.0"
   },
   "devDependencies": {
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
     "@lullabot/playwright-drupal": "github:Lullabot/playwright-drupal",
     "@semantic-release/commit-analyzer": "^11.1.0",
     "@semantic-release/git": "^10.0.1",
@@ -37,6 +40,7 @@
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-prettier": "^5.5.4",
     "eslint-plugin-yml": "^1.18.0",
+    "husky": "^9.1.7",
     "playwright": "^1.49.1",
     "prettier": "^3.6.2",
     "semantic-release": "^22.0.0",

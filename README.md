@@ -21,7 +21,29 @@ Replace all instances of `gh_contrib_template` with your actual module name:
 - Update namespace references in PHP files
 - Update test class names and namespaces
 
-### 2. Configure AI Assistant (Optional)
+### 2. Install Git Hooks
+
+After cloning, install the pre-commit hooks that will automatically check code quality:
+
+```bash
+npm install  # Installs husky and other dependencies
+```
+
+This sets up automatic git hooks for:
+
+- **Pre-commit**: Code quality checks
+  - PHP coding standards (Drupal/DrupalPractice)
+  - PHPStan static analysis
+  - JavaScript/CSS linting
+  - Code formatting
+- **Commit-msg**: Enforces [Conventional Commits](https://www.conventionalcommits.org/) format
+  - Example: `feat: add user authentication`
+  - Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
+- **Pre-push**: Validates branch naming ([Lullabot ADR](https://architecture.lullabot.com/adr/20220920-git-branch-naming/))
+  - Format: `[ticket-id]--[description]`
+  - Examples: `DRUPAL-123--fix-menu-bug`, `NOTICKET--update-readme`
+
+### 3. Configure AI Assistant (Optional)
 
 If you plan to use AI assistants for development:
 
@@ -33,7 +55,7 @@ If you plan to use AI assistants for development:
 npx @e0ipso/ai-task-manager init --assistants claude,gemini,opencode
 ```
 
-### 3. Configure GitHub Actions Permissions
+### 4. Configure GitHub Actions Permissions
 
 <details>
 <summary>⚠️ <strong>Fix "Permission denied" errors in GitHub Actions</strong></summary>
@@ -69,7 +91,7 @@ For team projects, use a dedicated bot account ([Lullabot ADR reference](https:/
 
 </details>
 
-### 4. Update Module Information
+### 5. Update Module Information
 
 - Edit the `.info.yml` file with your module's details
 - Update `composer.json` with your module's metadata
@@ -97,6 +119,7 @@ For team projects, use a dedicated bot account ([Lullabot ADR reference](https:/
   - `test.yml`: Comprehensive testing pipeline
   - `claude.yml`: AI assistant integration
   - `release.yml`: Release automation
+- **Git Hooks**: Automated pre-commit checks via Husky
 - **Node.js Integration**: Package management and frontend tooling
 - **Git Configuration**: Proper `.gitignore` files for Drupal modules
 

@@ -1,0 +1,98 @@
+#!/bin/bash
+
+# Pre-commit hook for Drupal contrib modules
+# Runs all linting and code quality checks before allowing commit
+
+set -e
+
+echo "🔍 Running pre-commit linting checks..."
+
+# Change to the module directory
+cd "$(git rev-parse --show-toplevel)"
+
+# Track if any linting fails
+LINT_FAILED=0
+
+# Function to run a command and track failures
+run_check() {
+    local description="$1"
+    local command="$2"
+    local fix_command="$3"
+
+    echo "📋 $description"
+    if eval "$command"; then
+        echo "✅ $description passed"
+    else
+        echo "❌ $description failed"
+        if [ -n "$fix_command" ]; then
+            echo "   💡 To fix: $fix_command"
+        fi
+        LINT_FAILED=1
+    fi
+    echo ""
+}
+
+# Detect if we're in a DDEV environment
+if [ "$IS_DDEV_PROJECT" = "true" ]; then
+    PHP_CMD="ddev php"
+    COMPOSER_CMD="ddev composer"
+else
+    PHP_CMD="php"
+    COMPOSER_CMD="composer"
+fi
+
+# PHP Code Standards (PHPCS)
+if [ -f "composer.json" ] && [ -f "vendor/bin/phpcs" ]; then
+    run_check "PHP Code Standards (PHPCS)" \
+        "$COMPOSER_CMD run-script lint:check" \
+        "$COMPOSER_CMD run-script lint:fix"
+fi
+
+# PHPStan Static Analysis
+if [ -f "phpstan.neon" ]; then
+    # Use project-level PHPStan if available, fall back to local
+    if [ -f "../../../../vendor/bin/phpstan" ]; then
+        run_check "PHPStan Static Analysis" \
+            "$PHP_CMD ../../../../vendor/bin/phpstan analyse" \
+            ""
+    elif [ -f "vendor/bin/phpstan" ]; then
+        run_check "PHPStan Static Analysis" \
+            "$PHP_CMD vendor/bin/phpstan analyse" \
+            ""
+    fi
+fi
+
+# JavaScript/CSS/Spelling checks (if package.json exists)
+if [ -f "package.json" ]; then
+    # Check if node_modules exists
+    if [ ! -d "node_modules" ]; then
+        echo "⚠️  Node modules not found. Installing dependencies..."
+        npm install
+    fi
+
+    run_check "JavaScript Linting & Formatting" \
+        "npm run js:check" \
+        "npm run js:fix"
+
+    run_check "CSS Linting" \
+        "npm run stylelint:check" \
+        ""
+
+    run_check "Spell Checking" \
+        "npm run cspell:check" \
+        "Add words to .cspell.json or fix typos"
+fi
+
+# Check if any linting failed
+if [ $LINT_FAILED -eq 1 ]; then
+    echo ""
+    echo "❌ Pre-commit checks failed! Please review the fix suggestions above (💡)."
+    echo ""
+    echo "To bypass this hook (not recommended):"
+    echo "  git commit --no-verify"
+    echo ""
+    exit 1
+fi
+
+echo "✅ All pre-commit checks passed! Proceeding with commit..."
+echo ""

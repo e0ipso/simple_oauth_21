@@ -31,7 +31,8 @@
     "networkidle",
     "behat",
     "ddev",
-    "opencode"
+    "opencode",
+    "NOTICKET"
   ],
   "ignorePaths": [
     "node_modules/**",
