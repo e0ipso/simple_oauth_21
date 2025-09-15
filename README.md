@@ -97,6 +97,11 @@ For team projects, use a dedicated bot account ([Lullabot ADR reference](https:/
 - Update `composer.json` with your module's metadata
 - Customize the module description and dependencies
 
+### 6. Clean Up Example Files
+
+- Delete `dummy.css` and `dummy.js` files - these are only included to demonstrate that the linting and code quality checks work correctly
+- These files serve no functional purpose and should be removed once you've verified the linting works
+
 ## 🎁 Features Included
 
 ### 🧪 Testing Infrastructure
