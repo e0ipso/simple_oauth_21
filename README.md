@@ -33,7 +33,43 @@ If you plan to use AI assistants for development:
 npx @e0ipso/ai-task-manager init --assistants claude,gemini,opencode
 ```
 
-### 3. Update Module Information
+### 3. Configure GitHub Actions Permissions
+
+<details>
+<summary>⚠️ <strong>Fix "Permission denied" errors in GitHub Actions</strong></summary>
+
+#### Quick Fix
+
+Go to your repository **Settings** → **Actions** → **General** → **Workflow permissions**:
+
+- Select **Read and write permissions**
+- Check **Allow GitHub Actions to create and approve pull requests**
+- Click **Save**
+
+#### Alternative: Personal Access Token
+
+1. Create a [Personal Access Token](https://github.com/settings/tokens/new?scopes=repo,workflow) with `repo` and `workflow` scopes
+2. Add it to your repository: **Settings** → **Secrets** → **Actions** → **New repository secret**
+   - Name: `GH_TOKEN`
+   - Value: Your token
+3. Update `.github/workflows/release.yml`:
+   ```yaml
+   env:
+     GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+   ```
+
+#### Best Practice: Service Accounts
+
+For team projects, use a dedicated bot account ([Lullabot ADR reference](https://architecture.lullabot.com/adr/20220426-use-dedicated-accounts-service-integrations/)):
+
+- Create a bot GitHub account (e.g., `your-project-bot`)
+- Add it as a collaborator with write permissions
+- Use its PAT for automated workflows
+- Benefits: Not tied to personal accounts, easier rotation, clear audit trail
+
+</details>
+
+### 4. Update Module Information
 
 - Edit the `.info.yml` file with your module's details
 - Update `composer.json` with your module's metadata
@@ -139,7 +175,7 @@ The template includes three main workflows:
 
 - **Test Pipeline**: Runs on every PR and push, executing all test suites
 - **AI Integration**: Supports AI-assisted development workflows
-- **Release Automation**: Handles versioning and releases
+- **Release Automation**: Handles versioning and releases (see step 3 in setup for permissions)
 
 ## 🔄 Development Workflow
 
