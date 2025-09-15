@@ -1,4 +1,4 @@
-name: gh_contrib_template CI
+name: CI
 
 on:
   push:

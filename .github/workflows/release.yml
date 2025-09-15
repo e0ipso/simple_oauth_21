@@ -1,4 +1,4 @@
-name: gh_contrib_template Release
+name: Release
 
 on:
   push:
