@@ -23,10 +23,10 @@ test.describe('Playwright Infrastructure Validation', () => {
     await expect(page.locator('html')).toBeVisible();
     await expect(page.locator('body')).toBeVisible();
 
-    // Verify page title is not empty
-    const title = await page.title();
-    expect(title).toBeTruthy();
-    expect(title.length).toBeGreaterThan(0);
+    // Verify page has meaningful content (heading)
+    const heading = await page.locator('h1').first().textContent();
+    expect(heading).toBeTruthy();
+    expect(heading.length).toBeGreaterThan(0);
   });
 
   test('should verify browser capabilities', async ({ page, browserName }) => {

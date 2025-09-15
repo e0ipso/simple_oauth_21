@@ -165,13 +165,98 @@ npm run format
 
 ### E2E Testing
 
-```bash
-# Install dependencies
-npm ci
-npm run e2e:install
+<details>
+<summary><strong>📦 E2E Dependencies Installation</strong></summary>
 
-# Run tests
+#### Prerequisites
+
+- **Node.js**: Version 18.0.0 or higher
+- **npm**: Installed with Node.js
+- **Drupal Environment**: Running Drupal instance (local or remote)
+
+#### Step-by-Step Installation
+
+1. **Install Node.js Dependencies**
+
+   ```bash
+   # Install all npm dependencies (includes Playwright)
+   npm ci
+   ```
+
+2. **Install Playwright Browsers**
+
+   ```bash
+   # Download and install browser binaries (Chromium, Firefox, WebKit)
+   npm run e2e:install
+   ```
+
+   This command downloads approximately 300MB of browser binaries and may take a few minutes on first run.
+
+3. **Verify Installation**
+
+   ```bash
+   # Check Playwright installation
+   npx playwright --version
+
+   # List installed browsers
+   npx playwright install --dry-run
+   ```
+
+#### Environment Configuration
+
+Set the Drupal base URL (optional - defaults to `http://127.0.0.1:8080`):
+
+```bash
+# For custom Drupal URL
+export DRUPAL_BASE_URL="https://your-drupal-site.local"
+
+# Or add to your .env file
+echo "DRUPAL_BASE_URL=https://your-drupal-site.local" >> .env
+```
+
+#### Test Environment Requirements
+
+- **Basic Tests**: Any accessible Drupal installation
+- **Authentication Tests**: Admin user with credentials (username: `admin`, password: `admin`)
+- **Module Tests**: Drupal site with your module enabled and admin access
+
+#### Troubleshooting Installation
+
+**Permission Issues on Linux/macOS:**
+
+```bash
+sudo npx playwright install-deps
+```
+
+**Network/Firewall Issues:**
+
+```bash
+# Use alternative download method
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci
+npx playwright install chromium
+```
+
+**Disk Space Issues:**
+
+- Playwright browsers require ~1GB disk space
+- Use `npx playwright install chromium` to install only Chromium (smallest footprint)
+
+</details>
+
+#### Running Tests
+
+```bash
+# Run all tests
 npm run e2e:test
+
+# Run with browser UI (for debugging)
+npm run e2e:test:headed
+
+# Run in debug mode with step-by-step execution
+npm run e2e:test:debug
+
+# View test reports
+npm run e2e:report
 ```
 
 ## 📁 Directory Structure
