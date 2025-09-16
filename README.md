@@ -4,7 +4,7 @@ A comprehensive OAuth 2.1 compliance module that provides centralized coordinati
 
 ## Overview
 
-The Simple OAuth 2.1 module serves as an umbrella coordination module that ensures OAuth 2.1 compliance through integration with specialized submodules. It provides a professional compliance dashboard that monitors and assesses OAuth 2.1 implementation status in real-time.
+The Simple OAuth 2.1 module serves as an umbrella coordination module that ensures OAuth 2.1 compliance through integration with specialized submodules. It provides a compliance dashboard that monitors and assesses OAuth 2.1 implementation status in real-time.
 
 ![Dashboard](./assets/simple_oauth_21.png)
 
@@ -43,13 +43,6 @@ The module supports flexible deployment patterns:
 - **Standalone Modules**: Individual contrib modules (simple_oauth_pkce, etc.)
 - **Mixed Environments**: Combination of submodules and standalone installations
 - **Graceful Degradation**: Partial compliance assessment when modules are missing
-
-### Professional Interface
-
-- **Responsive Design**: Mobile-friendly dashboard with accessibility support
-- **Visual Indicators**: Clear status icons and color-coded compliance levels
-- **Configuration Links**: Direct navigation to relevant settings pages
-- **Error Recovery**: Graceful handling of service failures with detailed diagnostics
 
 ## Submodules
 

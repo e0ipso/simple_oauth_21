@@ -179,24 +179,45 @@ jobs:
       - name: Run Unit tests
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: |
-          find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Unit" -path "*/tests/src/Unit" -print0 | \
-          xargs -0 php vendor/bin/phpunit \
-            --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist
+          # Find unit test directories
+          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Unit" -path "*/tests/src/Unit" -print)
+          if [ -n "$TEST_DIRS" ]; then
+            echo "Running unit tests in: $TEST_DIRS"
+            php vendor/bin/phpunit \
+              --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
+              $TEST_DIRS
+          else
+            echo "No unit tests found"
+          fi
 
       - name: Run Kernel tests
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: |
-          find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Kernel" -path "*/tests/src/Kernel" -print0 | \
-          xargs -0 php vendor/bin/phpunit \
-            --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist
+          # Find kernel test directories
+          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Kernel" -path "*/tests/src/Kernel" -print)
+          if [ -n "$TEST_DIRS" ]; then
+            echo "Running kernel tests in: $TEST_DIRS"
+            php vendor/bin/phpunit \
+              --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
+              $TEST_DIRS
+          else
+            echo "No kernel tests found"
+          fi
 
       - name: Run Functional tests
         id: functional-tests
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: |
-          find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Functional" -path "*/tests/src/Functional" -print0 | \
-          xargs -0 php vendor/bin/phpunit \
-            --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist
+          # Find functional test directories
+          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Functional" -path "*/tests/src/Functional" -print)
+          if [ -n "$TEST_DIRS" ]; then
+            echo "Running functional tests in: $TEST_DIRS"
+            php vendor/bin/phpunit \
+              --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
+              $TEST_DIRS
+          else
+            echo "No functional tests found"
+          fi
 
       - name: Upload HTML artifacts on Functional test failure
         if: failure()
@@ -212,9 +233,16 @@ jobs:
         id: functional-js-tests
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: |
-          find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "FunctionalJavascript" -path "*/tests/src/FunctionalJavascript" -print0 | \
-          xargs -0 php vendor/bin/phpunit \
-            --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist
+          # Find FunctionalJavascript test directories
+          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "FunctionalJavascript" -path "*/tests/src/FunctionalJavascript" -print)
+          if [ -n "$TEST_DIRS" ]; then
+            echo "Running FunctionalJavascript tests in: $TEST_DIRS"
+            php vendor/bin/phpunit \
+              --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
+              $TEST_DIRS
+          else
+            echo "No FunctionalJavascript tests found"
+          fi
 
       - name: Upload HTML artifacts on FunctionalJavascript test failure
         if: failure()
