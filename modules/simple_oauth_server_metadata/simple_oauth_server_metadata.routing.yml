@@ -11,6 +11,19 @@ simple_oauth_server_metadata.well_known:
     _format: 'json'
     no_cache: FALSE
 
+simple_oauth_server_metadata.resource_metadata:
+  path: '/.well-known/oauth-protected-resource'
+  defaults:
+    _controller: '\Drupal\simple_oauth_server_metadata\Controller\ResourceMetadataController::metadata'
+    _title: 'OAuth 2.0 Protected Resource Metadata'
+  methods: [GET]
+  requirements:
+    # Public metadata endpoint - RFC 9728 requires this to be accessible.
+    _access: 'TRUE'
+  options:
+    _format: 'json'
+    no_cache: FALSE
+
 simple_oauth_server_metadata.settings:
   path: '/admin/config/people/simple_oauth/oauth-21/server-metadata'
   defaults:

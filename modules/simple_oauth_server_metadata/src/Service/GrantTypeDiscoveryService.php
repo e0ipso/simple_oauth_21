@@ -108,6 +108,35 @@ class GrantTypeDiscoveryService {
   }
 
   /**
+   * Gets supported response modes.
+   *
+   * @return array
+   *   Array of supported response mode strings per RFC 8414.
+   */
+  public function getResponseModesSupported(): array {
+    $response_modes = [];
+    $grant_types = $this->getGrantTypesSupported();
+
+    // Check for authorization code grant which supports different response
+    // modes.
+    $has_authorization_code = array_intersect(
+      ['authorization_code', 'code'],
+      $grant_types
+    );
+
+    if (!empty($has_authorization_code)) {
+      // Standard OAuth 2.0 response modes.
+      $response_modes[] = 'query';
+      $response_modes[] = 'fragment';
+
+      // Form post response mode is also supported.
+      $response_modes[] = 'form_post';
+    }
+
+    return $response_modes;
+  }
+
+  /**
    * Checks if OpenID Connect is disabled.
    *
    * @return bool

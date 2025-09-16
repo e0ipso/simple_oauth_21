@@ -1,0 +1,12 @@
+simple_oauth_client_registration.register:
+  path: '/oauth/register'
+  defaults:
+    _controller: '\Drupal\simple_oauth_client_registration\Controller\ClientRegistrationController::register'
+    _title: 'OAuth 2.0 Client Registration'
+  methods: [POST]
+  requirements:
+    # Public endpoint per RFC 7591 - no authentication required
+    _access: 'TRUE'
+  options:
+    _format: 'json'
+    no_cache: TRUE

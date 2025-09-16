@@ -2,15 +2,15 @@
 
 namespace Drupal\simple_oauth_server_metadata\Service;
 
-use Drupal\Core\Url;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Url;
 
 /**
- * Main service for generating RFC 8414 server metadata.
+ * Service for generating RFC 9728 protected resource metadata.
  */
-class ServerMetadataService {
+class ResourceMetadataService {
 
   /**
    * The cache backend.
@@ -34,28 +34,7 @@ class ServerMetadataService {
   protected $endpointDiscovery;
 
   /**
-   * The grant type discovery service.
-   *
-   * @var \Drupal\simple_oauth_server_metadata\Service\GrantTypeDiscoveryService
-   */
-  protected $grantTypeDiscovery;
-
-  /**
-   * The scope discovery service.
-   *
-   * @var \Drupal\simple_oauth_server_metadata\Service\ScopeDiscoveryService
-   */
-  protected $scopeDiscovery;
-
-  /**
-   * The claims and auth discovery service.
-   *
-   * @var \Drupal\simple_oauth_server_metadata\Service\ClaimsAuthDiscoveryService
-   */
-  protected $claimsAuthDiscovery;
-
-  /**
-   * Constructs a ServerMetadataService object.
+   * Constructs a ResourceMetadataService object.
    *
    * @param \Drupal\Core\Cache\CacheBackendInterface $cache
    *   The cache backend.
@@ -63,45 +42,33 @@ class ServerMetadataService {
    *   The configuration factory.
    * @param \Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService $endpoint_discovery
    *   The endpoint discovery service.
-   * @param \Drupal\simple_oauth_server_metadata\Service\GrantTypeDiscoveryService $grant_type_discovery
-   *   The grant type discovery service.
-   * @param \Drupal\simple_oauth_server_metadata\Service\ScopeDiscoveryService $scope_discovery
-   *   The scope discovery service.
-   * @param \Drupal\simple_oauth_server_metadata\Service\ClaimsAuthDiscoveryService $claims_auth_discovery
-   *   The claims and auth discovery service.
    */
   public function __construct(
     CacheBackendInterface $cache,
     ConfigFactoryInterface $config_factory,
     EndpointDiscoveryService $endpoint_discovery,
-    GrantTypeDiscoveryService $grant_type_discovery,
-    ScopeDiscoveryService $scope_discovery,
-    ClaimsAuthDiscoveryService $claims_auth_discovery,
   ) {
     $this->cache = $cache;
     $this->configFactory = $config_factory;
     $this->endpointDiscovery = $endpoint_discovery;
-    $this->grantTypeDiscovery = $grant_type_discovery;
-    $this->scopeDiscovery = $scope_discovery;
-    $this->claimsAuthDiscovery = $claims_auth_discovery;
   }
 
   /**
-   * Gets the complete server metadata per RFC 8414 with caching.
+   * Gets the complete resource metadata per RFC 9728 with caching.
    *
    * @param array $config_override
    *   Optional configuration override for preview purposes.
    *
    * @return array
-   *   The server metadata array compliant with RFC 8414.
+   *   The resource metadata array compliant with RFC 9728.
    */
-  public function getServerMetadata(array $config_override = []): array {
+  public function getResourceMetadata(array $config_override = []): array {
     // Skip cache if using config override (for preview).
     if (!empty($config_override)) {
       return $this->generateMetadata($config_override);
     }
 
-    $cache_id = 'simple_oauth_server_metadata:metadata';
+    $cache_id = 'simple_oauth_server_metadata:resource_metadata';
     $cache_tags = $this->getCacheTags();
 
     // Try to get from cache first.
@@ -131,52 +98,23 @@ class ServerMetadataService {
    *   Optional configuration override for preview purposes.
    *
    * @return array
-   *   The server metadata array compliant with RFC 8414.
+   *   The resource metadata array compliant with RFC 9728.
    */
   protected function generateMetadata(array $config_override = []): array {
     $metadata = [];
 
-    // Add required fields per RFC 8414.
-    $metadata['issuer'] = $this->endpointDiscovery->getIssuer();
-    $metadata['response_types_supported'] = $this->grantTypeDiscovery->getResponseTypesSupported();
+    // Add required fields per RFC 9728.
+    $metadata['resource'] = $this->endpointDiscovery->getIssuer();
+    $metadata['authorization_servers'] = [$this->endpointDiscovery->getIssuer()];
 
-    // Add response modes supported.
-    $metadata['response_modes_supported'] = $this->grantTypeDiscovery->getResponseModesSupported();
-
-    // Add core endpoints.
-    $core_endpoints = $this->endpointDiscovery->getCoreEndpoints();
-    // Already set above.
-    unset($core_endpoints['issuer']);
-    $metadata = array_merge($metadata, $core_endpoints);
-
-    // Add grant types and scopes.
-    $metadata['grant_types_supported'] = $this->grantTypeDiscovery->getGrantTypesSupported();
-    $metadata['scopes_supported'] = $this->scopeDiscovery->getScopesSupported();
-
-    // Add authentication and signing methods.
-    $metadata['token_endpoint_auth_methods_supported'] = $this->claimsAuthDiscovery->getTokenEndpointAuthMethodsSupported();
-    $metadata['token_endpoint_auth_signing_alg_values_supported'] = $this->claimsAuthDiscovery->getTokenEndpointAuthSigningAlgValuesSupported();
-
-    // Add PKCE support.
-    $metadata['code_challenge_methods_supported'] = $this->claimsAuthDiscovery->getCodeChallengeMethodsSupported();
-
-    // Add request URI parameter support.
-    $metadata['request_uri_parameter_supported'] = $this->claimsAuthDiscovery->getRequestUriParameterSupported();
-    $metadata['require_request_uri_registration'] = $this->claimsAuthDiscovery->getRequireRequestUriRegistration();
-
-    // Add OpenID Connect fields if enabled.
-    $claims = $this->claimsAuthDiscovery->getClaimsSupported();
-    if (!empty($claims)) {
-      $metadata['claims_supported'] = $claims;
-      $metadata['subject_types_supported'] = $this->claimsAuthDiscovery->getSubjectTypesSupported();
-      $metadata['id_token_signing_alg_values_supported'] = $this->claimsAuthDiscovery->getIdTokenSigningAlgValuesSupported();
-    }
+    // Add bearer methods supported (default methods).
+    $metadata['bearer_methods_supported'] = ['header', 'body', 'query'];
 
     // Add admin-configured fields.
     $config = $this->configFactory->get('simple_oauth_server_metadata.settings');
     $this->addConfigurableFields($metadata, $config, $config_override);
 
-    // Remove empty optional fields per RFC 8414.
+    // Remove empty optional fields per RFC 9728.
     $metadata = $this->filterEmptyFields($metadata);
 
     return $metadata;
@@ -194,25 +132,16 @@ class ServerMetadataService {
    */
   protected function addConfigurableFields(array &$metadata, $config, array $config_override = []): void {
     $configurable_fields = [
-      'registration_endpoint',
-      'revocation_endpoint',
-      'introspection_endpoint',
-      'service_documentation',
-      'op_policy_uri',
-      'op_tos_uri',
-      'ui_locales_supported',
-      'additional_claims_supported',
-      'additional_signing_algorithms',
+      'resource_documentation',
+      'resource_policy_uri',
+      'resource_tos_uri',
     ];
 
     // Fields that should be converted to absolute URLs if they are relative.
     $url_fields = [
-      'registration_endpoint',
-      'revocation_endpoint',
-      'introspection_endpoint',
-      'service_documentation',
-      'op_policy_uri',
-      'op_tos_uri',
+      'resource_documentation',
+      'resource_policy_uri',
+      'resource_tos_uri',
     ];
 
     foreach ($configurable_fields as $field) {
@@ -275,21 +204,11 @@ class ServerMetadataService {
    */
   protected function filterEmptyFields(array $metadata): array {
     // Required fields that must not be filtered.
-    $required_fields = ['issuer', 'response_types_supported'];
+    $required_fields = ['resource', 'authorization_servers'];
 
-    // Boolean fields that should be preserved even when FALSE.
-    $boolean_fields = [
-      'request_uri_parameter_supported',
-      'require_request_uri_registration',
-    ];
-
-    return array_filter($metadata, function ($value, $key) use ($required_fields, $boolean_fields) {
-      // Keep required fields even if empty (for validation)
+    return array_filter($metadata, function ($value, $key) use ($required_fields) {
+      // Keep required fields even if empty (for validation).
       if (in_array($key, $required_fields)) {
-        return TRUE;
-      }
-      // Keep boolean fields even when FALSE (meaningful information).
-      if (in_array($key, $boolean_fields) && is_bool($value)) {
         return TRUE;
       }
       // Filter out empty optional fields.
@@ -298,17 +217,17 @@ class ServerMetadataService {
   }
 
   /**
-   * Validates metadata for RFC 8414 compliance.
+   * Validates metadata for RFC 9728 compliance.
    *
    * @param array $metadata
    *   The metadata array to validate.
    *
    * @return bool
-   *   TRUE if metadata is RFC 8414 compliant, FALSE otherwise.
+   *   TRUE if metadata is RFC 9728 compliant, FALSE otherwise.
    */
   public function validateMetadata(array $metadata): bool {
-    // Check required fields per RFC 8414.
-    $required_fields = ['issuer', 'response_types_supported'];
+    // Check required fields per RFC 9728.
+    $required_fields = ['resource', 'authorization_servers'];
 
     foreach ($required_fields as $field) {
       if (empty($metadata[$field])) {
@@ -329,8 +248,6 @@ class ServerMetadataService {
     return [
       'config:simple_oauth.settings',
       'config:simple_oauth_server_metadata.settings',
-      'user_role_list',
-      'oauth2_grant_plugins',
     ];
   }
 
@@ -345,7 +262,7 @@ class ServerMetadataService {
    * Warms the cache by pre-generating metadata.
    */
   public function warmCache(): void {
-    $this->getServerMetadata();
+    $this->getResourceMetadata();
   }
 
 }

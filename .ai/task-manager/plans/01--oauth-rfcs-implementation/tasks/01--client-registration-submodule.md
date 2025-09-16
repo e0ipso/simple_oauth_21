@@ -2,7 +2,7 @@
 id: 1
 group: 'rfc-7591-client-registration'
 dependencies: []
-status: 'pending'
+status: 'completed'
 created: '2025-09-16'
 skills: ['drupal-backend', 'php']
 complexity_score: 4.0
