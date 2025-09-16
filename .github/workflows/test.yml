@@ -178,23 +178,25 @@ jobs:
 
       - name: Run Unit tests
         working-directory: ${{ env.DRUPAL_ROOT }}
-        run: php vendor/bin/phpunit \
-          --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
-          ${{ env.MODULE_PATH }}/tests/src/Unit
+        run: |
+          find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Unit" -path "*/tests/src/Unit" -print0 | \
+          xargs -0 php vendor/bin/phpunit \
+            --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist
 
       - name: Run Kernel tests
         working-directory: ${{ env.DRUPAL_ROOT }}
-        run: php vendor/bin/phpunit \
-          --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
-          ${{ env.MODULE_PATH }}/tests/src/Kernel
+        run: |
+          find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Kernel" -path "*/tests/src/Kernel" -print0 | \
+          xargs -0 php vendor/bin/phpunit \
+            --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist
 
       - name: Run Functional tests
         id: functional-tests
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: |
-          php vendor/bin/phpunit \
-            --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
-            ${{ env.MODULE_PATH }}/tests/src/Functional
+          find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Functional" -path "*/tests/src/Functional" -print0 | \
+          xargs -0 php vendor/bin/phpunit \
+            --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist
 
       - name: Upload HTML artifacts on Functional test failure
         if: failure()
@@ -210,9 +212,9 @@ jobs:
         id: functional-js-tests
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: |
-          php vendor/bin/phpunit \
-            --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
-            ${{ env.MODULE_PATH }}/tests/src/FunctionalJavascript
+          find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "FunctionalJavascript" -path "*/tests/src/FunctionalJavascript" -print0 | \
+          xargs -0 php vendor/bin/phpunit \
+            --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist
 
       - name: Upload HTML artifacts on FunctionalJavascript test failure
         if: failure()
