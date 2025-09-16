@@ -112,7 +112,7 @@ class PkceValidationSubscriber implements EventSubscriberInterface {
 
     // Skip if enhanced PKCE validation is disabled.
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
-    if (!$config->get('enhanced_pkce_for_native')) {
+    if (!$config->get('native.enhanced_pkce')) {
       return;
     }
 
@@ -173,7 +173,7 @@ class PkceValidationSubscriber implements EventSubscriberInterface {
     $request->attributes->set('oauth_enhanced_pkce_applied', TRUE);
 
     // Log successful validation if configured.
-    if ($this->configFactory->get('simple_oauth_native_apps.settings')->get('log_pkce_validations')) {
+    if ($this->configFactory->get('simple_oauth_native_apps.settings')->get('log.pkce_validations')) {
       $this->logger->info('Enhanced PKCE validation passed for authorization request from client @client_id', [
         '@client_id' => $client->getClientId(),
         'challenge_method' => $code_challenge_method,
@@ -230,7 +230,7 @@ class PkceValidationSubscriber implements EventSubscriberInterface {
     $request->attributes->set('oauth_enhanced_pkce_applied', TRUE);
 
     // Log successful validation if configured.
-    if ($this->configFactory->get('simple_oauth_native_apps.settings')->get('log_pkce_validations')) {
+    if ($this->configFactory->get('simple_oauth_native_apps.settings')->get('log.pkce_validations')) {
       $this->logger->info('Enhanced PKCE validation passed for token request from client @client_id', [
         '@client_id' => $client->getClientId(),
         'verifier_entropy' => $validation_result['entropy_bits'] ?? 'unknown',

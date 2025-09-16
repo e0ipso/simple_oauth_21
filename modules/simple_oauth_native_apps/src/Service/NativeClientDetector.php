@@ -119,7 +119,7 @@ class NativeClientDetector {
     $is_native = $score >= $threshold;
 
     // Log detection decision if enabled.
-    if ($config->get('log_detection_decisions')) {
+    if ($config->get('log.detection_decisions')) {
       $reasons = $this->getClassificationReasons($client);
       $this->logger->info('Native client detection for @client_id: score=@score, threshold=@threshold, result=@result, reasons=@reasons', [
         '@client_id' => $client->getClientId(),
@@ -173,7 +173,7 @@ class NativeClientDetector {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
     // If enhanced PKCE is disabled globally, return FALSE.
-    if (!$config->get('enhanced_pkce_for_native')) {
+    if (!$config->get('native.enhanced_pkce')) {
       return FALSE;
     }
 
@@ -806,7 +806,7 @@ class NativeClientDetector {
           'pkce_required' => TRUE,
           'custom_schemes_allowed' => FALSE,
           'loopback_required' => TRUE,
-          'enhanced_pkce' => $config->get('enhanced_pkce_for_native'),
+          'enhanced_pkce' => $config->get('native.enhanced_pkce'),
           'description' => 'Terminal/CLI application using loopback redirects',
         ];
 
@@ -817,7 +817,7 @@ class NativeClientDetector {
           'pkce_required' => TRUE,
           'custom_schemes_allowed' => $config->get('allow_custom_uri_schemes'),
           'loopback_allowed' => $config->get('allow_loopback_redirects'),
-          'enhanced_pkce' => $config->get('enhanced_pkce_for_native'),
+          'enhanced_pkce' => $config->get('native.enhanced_pkce'),
           'description' => ucfirst($type) . ' native application',
         ];
 

@@ -24,12 +24,13 @@ class ServiceIntegrationTest extends KernelTestBase {
   protected static $modules = [
     'system',
     'user',
+    'file',
+    'image',
     'consumers',
     'simple_oauth',
     'simple_oauth_native_apps',
     'serialization',
     'options',
-    'image',
   ];
 
   /**
@@ -39,6 +40,7 @@ class ServiceIntegrationTest extends KernelTestBase {
     parent::setUp();
 
     $this->installEntitySchema('user');
+    $this->installEntitySchema('file');
     $this->installEntitySchema('consumer');
     $this->installConfig(['simple_oauth', 'simple_oauth_native_apps']);
   }
@@ -89,10 +91,10 @@ class ServiceIntegrationTest extends KernelTestBase {
     $config = $config_factory->getEditable('simple_oauth_native_apps.settings');
 
     // Update configuration.
-    $config->set('allow_custom_uri_schemes', TRUE);
-    $config->set('allow_loopback_redirects', TRUE);
+    $config->set('allow.custom_uri_schemes', TRUE);
+    $config->set('allow.loopback_redirects', TRUE);
     $config->set('enforce_native_security', TRUE);
-    $config->set('webview_detection', 'warn');
+    $config->set('webview.detection', 'warn');
     $config->save();
 
     $redirect_validator = $this->container->get('simple_oauth_native_apps.redirect_uri_validator');
@@ -177,19 +179,19 @@ class ServiceIntegrationTest extends KernelTestBase {
     $config = $this->container->get('config.factory')->getEditable('simple_oauth_native_apps.settings');
 
     // Test with custom schemes enabled.
-    $config->set('allow_custom_uri_schemes', TRUE)->save();
+    $config->set('allow.custom_uri_schemes', TRUE)->save();
     $this->assertTrue($validator->validateCustomScheme('myapp://callback'));
 
     // Test with custom schemes disabled.
-    $config->set('allow_custom_uri_schemes', FALSE)->save();
+    $config->set('allow.custom_uri_schemes', FALSE)->save();
     $this->assertFalse($validator->validateCustomScheme('myapp://callback'));
 
     // Test with loopback enabled.
-    $config->set('allow_loopback_redirects', TRUE)->save();
+    $config->set('allow.loopback_redirects', TRUE)->save();
     $this->assertTrue($validator->validateLoopbackInterface('http://127.0.0.1:8080/callback'));
 
     // Test with loopback disabled.
-    $config->set('allow_loopback_redirects', FALSE)->save();
+    $config->set('allow.loopback_redirects', FALSE)->save();
     $this->assertFalse($validator->validateLoopbackInterface('http://127.0.0.1:8080/callback'));
   }
 
@@ -202,11 +204,13 @@ class ServiceIntegrationTest extends KernelTestBase {
 
     // Test valid configuration.
     $valid_config = [
-      'webview_detection' => 'warn',
+      'webview' => ['detection' => 'warn'],
       'webview_whitelist' => ['TrustedApp'],
       'webview_patterns' => [],
-      'allow_custom_uri_schemes' => TRUE,
-      'allow_loopback_redirects' => TRUE,
+      'allow' => [
+        'custom_uri_schemes' => TRUE,
+        'loopback_redirects' => TRUE,
+      ],
       'logging_level' => 'info',
     ];
 
@@ -215,7 +219,7 @@ class ServiceIntegrationTest extends KernelTestBase {
 
     // Test invalid configuration.
     $invalid_config = [
-      'webview_detection' => 'invalid_policy',
+      'webview' => ['detection' => 'invalid_policy'],
       'logging_level' => 'invalid_level',
     ];
 
@@ -228,6 +232,10 @@ class ServiceIntegrationTest extends KernelTestBase {
    * Tests metadata provider integration.
    */
   public function testMetadataProviderIntegration(): void {
+    // Set up configuration for native app support.
+    $config = $this->container->get('config.factory')->getEditable('simple_oauth_native_apps.settings');
+    $config->set('enforce_native_security', TRUE)->save();
+
     /** @var \Drupal\simple_oauth_native_apps\Service\MetadataProvider $provider */
     $provider = $this->container->get('simple_oauth_native_apps.metadata_provider');
 
@@ -267,7 +275,7 @@ class ServiceIntegrationTest extends KernelTestBase {
    */
   public function testServiceLoggingIntegration(): void {
     $config = $this->container->get('config.factory')->getEditable('simple_oauth_native_apps.settings');
-    $config->set('log_pkce_validations', TRUE)->save();
+    $config->set('log.pkce_validations', TRUE)->save();
 
     /** @var \Drupal\simple_oauth_native_apps\Service\PKCEEnhancementService $pkce_service */
     $pkce_service = $this->container->get('simple_oauth_native_apps.pkce_enhancement');
@@ -347,9 +355,11 @@ class ServiceIntegrationTest extends KernelTestBase {
     // 6. Configuration validation.
     $config_validator = $this->container->get('simple_oauth_native_apps.configuration_validator');
     $config_errors = $config_validator->validateConfiguration([
-      'webview_detection' => 'warn',
-      'allow_custom_uri_schemes' => TRUE,
-      'allow_loopback_redirects' => TRUE,
+      'webview' => ['detection' => 'warn'],
+      'allow' => [
+        'custom_uri_schemes' => TRUE,
+        'loopback_redirects' => TRUE,
+      ],
       'logging_level' => 'info',
     ]);
     $this->assertEmpty($config_errors);

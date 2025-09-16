@@ -50,15 +50,30 @@ simple_oauth_native_apps.settings:
           type: boolean
           label: 'Allow loopback redirects'
           description: 'Allow loopback IP redirects for native applications (RFC 8252)'
-    enhanced_pkce_for_native:
-      type: boolean
-      label: 'Enhanced PKCE for native apps'
-      description: 'Apply enhanced PKCE requirements for native applications'
-    allow_custom_uri_schemes:
-      type: boolean
-      label: 'Allow custom URI schemes (deprecated)'
-      description: 'Legacy flat property for backward compatibility - use allow.custom_uri_schemes instead'
-    allow_loopback_redirects:
-      type: boolean
-      label: 'Allow loopback redirects (deprecated)'
-      description: 'Legacy flat property for backward compatibility - use allow.loopback_redirects instead'
+    native:
+      type: mapping
+      label: 'Native app specific settings'
+      mapping:
+        enhanced_pkce:
+          type: boolean
+          label: 'Enhanced PKCE for native apps'
+          description: 'Apply enhanced PKCE requirements for native applications'
+        enforce:
+          type: string
+          label: 'Enforce challenge method for native apps'
+          description: 'Require specific challenge method for native applications'
+          constraints:
+            Choice:
+              choices: ['off', 'S256', 'plain']
+    log:
+      type: mapping
+      label: 'Logging settings'
+      mapping:
+        pkce_validations:
+          type: boolean
+          label: 'Log PKCE validations'
+          description: 'Log PKCE validation attempts and results'
+        detection_decisions:
+          type: boolean
+          label: 'Log detection decisions'
+          description: 'Log native app and WebView detection decisions'

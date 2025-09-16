@@ -245,7 +245,7 @@ class UserAgentAnalyzer {
    */
   public function getDetectionMode(): string {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
-    return $config->get('webview.detection') ?? 'warn';
+    return $config->get('webview.detection', 'warn');
   }
 
   /**

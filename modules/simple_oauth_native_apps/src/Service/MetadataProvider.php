@@ -143,6 +143,7 @@ class MetadataProvider {
     // Enhanced PKCE for native apps.
     if ($config->get('enforce_native_security')) {
       $metadata['native_apps_pkce_required'] = TRUE;
+      $metadata['pkce_required'] = TRUE;
       $metadata['pkce_s256_enforced'] = TRUE;
     }
   }
@@ -156,13 +157,17 @@ class MetadataProvider {
    *   Module configuration.
    */
   protected function addNativeAppCapabilities(array &$metadata, $config): void {
-    // WebView detection capability.
-    $metadata['webview_detection_supported'] = TRUE;
-    $metadata['webview_detection_policy'] = $config->get('webview_detection', 'warn');
+    // Native app support advertisement - only if native security is enabled.
+    $metadata['native_apps_supported'] = (bool) $config->get('enforce_native_security', FALSE);
 
-    // Client type detection.
-    $metadata['automatic_client_detection'] = TRUE;
-    $metadata['client_type_override_supported'] = TRUE;
+    // WebView detection capability - based on detection mode.
+    $detection_mode = $config->get('webview.detection', 'warn');
+    $metadata['webview_detection_supported'] = $detection_mode !== 'off';
+    $metadata['webview_detection_policy'] = $detection_mode;
+
+    // Client type detection - only if native security is enabled.
+    $metadata['automatic_client_detection'] = (bool) $config->get('enforce_native_security', FALSE);
+    $metadata['client_type_override_supported'] = (bool) $config->get('enforce_native_security', FALSE);
 
     // Security enhancements.
     if ($config->get('enforce_native_security')) {

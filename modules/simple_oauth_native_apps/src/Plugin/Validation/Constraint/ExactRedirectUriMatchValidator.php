@@ -42,7 +42,7 @@ class ExactRedirectUriMatchValidator extends ConstraintValidator implements Cont
   /**
    * {@inheritdoc}
    */
-  public function validate($value, Constraint $constraint) {
+  public function validate($value, Constraint $constraint): void {
     if (!$constraint instanceof ExactRedirectUriMatch) {
       return;
     }

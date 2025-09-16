@@ -1,3 +1,3 @@
 enforcement: 'mandatory'
 s256_enabled: true
-plain_enabled: false
+plain_enabled: true

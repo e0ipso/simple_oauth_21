@@ -23,12 +23,13 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
   protected static $modules = [
     'system',
     'user',
+    'file',
+    'image',
     'consumers',
     'simple_oauth',
     'simple_oauth_native_apps',
     'serialization',
     'options',
-    'image',
   ];
 
   /**
@@ -38,6 +39,7 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
     parent::setUp();
 
     $this->installEntitySchema('user');
+    $this->installEntitySchema('file');
     $this->installEntitySchema('consumer');
     $this->installConfig(['simple_oauth', 'simple_oauth_native_apps']);
   }
@@ -73,7 +75,7 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
    */
   public function testOauthAuthorizationRequestDetection(): void {
     $config = $this->container->get('config.factory')->getEditable('simple_oauth_native_apps.settings');
-    $config->set('webview_detection', 'warn')->save();
+    $config->set('webview.detection', 'warn')->save();
 
     $subscriber = $this->container->get('simple_oauth_native_apps.authorization_request_subscriber');
 
@@ -225,7 +227,7 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
    */
   public function testWebviewDetectionInOauthFlow(): void {
     $config = $this->container->get('config.factory')->getEditable('simple_oauth_native_apps.settings');
-    $config->set('webview_detection', 'block')->save();
+    $config->set('webview.detection', 'block')->save();
 
     $user_agent_analyzer = $this->container->get('simple_oauth_native_apps.user_agent_analyzer');
 
@@ -262,15 +264,23 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
     // Set up configuration for full native app support.
     $config = $this->container->get('config.factory')->getEditable('simple_oauth_native_apps.settings');
     $config->setData([
-      'allow_custom_uri_schemes' => TRUE,
-      'allow_loopback_redirects' => TRUE,
+      'allow' => [
+        'custom_uri_schemes' => TRUE,
+        'loopback_redirects' => TRUE,
+      ],
       'enforce_native_security' => TRUE,
       'require_exact_redirect_match' => TRUE,
-      'webview_detection' => 'warn',
-      'enhanced_pkce_for_native' => TRUE,
-      'enforce_s256_for_native' => TRUE,
-      'log_pkce_validations' => FALSE,
-      'log_detection_decisions' => FALSE,
+      'webview' => [
+        'detection' => 'warn',
+      ],
+      'native' => [
+        'enhanced_pkce' => TRUE,
+        'enforce' => 'S256',
+      ],
+      'log' => [
+        'pkce_validations' => FALSE,
+        'detection_decisions' => FALSE,
+      ],
     ])->save();
 
     // Create a comprehensive native app consumer.
@@ -337,7 +347,7 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
     // Step 6: Verify service configuration.
     $service_config = $pkce_service->getConfiguration();
     $this->assertTrue($service_config['enhanced_pkce_enabled']);
-    $this->assertTrue($service_config['enforce_s256_method']);
+    $this->assertEquals('S256', $service_config['enforce_method']);
     $this->assertEquals(128, $service_config['minimum_entropy_bits']);
 
     // Step 7: Test entropy validation.

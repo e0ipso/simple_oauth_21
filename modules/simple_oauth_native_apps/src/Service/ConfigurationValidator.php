@@ -80,7 +80,8 @@ class ConfigurationValidator {
 
     // Validate detection policy.
     $valid_policies = ['off', 'warn', 'block'];
-    if (!in_array($config['webview_detection'] ?? '', $valid_policies, TRUE)) {
+    $detection_policy = $config['webview']['detection'] ?? '';
+    if (!in_array($detection_policy, $valid_policies, TRUE)) {
       $errors[] = $this->t('Invalid WebView detection policy. Must be one of: @policies', [
         '@policies' => implode(', ', $valid_policies),
       ]);
@@ -119,7 +120,7 @@ class ConfigurationValidator {
 
     // Check for logical conflicts.
     if (!empty($config['require_exact_redirect_match']) &&
-        (empty($config['allow_custom_uri_schemes']) && empty($config['allow_loopback_redirects']))) {
+        (empty($config['allow']['custom_uri_schemes']) && empty($config['allow']['loopback_redirects']))) {
       $errors[] = $this->t('Requiring exact redirect match without allowing custom schemes or loopback redirects may prevent native apps from functioning properly.');
     }
 
@@ -167,6 +168,10 @@ class ConfigurationValidator {
     $pkce_errors = $this->validatePkceConfig($config);
     $errors = array_merge($errors, $pkce_errors);
 
+    // Validate logging configuration.
+    $logging_errors = $this->validateLoggingConfig($config);
+    $errors = array_merge($errors, $logging_errors);
+
     return $errors;
   }
 
@@ -191,6 +196,29 @@ class ConfigurationValidator {
     }
 
     return TRUE;
+  }
+
+  /**
+   * Validates logging configuration.
+   *
+   * @param array $config
+   *   The configuration array to validate.
+   *
+   * @return array
+   *   Array of validation error messages.
+   */
+  protected function validateLoggingConfig(array $config): array {
+    $errors = [];
+
+    // Validate logging level.
+    $valid_levels = ['emergency', 'alert', 'critical', 'error', 'warning', 'notice', 'info', 'debug'];
+    if (isset($config['logging_level']) && !in_array($config['logging_level'], $valid_levels, TRUE)) {
+      $errors[] = $this->t('Invalid logging level. Must be one of: @levels', [
+        '@levels' => implode(', ', $valid_levels),
+      ]);
+    }
+
+    return $errors;
   }
 
 }

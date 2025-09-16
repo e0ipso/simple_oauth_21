@@ -1,0 +1,4 @@
+services:
+  simple_oauth_pkce.settings:
+    class: Drupal\simple_oauth_pkce\Service\PkceSettingsService
+    arguments: ['@config.factory']

@@ -70,19 +70,30 @@ class RedirectUriValidator {
       return $this->validateStandardRedirectUri($uri);
     }
 
-    // Validate basic URI format.
-    if (!filter_var($uri, FILTER_VALIDATE_URL)) {
-      $this->logger->warning('Invalid URI format: @uri', ['@uri' => $uri]);
-      return FALSE;
-    }
-
+    // Parse URI first to check structure.
     $parsed = parse_url($uri);
     if (!$parsed || !isset($parsed['scheme'])) {
       $this->logger->warning('Unable to parse URI or missing scheme: @uri', ['@uri' => $uri]);
       return FALSE;
     }
 
+    // For standard schemes, use filter_var validation.
     $scheme = strtolower($parsed['scheme']);
+    if (in_array($scheme, ['http', 'https', 'ftp', 'ftps'])) {
+      if (!filter_var($uri, FILTER_VALIDATE_URL)) {
+        $this->logger->warning('Invalid URI format: @uri', ['@uri' => $uri]);
+        return FALSE;
+      }
+    }
+    // For custom schemes, just validate that we have a valid scheme name.
+    else {
+      // Custom schemes should follow RFC 3986:
+      // scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
+      if (!preg_match('/^[a-zA-Z][a-zA-Z0-9+.-]*$/', $scheme)) {
+        $this->logger->warning('Invalid custom scheme format: @scheme in @uri', ['@scheme' => $scheme, '@uri' => $uri]);
+        return FALSE;
+      }
+    }
 
     // Handle different URI types based on scheme.
     switch ($scheme) {
@@ -107,7 +118,7 @@ class RedirectUriValidator {
   public function validateCustomScheme(string $uri): bool {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
-    if (!$config->get('allow_custom_uri_schemes')) {
+    if (!$config->get('allow.custom_uri_schemes')) {
       $this->logger->warning('Custom URI schemes are disabled: @uri', ['@uri' => $uri]);
       return FALSE;
     }
@@ -137,9 +148,10 @@ class RedirectUriValidator {
       return TRUE;
     }
 
-    // Reject schemes that don't match any recognized pattern.
-    $this->logger->warning('Scheme does not match any recognized native app pattern: @scheme', ['@scheme' => $scheme]);
-    return FALSE;
+    // Allow any custom scheme that passes basic validation (RFC 8252 allows
+    // custom schemes). Additional validation was already done above for
+    // dangerous schemes and format.
+    return TRUE;
   }
 
   /**
@@ -154,7 +166,7 @@ class RedirectUriValidator {
   public function validateLoopbackInterface(string $uri): bool {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
-    if (!$config->get('allow_loopback_redirects')) {
+    if (!$config->get('allow.loopback_redirects')) {
       $this->logger->warning('Loopback redirects are disabled: @uri', ['@uri' => $uri]);
       return FALSE;
     }
