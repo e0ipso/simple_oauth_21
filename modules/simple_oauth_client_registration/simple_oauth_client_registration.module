@@ -1,0 +1,188 @@
+<?php
+
+/**
+ * @file
+ * Contains simple_oauth_client_registration.module.
+ *
+ * Implements RFC 7591 Dynamic Client Registration for OAuth 2.0 clients.
+ */
+
+use Drupal\Core\Entity\EntityTypeInterface;
+use Drupal\Core\Field\BaseFieldDefinition;
+
+/**
+ * Implements hook_entity_base_field_info().
+ */
+function simple_oauth_client_registration_entity_base_field_info(EntityTypeInterface $entity_type) {
+  $fields = [];
+
+  if ($entity_type->id() === 'consumer') {
+    // client_name - Human-readable client name
+    $fields['client_name'] = BaseFieldDefinition::create('string')
+      ->setLabel(t('Client Name'))
+      ->setDescription(t('Human-readable name of the client to be presented to the end user.'))
+      ->setRequired(FALSE)
+      ->setSetting('max_length', 255)
+      ->setDisplayOptions('form', [
+        'type' => 'string_textfield',
+        'weight' => 20,
+        'settings' => ['size' => 60],
+      ])
+      ->setDisplayOptions('view', [
+        'type' => 'string',
+        'label' => 'above',
+        'weight' => 20,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+
+    // client_uri - Client information URI
+    $fields['client_uri'] = BaseFieldDefinition::create('uri')
+      ->setLabel(t('Client URI'))
+      ->setDescription(t('URL of the home page of the client.'))
+      ->setRequired(FALSE)
+      ->setDisplayOptions('form', [
+        'type' => 'uri',
+        'weight' => 21,
+        'settings' => ['size' => 60],
+      ])
+      ->setDisplayOptions('view', [
+        'type' => 'uri_link',
+        'label' => 'above',
+        'weight' => 21,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+
+    // logo_uri - Client logo URI
+    $fields['logo_uri'] = BaseFieldDefinition::create('uri')
+      ->setLabel(t('Logo URI'))
+      ->setDescription(t('URL that references a logo for the client application.'))
+      ->setRequired(FALSE)
+      ->setDisplayOptions('form', [
+        'type' => 'uri',
+        'weight' => 22,
+        'settings' => ['size' => 60],
+      ])
+      ->setDisplayOptions('view', [
+        'type' => 'uri_link',
+        'label' => 'above',
+        'weight' => 22,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+
+    // contacts - Contact information
+    $fields['contacts'] = BaseFieldDefinition::create('text_long')
+      ->setLabel(t('Contacts'))
+      ->setDescription(t('Array of email addresses of people responsible for this client.'))
+      ->setRequired(FALSE)
+      ->setCardinality(-1)
+      ->setDisplayOptions('form', [
+        'type' => 'text_textarea',
+        'weight' => 23,
+        'settings' => ['rows' => 3],
+      ])
+      ->setDisplayOptions('view', [
+        'type' => 'text_default',
+        'label' => 'above',
+        'weight' => 23,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+
+    // tos_uri - Terms of service URI
+    $fields['tos_uri'] = BaseFieldDefinition::create('uri')
+      ->setLabel(t('Terms of Service URI'))
+      ->setDescription(t('URL that the relying party client provides to the end user to read about the how the profile data will be used.'))
+      ->setRequired(FALSE)
+      ->setDisplayOptions('form', [
+        'type' => 'uri',
+        'weight' => 24,
+        'settings' => ['size' => 60],
+      ])
+      ->setDisplayOptions('view', [
+        'type' => 'uri_link',
+        'label' => 'above',
+        'weight' => 24,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+
+    // policy_uri - Privacy policy URI
+    $fields['policy_uri'] = BaseFieldDefinition::create('uri')
+      ->setLabel(t('Policy URI'))
+      ->setDescription(t('URL that the relying party client provides to the end user to read about the relying party\'s terms of service.'))
+      ->setRequired(FALSE)
+      ->setDisplayOptions('form', [
+        'type' => 'uri',
+        'weight' => 25,
+        'settings' => ['size' => 60],
+      ])
+      ->setDisplayOptions('view', [
+        'type' => 'uri_link',
+        'label' => 'above',
+        'weight' => 25,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+
+    // jwks_uri - JSON Web Key Set URI
+    $fields['jwks_uri'] = BaseFieldDefinition::create('uri')
+      ->setLabel(t('JWKS URI'))
+      ->setDescription(t('URL for the client\'s JSON Web Key Set document.'))
+      ->setRequired(FALSE)
+      ->setDisplayOptions('form', [
+        'type' => 'uri',
+        'weight' => 26,
+        'settings' => ['size' => 60],
+      ])
+      ->setDisplayOptions('view', [
+        'type' => 'uri_link',
+        'label' => 'above',
+        'weight' => 26,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+
+    // software_id - Software identifier
+    $fields['software_id'] = BaseFieldDefinition::create('string')
+      ->setLabel(t('Software ID'))
+      ->setDescription(t('A unique identifier string (UUID or other identifier) assigned by the client developer or software publisher.'))
+      ->setRequired(FALSE)
+      ->setSetting('max_length', 255)
+      ->setDisplayOptions('form', [
+        'type' => 'string_textfield',
+        'weight' => 27,
+        'settings' => ['size' => 60],
+      ])
+      ->setDisplayOptions('view', [
+        'type' => 'string',
+        'label' => 'above',
+        'weight' => 27,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+
+    // software_version - Software version
+    $fields['software_version'] = BaseFieldDefinition::create('string')
+      ->setLabel(t('Software Version'))
+      ->setDescription(t('A version identifier string for the client software.'))
+      ->setRequired(FALSE)
+      ->setSetting('max_length', 255)
+      ->setDisplayOptions('form', [
+        'type' => 'string_textfield',
+        'weight' => 28,
+        'settings' => ['size' => 60],
+      ])
+      ->setDisplayOptions('view', [
+        'type' => 'string',
+        'label' => 'above',
+        'weight' => 28,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+  }
+
+  return $fields;
+}

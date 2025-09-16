@@ -10,3 +10,17 @@ simple_oauth_client_registration.register:
   options:
     _format: 'json'
     no_cache: TRUE
+
+simple_oauth_client_registration.manage:
+  path: '/oauth/register/{client_id}'
+  defaults:
+    _controller: '\Drupal\simple_oauth_client_registration\Controller\ClientRegistrationController::manage'
+    _title: 'OAuth 2.0 Client Management'
+  methods: [GET, PUT, DELETE]
+  requirements:
+    # Requires registration access token authentication
+    _access: 'TRUE'
+    client_id: '^[a-f0-9\-]{36}$'
+  options:
+    _format: 'json'
+    no_cache: TRUE
