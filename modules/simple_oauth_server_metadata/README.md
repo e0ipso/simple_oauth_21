@@ -223,6 +223,8 @@ config = discover_oauth_config('https://your-drupal-site.com')
 
 Most AppAuth libraries support automatic discovery:
 
+<!-- cspell:ignore appauth -->
+
 ```javascript
 // AppAuth-JS
 import { AuthorizationServiceConfiguration } from '@openid/appauth';

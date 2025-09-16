@@ -365,7 +365,8 @@ final class OAuth21ComplianceController extends ControllerBase {
     $best_practices = $compliance_status['best_practices'] ?? [];
 
     // Filter for non-compliant recommended items.
-    // Note: When recommended items are not configured, their status is 'recommended' not 'non_compliant'.
+    // Note: When recommended items are not configured, their status is
+    // 'recommended' not 'non_compliant'.
     $missing_recommendations = array_filter($best_practices, function ($item) {
       return ($item['level'] ?? '') === 'recommended' &&
              ($item['status'] ?? '') === 'recommended';
@@ -563,7 +564,7 @@ final class OAuth21ComplianceController extends ControllerBase {
       $link_text = $this->t('Configure Additional Signing Algorithms');
     }
 
-    if ($route_name && $link_text) {
+    if (!empty($route_name)) {
       try {
         $link = Link::createFromRoute($link_text, $route_name);
         return '→ ' . $link->toString();
@@ -590,7 +591,8 @@ final class OAuth21ComplianceController extends ControllerBase {
     $links = [];
     $relevant_modules = [];
 
-    // Analyze which specific modules need configuration based on the actual recommendations.
+    // Analyze which specific modules need configuration based on the
+    // actual recommendations.
     foreach ($missing_recommendations as $rec) {
       $title = $rec['title'] ?? '';
 
@@ -661,7 +663,8 @@ final class OAuth21ComplianceController extends ControllerBase {
     $summary = $compliance_status['summary'] ?? [];
     $has_issues = $summary['has_critical_issues'] ?? FALSE;
 
-    // Only show Action Items section if there are critical issues, since recommendations
+    // Only show Action Items section if there are critical issues, since
+    // recommendations
     // are now handled by the dedicated "Missing Recommended Settings" section.
     if (!$has_issues) {
       return [];
@@ -751,7 +754,8 @@ final class OAuth21ComplianceController extends ControllerBase {
       }
     }
 
-    // Native apps settings (for recommendations) - enhanced submodule detection.
+    // Native apps settings (for recommendations) - enhanced submodule
+    // detection.
     if (!$critical && $this->complianceService->isModuleEnabledWithFallback('simple_oauth_native_apps')) {
       try {
         $native_link = Link::createFromRoute(

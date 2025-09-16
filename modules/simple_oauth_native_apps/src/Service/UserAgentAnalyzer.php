@@ -49,9 +49,9 @@ class UserAgentAnalyzer {
     'social_media' => [
       // Facebook In-App Browser.
       '/FB_IAB/i',
-      // Facebook App.
+      // Facebook App. cspell:ignore FBAN
       '/FBAN/i',
-      // Facebook App Version.
+      // Facebook App Version. cspell:ignore FBAV
       '/FBAV/i',
       // Instagram In-App Browser.
       '/Instagram/i',
@@ -79,7 +79,7 @@ class UserAgentAnalyzer {
       '/Line\//i',
       // WeChat.
       '/MicroMessenger/i',
-      // Baidu App.
+      // Baidu App. cspell:ignore baiduboxapp
       '/baiduboxapp/i',
       // QQ Browser.
       '/QQ\//i',

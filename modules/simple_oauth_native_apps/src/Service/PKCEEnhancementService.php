@@ -99,7 +99,6 @@ class PKCEEnhancementService {
     ?string $code_challenge_method = NULL,
     ?string $code_verifier = NULL,
   ): array {
-    $config = $this->configFactory->get('simple_oauth_native_apps.settings');
     $is_native = $this->nativeClientDetector->isNativeClient($client);
     $requires_enhanced = $this->nativeClientDetector->requiresEnhancedPkce($client);
 

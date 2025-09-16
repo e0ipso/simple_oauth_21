@@ -89,7 +89,7 @@ class GrantTypeDiscoveryService {
           break;
 
         // Note: The implicit grant has been removed in Simple OAuth 6.x
-        // as it's considered insecure per OAuth 2.0 Security Best Current Practice.
+        // as it's insecure per OAuth 2.0 Security Best Current Practice.
         // The 'token' response type is no longer supported.
         // client_credentials, password, and refresh_token don't add response
         // types as they don't use the authorization endpoint.

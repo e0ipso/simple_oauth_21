@@ -7,6 +7,7 @@ use Drupal\Core\Ajax\ReplaceCommand;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\simple_oauth_native_apps\Service\ConfigurationValidator;
 use Drupal\simple_oauth_native_apps\Service\NativeClientDetector;
 
@@ -14,6 +15,7 @@ use Drupal\simple_oauth_native_apps\Service\NativeClientDetector;
  * Alters consumer forms to include native app settings.
  */
 class ConsumerNativeAppsFormAlter {
+  use StringTranslationTrait;
 
   /**
    * The configuration factory.
@@ -94,8 +96,8 @@ class ConsumerNativeAppsFormAlter {
 
     $form['native_apps'] = [
       '#type' => 'details',
-      '#title' => t('Native App Settings'),
-      '#description' => t('Configure RFC 8252 native app security settings for this specific consumer. These settings work alongside Simple OAuth PKCE module to provide comprehensive security. Leave fields empty to use global defaults.'),
+      '#title' => $this->t('Native App Settings'),
+      '#description' => $this->t('Configure RFC 8252 native app security settings for this specific consumer. These settings work alongside Simple OAuth PKCE module to provide comprehensive security. Leave fields empty to use global defaults.'),
       '#open' => !empty($consumer_config),
       '#tree' => TRUE,
       '#weight' => 10,
@@ -104,15 +106,15 @@ class ConsumerNativeAppsFormAlter {
     // WebView detection override.
     $form['native_apps']['webview_detection_override'] = [
       '#type' => 'select',
-      '#title' => t('WebView detection policy override'),
-      '#description' => t('Override the global WebView detection policy for this consumer. <strong>Simple OAuth PKCE</strong> provides basic PKCE (RFC 7636) for all clients. <strong>Native Apps enhanced security</strong> adds RFC 8252 requirements including WebView detection. When disabled, native apps still get basic PKCE protection. Leave empty to use global setting (@global).', [
+      '#title' => $this->t('WebView detection policy override'),
+      '#description' => $this->t('Override the global WebView detection policy for this consumer. <strong>Simple OAuth PKCE</strong> provides basic PKCE (RFC 7636) for all clients. <strong>Native Apps enhanced security</strong> adds RFC 8252 requirements including WebView detection. When disabled, native apps still get basic PKCE protection. Leave empty to use global setting (@global).', [
         '@global' => $this->getWebViewDetectionLabel($global_config->get('webview_detection')),
       ]),
       '#options' => [
-        '' => t('- Use global setting -'),
-        'off' => t('Off - Allow all requests'),
-        'warn' => t('Warn - Log warnings but allow requests'),
-        'block' => t('Block - Reject WebView requests'),
+        '' => $this->t('- Use global setting -'),
+        'off' => $this->t('Off - Allow all requests'),
+        'warn' => $this->t('Warn - Log warnings but allow requests'),
+        'block' => $this->t('Block - Reject WebView requests'),
       ],
       '#default_value' => $consumer_config['webview_detection_override'] ?? '',
     ];
@@ -120,14 +122,14 @@ class ConsumerNativeAppsFormAlter {
     // Custom redirect URI schemes override.
     $form['native_apps']['allow_custom_schemes_override'] = [
       '#type' => 'select',
-      '#title' => t('Allow custom URI schemes override'),
-      '#description' => t('Override whether to allow custom URI schemes (e.g., myapp://callback) for this consumer. Leave empty to use global setting (@global).', [
-        '@global' => $global_config->get('allow_custom_uri_schemes') ? t('Enabled') : t('Disabled'),
+      '#title' => $this->t('Allow custom URI schemes override'),
+      '#description' => $this->t('Override whether to allow custom URI schemes (e.g., myapp://callback) for this consumer. Leave empty to use global setting (@global).', [
+        '@global' => $global_config->get('allow_custom_uri_schemes') ? $this->t('Enabled') : $this->t('Disabled'),
       ]),
       '#options' => [
-        '' => t('- Use global setting -'),
-        '1' => t('Allow custom URI schemes'),
-        '0' => t('Disallow custom URI schemes'),
+        '' => $this->t('- Use global setting -'),
+        '1' => $this->t('Allow custom URI schemes'),
+        '0' => $this->t('Disallow custom URI schemes'),
       ],
       '#default_value' => $consumer_config['allow_custom_schemes_override'] ?? '',
     ];
@@ -135,14 +137,14 @@ class ConsumerNativeAppsFormAlter {
     // Loopback redirects override.
     $form['native_apps']['allow_loopback_override'] = [
       '#type' => 'select',
-      '#title' => t('Allow loopback redirects override'),
-      '#description' => t('Override whether to allow loopback IP redirects for this consumer. Leave empty to use global setting (@global).', [
-        '@global' => $global_config->get('allow_loopback_redirects') ? t('Enabled') : t('Disabled'),
+      '#title' => $this->t('Allow loopback redirects override'),
+      '#description' => $this->t('Override whether to allow loopback IP redirects for this consumer. Leave empty to use global setting (@global).', [
+        '@global' => $global_config->get('allow_loopback_redirects') ? $this->t('Enabled') : $this->t('Disabled'),
       ]),
       '#options' => [
-        '' => t('- Use global setting -'),
-        '1' => t('Allow loopback redirects'),
-        '0' => t('Disallow loopback redirects'),
+        '' => $this->t('- Use global setting -'),
+        '1' => $this->t('Allow loopback redirects'),
+        '0' => $this->t('Disallow loopback redirects'),
       ],
       '#default_value' => $consumer_config['allow_loopback_override'] ?? '',
     ];
@@ -150,14 +152,14 @@ class ConsumerNativeAppsFormAlter {
     // PKCE enforcement override.
     $form['native_apps']['enhanced_pkce_override'] = [
       '#type' => 'select',
-      '#title' => t('Enhanced PKCE override'),
-      '#description' => t('Override enhanced PKCE requirements for this consumer. Leave empty to use global setting (@global).', [
-        '@global' => $global_config->get('enhanced_pkce_for_native') ? t('Enabled') : t('Disabled'),
+      '#title' => $this->t('Enhanced PKCE override'),
+      '#description' => $this->t('Override enhanced PKCE requirements for this consumer. Leave empty to use global setting (@global).', [
+        '@global' => $global_config->get('enhanced_pkce_for_native') ? $this->t('Enabled') : $this->t('Disabled'),
       ]),
       '#options' => [
-        '' => t('- Use global setting -'),
-        '1' => t('Enable enhanced PKCE'),
-        '0' => t('Use standard PKCE'),
+        '' => $this->t('- Use global setting -'),
+        '1' => $this->t('Enable enhanced PKCE'),
+        '0' => $this->t('Use standard PKCE'),
       ],
       '#default_value' => $consumer_config['enhanced_pkce_override'] ?? '',
     ];
@@ -165,14 +167,14 @@ class ConsumerNativeAppsFormAlter {
     // Add PKCE relationship explanation.
     $form['native_apps']['pkce_relationship'] = [
       '#type' => 'details',
-      '#title' => t('Understanding PKCE vs Enhanced Security'),
-      '#description' => t('This module works alongside Simple OAuth PKCE to provide comprehensive native app security.'),
+      '#title' => $this->t('Understanding PKCE vs Enhanced Security'),
+      '#description' => $this->t('This module works alongside Simple OAuth PKCE to provide comprehensive native app security.'),
       '#collapsible' => TRUE,
       '#collapsed' => TRUE,
     ];
 
     $form['native_apps']['pkce_relationship']['explanation'] = [
-      '#markup' => t('<ul>
+      '#markup' => $this->t('<ul>
         <li><strong>Simple OAuth PKCE Module</strong>: Provides basic PKCE implementation (RFC 7636) for all OAuth clients</li>
         <li><strong>Native Apps Enhanced Security</strong>: Adds RFC 8252 specific requirements for native applications</li>
         <li><strong>When enhanced security is disabled</strong>: Native apps still receive basic PKCE protection but skip additional validations like WebView detection</li>
@@ -182,8 +184,8 @@ class ConsumerNativeAppsFormAlter {
     // Add client detection section.
     $form['native_apps']['client_detection'] = [
       '#type' => 'details',
-      '#title' => t('Client Type Detection'),
-      '#description' => t('Automatic detection of client type based on redirect URIs to provide intelligent configuration defaults.'),
+      '#title' => $this->t('Client Type Detection'),
+      '#description' => $this->t('Automatic detection of client type based on redirect URIs to provide intelligent configuration defaults.'),
       '#collapsible' => TRUE,
       '#collapsed' => TRUE,
       '#weight' => -5,
@@ -191,7 +193,7 @@ class ConsumerNativeAppsFormAlter {
 
     $form['native_apps']['client_detection']['detect_button'] = [
       '#type' => 'button',
-      '#value' => t('Detect Client Type'),
+      '#value' => $this->t('Detect Client Type'),
       '#ajax' => [
         'callback' => '::detectClientTypeAjax',
         'wrapper' => 'client-detection-results',
@@ -202,20 +204,20 @@ class ConsumerNativeAppsFormAlter {
     $form['native_apps']['client_detection']['detection_results'] = [
       '#type' => 'container',
       '#attributes' => ['id' => 'client-detection-results'],
-      '#markup' => t('Click "Detect Client Type" to analyze redirect URIs and get configuration recommendations.'),
+      '#markup' => $this->t('Click "Detect Client Type" to analyze redirect URIs and get configuration recommendations.'),
     ];
 
     // Add terminal application guidance.
     $form['native_apps']['terminal_guidance'] = [
       '#type' => 'details',
-      '#title' => t('Terminal Application Configuration'),
-      '#description' => t('Special considerations for command-line and terminal applications.'),
+      '#title' => $this->t('Terminal Application Configuration'),
+      '#description' => $this->t('Special considerations for command-line and terminal applications.'),
       '#collapsible' => TRUE,
       '#collapsed' => TRUE,
     ];
 
     $form['native_apps']['terminal_guidance']['info'] = [
-      '#markup' => t('<p>Terminal applications (command-line tools) have specific requirements:</p>
+      '#markup' => $this->t('<p>Terminal applications (command-line tools) have specific requirements:</p>
         <ul>
           <li><strong>Redirect URIs</strong>: Must use loopback addresses like "http://127.0.0.1:8080/callback"</li>
           <li><strong>Client Type</strong>: Always configure as "Public" (not confidential)</li>
@@ -339,12 +341,12 @@ class ConsumerNativeAppsFormAlter {
    */
   protected function getWebViewDetectionLabel(string $setting): string {
     $labels = [
-      'off' => t('Off'),
-      'warn' => t('Warn'),
-      'block' => t('Block'),
+      'off' => $this->t('Off'),
+      'warn' => $this->t('Warn'),
+      'block' => $this->t('Block'),
     ];
 
-    return $labels[$setting] ?? t('Unknown');
+    return $labels[$setting] ?? $this->t('Unknown');
   }
 
   /**
@@ -366,7 +368,7 @@ class ConsumerNativeAppsFormAlter {
 
     if (empty($redirect_uris)) {
       $markup = '<div class="messages messages--warning">' .
-                t('Please enter redirect URIs first in the main form to enable client type detection.') .
+                $this->t('Please enter redirect URIs first in the main form to enable client type detection.') .
                 '</div>';
     }
     else {
@@ -431,17 +433,17 @@ class ConsumerNativeAppsFormAlter {
     $details = $result['details'] ?? [];
 
     $markup = '<div class="client-detection-result confidence-' . $confidence . '">';
-    $markup .= '<h4>' . t('Detection Result') . '</h4>';
-    $markup .= '<p><strong>' . t('Detected Client Type:') . '</strong> ' . ucfirst($type) . '</p>';
-    $markup .= '<p><strong>' . t('Detection Confidence:') . '</strong> ' . ucfirst($confidence) . '</p>';
+    $markup .= '<h4>' . $this->t('Detection Result') . '</h4>';
+    $markup .= '<p><strong>' . $this->t('Detected Client Type:') . '</strong> ' . ucfirst($type) . '</p>';
+    $markup .= '<p><strong>' . $this->t('Detection Confidence:') . '</strong> ' . ucfirst($confidence) . '</p>';
 
     if (isset($details['description'])) {
-      $markup .= '<p><strong>' . t('Description:') . '</strong> ' . $details['description'] . '</p>';
+      $markup .= '<p><strong>' . $this->t('Description:') . '</strong> ' . $details['description'] . '</p>';
     }
 
     // Show analyzed URIs.
     $markup .= '<div class="analyzed-uris">';
-    $markup .= '<h5>' . t('Analyzed Redirect URIs:') . '</h5>';
+    $markup .= '<h5>' . $this->t('Analyzed Redirect URIs:') . '</h5>';
     $markup .= '<ul>';
     foreach ($redirect_uris as $uri) {
       $markup .= '<li><code>' . htmlspecialchars($uri) . '</code></li>';
@@ -453,7 +455,7 @@ class ConsumerNativeAppsFormAlter {
     $recommendations = $this->getRecommendations($result);
     if (!empty($recommendations)) {
       $markup .= '<div class="recommendations">';
-      $markup .= '<h5>' . t('Configuration Recommendations:') . '</h5>';
+      $markup .= '<h5>' . $this->t('Configuration Recommendations:') . '</h5>';
       $markup .= '<ul>';
       foreach ($recommendations as $recommendation) {
         $markup .= '<li>' . $recommendation . '</li>';
@@ -465,8 +467,8 @@ class ConsumerNativeAppsFormAlter {
     // Add mixed types warning if applicable.
     if (isset($result['mixed_types']) && count($result['mixed_types']) > 1) {
       $markup .= '<div class="messages messages--warning">';
-      $markup .= '<strong>' . t('Mixed Client Types Detected:') . '</strong> ';
-      $markup .= t('Your redirect URIs suggest multiple client types (@types). Consider using consistent URI patterns for better security.', [
+      $markup .= '<strong>' . $this->t('Mixed Client Types Detected:') . '</strong> ';
+      $markup .= $this->t('Your redirect URIs suggest multiple client types (@types). Consider using consistent URI patterns for better security.', [
         '@types' => implode(', ', $result['mixed_types']),
       ]);
       $markup .= '</div>';
@@ -492,33 +494,33 @@ class ConsumerNativeAppsFormAlter {
 
     switch ($type) {
       case 'terminal':
-        $recommendations[] = t('Set "Is Confidential" to <strong>No</strong> (terminal apps cannot store secrets securely)');
-        $recommendations[] = t('Use loopback redirects like <code>http://127.0.0.1:8080/callback</code>');
-        $recommendations[] = t('Enable PKCE for enhanced security');
-        $recommendations[] = t('Disable custom URI schemes (not supported by terminal apps)');
-        $recommendations[] = t('Launch system browser for authentication, not embedded web views');
+        $recommendations[] = $this->t('Set "Is Confidential" to <strong>No</strong> (terminal apps cannot store secrets securely)');
+        $recommendations[] = $this->t('Use loopback redirects like <code>http://127.0.0.1:8080/callback</code>');
+        $recommendations[] = $this->t('Enable PKCE for enhanced security');
+        $recommendations[] = $this->t('Disable custom URI schemes (not supported by terminal apps)');
+        $recommendations[] = $this->t('Launch system browser for authentication, not embedded web views');
         break;
 
       case 'mobile':
-        $recommendations[] = t('Set "Is Confidential" to <strong>No</strong> (mobile apps are public clients)');
-        $recommendations[] = t('Use custom URI schemes like <code>myapp://callback</code>');
-        $recommendations[] = t('Enable enhanced PKCE for native app security');
-        $recommendations[] = t('Consider enabling WebView detection for additional security');
-        $recommendations[] = t('Register URI scheme with mobile OS for deep linking');
+        $recommendations[] = $this->t('Set "Is Confidential" to <strong>No</strong> (mobile apps are public clients)');
+        $recommendations[] = $this->t('Use custom URI schemes like <code>myapp://callback</code>');
+        $recommendations[] = $this->t('Enable enhanced PKCE for native app security');
+        $recommendations[] = $this->t('Consider enabling WebView detection for additional security');
+        $recommendations[] = $this->t('Register URI scheme with mobile OS for deep linking');
         break;
 
       case 'desktop':
-        $recommendations[] = t('Set "Is Confidential" to <strong>No</strong> (desktop apps are typically public clients)');
-        $recommendations[] = t('Use custom URI schemes or loopback redirects');
-        $recommendations[] = t('Enable enhanced PKCE for native app security');
-        $recommendations[] = t('Consider platform-specific URI scheme registration');
+        $recommendations[] = $this->t('Set "Is Confidential" to <strong>No</strong> (desktop apps are typically public clients)');
+        $recommendations[] = $this->t('Use custom URI schemes or loopback redirects');
+        $recommendations[] = $this->t('Enable enhanced PKCE for native app security');
+        $recommendations[] = $this->t('Consider platform-specific URI scheme registration');
         break;
 
       case 'web':
-        $recommendations[] = t('Consider setting "Is Confidential" to <strong>Yes</strong> if server-side application');
-        $recommendations[] = t('Use HTTPS redirect URIs for security');
-        $recommendations[] = t('PKCE is optional but recommended for additional security');
-        $recommendations[] = t('Ensure redirect URIs match exactly with client configuration');
+        $recommendations[] = $this->t('Consider setting "Is Confidential" to <strong>Yes</strong> if server-side application');
+        $recommendations[] = $this->t('Use HTTPS redirect URIs for security');
+        $recommendations[] = $this->t('PKCE is optional but recommended for additional security');
+        $recommendations[] = $this->t('Ensure redirect URIs match exactly with client configuration');
         break;
     }
 

@@ -2,7 +2,7 @@
 
 /**
  * @file
- * Install, update and uninstall functions for the Simple OAuth Native Apps module.
+ * Install/uninstall functions for Simple OAuth Native Apps module.
  */
 
 use Drupal\Core\Field\BaseFieldDefinition;

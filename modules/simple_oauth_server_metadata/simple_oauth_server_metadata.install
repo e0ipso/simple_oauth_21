@@ -2,7 +2,7 @@
 
 /**
  * @file
- * Install, update and uninstall functions for the Simple OAuth Server Metadata module.
+ * Install/uninstall for Simple OAuth Server Metadata module.
  */
 
 use Drupal\Core\Url;

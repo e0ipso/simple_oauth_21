@@ -390,7 +390,7 @@ class NativeAppsSettingsForm extends ConfigFormBase {
     ];
 
     $output = '<div class="webview-patterns-summary">';
-    $output .= '<p><strong>' . $this->t('Pattern Summary') . ':</strong></p>';
+    $output .= '<p><strong>' . $this->t('Pattern Summary:') . '</strong></p>';
     $output .= '<ul>';
 
     foreach ($categories as $category => $label) {
@@ -401,7 +401,10 @@ class NativeAppsSettingsForm extends ConfigFormBase {
     }
 
     $safe_count = $stats['safe_browsers'] ?? 0;
-    $output .= '<li>' . $this->t('Safe Browser Patterns') . ': <strong>' . $safe_count . '</strong> ' . $this->formatPlural($safe_count, 'pattern', 'patterns') . '</li>';
+    $output .= '<li>' . $this->t('Safe Browser Patterns: <strong>@count</strong> @plural', [
+      '@count' => $safe_count,
+      '@plural' => $this->formatPlural($safe_count, 'pattern', 'patterns'),
+    ]) . '</li>';
     $output .= '</ul>';
 
     $output .= '<p><em>' . $this->t('Total: @total detection patterns built-in', ['@total' => $stats['total'] - $safe_count]) . '</em></p>';
@@ -409,10 +412,10 @@ class NativeAppsSettingsForm extends ConfigFormBase {
     // Add examples of what gets detected.
     $output .= '<details class="webview-examples"><summary>' . $this->t('Examples of detected apps') . '</summary>';
     $output .= '<ul>';
-    $output .= '<li><strong>' . $this->t('Social Media') . ':</strong> Facebook, Instagram, Twitter, LinkedIn, WhatsApp, TikTok</li>';
-    $output .= '<li><strong>' . $this->t('Messaging') . ':</strong> WeChat, Line, Telegram, Baidu Browser</li>';
-    $output .= '<li><strong>' . $this->t('Mobile Frameworks') . ':</strong> Cordova, PhoneGap, Ionic, React Native, Electron, Capacitor</li>';
-    $output .= '<li><strong>' . $this->t('Native WebViews') . ':</strong> Android WebView, iOS WKWebView/UIWebView</li>';
+    $output .= '<li>' . $this->t('<strong>Social Media:</strong> Facebook, Instagram, Twitter, LinkedIn, WhatsApp, TikTok') . '</li>';
+    $output .= '<li>' . $this->t('<strong>Messaging:</strong> WeChat, Line, Telegram, Baidu Browser') . '</li>';
+    $output .= '<li>' . $this->t('<strong>Mobile Frameworks:</strong> Cordova, PhoneGap, Ionic, React Native, Electron, Capacitor') . '</li>';
+    $output .= '<li>' . $this->t('<strong>Native WebViews:</strong> Android WebView, iOS WKWebView/UIWebView') . '</li>';
     $output .= '</ul></details>';
 
     $output .= '</div>';

@@ -3,6 +3,7 @@
 namespace Drupal\simple_oauth_server_metadata\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\simple_oauth\Oauth2ScopeProviderInterface;
 
 /**
@@ -25,16 +26,26 @@ class ScopeDiscoveryService {
   protected $configFactory;
 
   /**
+   * The logger factory.
+   *
+   * @var \Drupal\Core\Logger\LoggerChannelFactoryInterface
+   */
+  protected $loggerFactory;
+
+  /**
    * Constructs a ScopeDiscoveryService object.
    *
    * @param \Drupal\simple_oauth\Oauth2ScopeProviderInterface $scope_provider
    *   The OAuth2 scope provider.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
    *   The configuration factory.
+   * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
+   *   The logger factory.
    */
-  public function __construct(Oauth2ScopeProviderInterface $scope_provider, ConfigFactoryInterface $config_factory) {
+  public function __construct(Oauth2ScopeProviderInterface $scope_provider, ConfigFactoryInterface $config_factory, LoggerChannelFactoryInterface $logger_factory) {
     $this->scopeProvider = $scope_provider;
     $this->configFactory = $config_factory;
+    $this->loggerFactory = $logger_factory;
   }
 
   /**
@@ -69,7 +80,7 @@ class ScopeDiscoveryService {
     $scopes = [];
 
     try {
-      // Load all scopes from the configured scope provider (dynamic, static, etc.)
+      // Load all scopes from the configured scope provider.
       $oauth_scopes = $this->scopeProvider->loadMultiple();
 
       foreach ($oauth_scopes as $scope) {
@@ -79,7 +90,8 @@ class ScopeDiscoveryService {
     }
     catch (\Exception $e) {
       // If scope loading fails, log it but don't break the metadata response.
-      \Drupal::logger('simple_oauth_server_metadata')->warning('Failed to load OAuth scopes: @message', [
+      $logger = $this->loggerFactory->get('simple_oauth_server_metadata');
+      $logger->warning('Failed to load OAuth scopes: @message', [
         '@message' => $e->getMessage(),
       ]);
     }

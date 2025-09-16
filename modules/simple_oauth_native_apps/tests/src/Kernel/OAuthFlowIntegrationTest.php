@@ -85,7 +85,7 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
       'state' => 'random_state',
     ]);
 
-    // Set webview user agent.
+    // Set webview user agent. cspell:ignore FBAN FBIOS
     $request->headers->set('User-Agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 [FBAN/FBIOS]');
 
     $event = new RequestEvent(
@@ -113,6 +113,7 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
       'confidential' => FALSE,
       'third_party' => TRUE,
       'redirect' => [
+    // cspell:ignore oauthtest
         'com.example.oauthtest://callback',
         'http://127.0.0.1:8080/oauth',
       ],
@@ -149,6 +150,7 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
       'label' => 'PKCE Test Native App',
       'client_id' => 'pkce_test_client',
       'confidential' => FALSE,
+    // cspell:ignore nativeapp
       'redirect' => ['nativeapp://callback'],
     ]);
     $consumer->save();
@@ -193,6 +195,7 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
       // Native app custom schemes.
       'com.example.myapp://oauth/callback' => TRUE,
       'myapp://auth' => TRUE,
+    // cspell:ignore testscheme
       'testscheme://redirect' => TRUE,
 
       // Loopback interfaces.
@@ -229,6 +232,7 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
     // Test various user agents in OAuth context.
     $test_cases = [
       // Webview user agents (should be detected).
+    // cspell:ignore FBAN FBIOS
       'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 [FBAN/FBIOS]' => TRUE,
       'Mozilla/5.0 (Linux; Android 10; SM-G973F) Chrome/86.0.4240.198 Mobile Safari/537.36 Instagram' => TRUE,
       'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 WKWebView/1.0' => TRUE,
@@ -324,6 +328,7 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
 
     // Step 5: User agent analysis.
     $safe_ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 Version/16.0 Mobile Safari/604.1';
+    // cspell:ignore FBAN FBIOS
     $webview_ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 [FBAN/FBIOS]';
 
     $this->assertFalse($user_agent_analyzer->isEmbeddedWebview($safe_ua));

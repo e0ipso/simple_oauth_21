@@ -4,21 +4,12 @@ namespace Drupal\simple_oauth_pkce\Form;
 
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
-use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Config\TypedConfigManagerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Configuration form for PKCE settings.
  */
 class PkceSettingsForm extends ConfigFormBase {
-
-  /**
-   * {@inheritdoc}
-   */
-  public function __construct(ConfigFactoryInterface $config_factory, TypedConfigManagerInterface $typed_config_manager) {
-    parent::__construct($config_factory, $typed_config_manager);
-  }
 
   /**
    * {@inheritdoc}
@@ -57,7 +48,7 @@ class PkceSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Configure PKCE support for enhanced OAuth 2.0 security.'),
     ];
 
-    // OAuth 2.1 Recommended Settings section removed - now available in OAuth 2.1 Compliance dashboard.
+    // OAuth 2.1 Settings now available in OAuth 2.1 Compliance dashboard.
     $form['pkce']['enforcement'] = [
       '#type' => 'select',
       '#title' => $this->t('PKCE Enforcement Level'),

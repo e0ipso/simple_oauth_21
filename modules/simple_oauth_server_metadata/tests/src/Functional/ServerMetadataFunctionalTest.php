@@ -95,7 +95,7 @@ class ServerMetadataFunctionalTest extends BrowserTestBase {
     $this->assertEquals($policy_data['op_policy_uri'], $saved_config->get('op_policy_uri'));
     $this->assertEquals($policy_data['op_tos_uri'], $saved_config->get('op_tos_uri'));
 
-    // Test 4: Configure additional capabilities and verify configuration saving.
+    // Test 4: Configure capabilities and verify configuration.
     $capabilities_data = [
       'ui_locales_supported' => "en-US\nes-ES\nfr-FR",
       'additional_claims_supported' => "custom_claim_1\ncustom_claim_2",

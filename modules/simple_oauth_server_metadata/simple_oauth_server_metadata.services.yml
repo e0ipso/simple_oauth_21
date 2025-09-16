@@ -7,7 +7,12 @@ services:
     arguments: ['@plugin.manager.oauth2_grant.processor', '@config.factory']
   simple_oauth_server_metadata.scope_discovery:
     class: Drupal\simple_oauth_server_metadata\Service\ScopeDiscoveryService
-    arguments: ['@simple_oauth.oauth2_scope.provider', '@config.factory']
+    arguments:
+      [
+        '@simple_oauth.oauth2_scope.provider',
+        '@config.factory',
+        '@logger.factory',
+      ]
   simple_oauth_server_metadata.claims_auth_discovery:
     class: Drupal\simple_oauth_server_metadata\Service\ClaimsAuthDiscoveryService
     arguments: ['@config.factory']

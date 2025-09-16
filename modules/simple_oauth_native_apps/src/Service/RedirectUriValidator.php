@@ -633,7 +633,7 @@ class RedirectUriValidator {
       // Alphanumeric schemes with common patterns.
     // test123, app1, etc.
       '/^[a-z]+[0-9]+$/i',
-    // customscheme, mobilescheme, etc.
+    // customscheme, mobilescheme, etc. cspell:ignore customscheme mobilescheme
       '/^[a-z]{5,}scheme$/i',
     ];
 

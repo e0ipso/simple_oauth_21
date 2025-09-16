@@ -33,6 +33,8 @@ RFC 8252 establishes OAuth 2.0 security requirements specifically for native app
 
 ### Redirect URI Security
 
+<!-- cspell:ignore myapp -->
+
 - **Custom URI Schemes**: Support for `myapp://callback` style redirects
 - **Loopback Addresses**: Support for `http://127.0.0.1:port/callback` patterns
 - **Exact Matching**: Disables partial URI matching for enhanced security
@@ -136,6 +138,8 @@ enhanced_pkce_for_native: false
 #### Step 1: Configure OAuth Client
 
 Create a public OAuth client for your native application:
+
+<!-- cspell:ignore yourapp -->
 
 ```yaml
 client_type: 'public'
@@ -344,7 +348,7 @@ app.on('open-url', (event, url) => {
 ```python
 # Python CLI application using loopback
 import http.server
-import webbrowser
+import webbrowser  # cspell:ignore webbrowser
 from urllib.parse import urlparse, parse_qs
 
 # Start local server for callback
@@ -352,7 +356,7 @@ server = http.server.HTTPServer(('127.0.0.1', 8080), CallbackHandler)
 
 # Open browser for authorization
 auth_url = f"https://yoursite.com/oauth/authorize?client_id={client_id}&redirect_uri=http://127.0.0.1:8080/callback&response_type=code&code_challenge={challenge}&code_challenge_method=S256"
-webbrowser.open(auth_url)
+webbrowser.open(auth_url)  # cspell:ignore webbrowser
 
 # Handle callback
 server.handle_request()
@@ -371,6 +375,8 @@ The module includes comprehensive detection patterns for:
 - **Cross-Platform**: Cordova, PhoneGap, Ionic, React Native
 
 #### Social Media WebViews
+
+<!-- cspell:ignore FBAN FBAV -->
 
 - **Facebook**: FBAN, FBAV, FB_IAB patterns
 - **Instagram**: Instagram app WebView
@@ -447,7 +453,7 @@ logging:
 Example log entries:
 
 ```
-simple_oauth_native_apps: WebView detected: Facebook App [FBAN/FBIOS]
+simple_oauth_native_apps: WebView detected: Facebook App [FBAN/FBIOS]  <!-- cspell:ignore FBAN FBIOS -->
 simple_oauth_native_apps: Enhanced PKCE validation successful for native client
 simple_oauth_native_apps: Custom URI scheme validation passed: com.yourapp.oauth://callback
 ```

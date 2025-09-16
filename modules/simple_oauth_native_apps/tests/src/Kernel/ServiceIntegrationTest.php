@@ -155,6 +155,7 @@ class ServiceIntegrationTest extends KernelTestBase {
     $analyzer = $this->container->get('simple_oauth_native_apps.user_agent_analyzer');
 
     // Test webview detection.
+    // cspell:ignore FBAN FBIOS FBDV
     $facebook_ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBDV/iPhone14,5]';
     $safari_ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1';
 
@@ -295,6 +296,7 @@ class ServiceIntegrationTest extends KernelTestBase {
       'confidential' => FALSE,
       'third_party' => TRUE,
       'redirect' => [
+    // cspell:ignore testapp
         'com.example.testapp://oauth/callback',
         'http://127.0.0.1:8080/callback',
       ],
@@ -309,6 +311,7 @@ class ServiceIntegrationTest extends KernelTestBase {
 
     // 2. Redirect URI validation.
     $redirect_validator = $this->container->get('simple_oauth_native_apps.redirect_uri_validator');
+    // cspell:ignore testapp
     $custom_valid = $redirect_validator->validateCustomScheme('com.example.testapp://oauth/callback');
     $loopback_valid = $redirect_validator->validateLoopbackInterface('http://127.0.0.1:8080/callback');
     $this->assertTrue($custom_valid);
@@ -336,6 +339,7 @@ class ServiceIntegrationTest extends KernelTestBase {
 
     // 5. User agent analysis for webview detection.
     $user_agent_analyzer = $this->container->get('simple_oauth_native_apps.user_agent_analyzer');
+    // cspell:ignore FBAN FBIOS
     $webview_ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS]';
     $is_webview = $user_agent_analyzer->isEmbeddedWebview($webview_ua);
     $this->assertTrue($is_webview);
