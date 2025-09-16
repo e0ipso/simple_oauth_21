@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        drupal-core: ['10', '11-dev']
+        drupal-core: ['10', '11']
         php-version: ['8.3']
         db-version: ['10.9']
 
@@ -255,12 +255,12 @@ jobs:
           if-no-files-found: ignore
 
       - name: Install Playwright Browsers
-        if: matrix.drupal-core == '11-dev'
+        if: matrix.drupal-core == '11'
         working-directory: ${{ env.DRUPAL_ROOT }}/${{ env.MODULE_PATH }}
         run: npx playwright install chromium
 
       - name: Verify Drupal Installation
-        if: matrix.drupal-core == '11-dev'
+        if: matrix.drupal-core == '11'
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: |
           echo "=== Verifying Drupal installation ==="
@@ -282,7 +282,7 @@ jobs:
           fi
 
       - name: Run Playwright E2E Tests
-        if: matrix.drupal-core == '11-dev'
+        if: matrix.drupal-core == '11'
         working-directory: ${{ env.DRUPAL_ROOT }}/${{ env.MODULE_PATH }}
         run: |
           npx playwright test tests/e2e/tests/
@@ -292,7 +292,7 @@ jobs:
 
       - name: Upload Playwright Report
         uses: actions/upload-artifact@v4
-        if: always() && matrix.drupal-core == '11-dev'
+        if: always() && matrix.drupal-core == '11'
         with:
           name: playwright-report-drupal-${{ matrix.drupal-core }}-php-${{ matrix.php-version }}
           path: ${{ env.DRUPAL_ROOT }}/${{ env.MODULE_PATH }}/playwright-report/
@@ -300,7 +300,7 @@ jobs:
 
       - name: Upload Playwright Test Results
         uses: actions/upload-artifact@v4
-        if: always() && matrix.drupal-core == '11-dev'
+        if: always() && matrix.drupal-core == '11'
         with:
           name: playwright-test-results-drupal-${{ matrix.drupal-core }}-php-${{ matrix.php-version }}
           path: ${{ env.DRUPAL_ROOT }}/${{ env.MODULE_PATH }}/test-results/
@@ -308,7 +308,7 @@ jobs:
 
       - name: Upload Playwright Screenshots
         uses: actions/upload-artifact@v4
-        if: failure() && matrix.drupal-core == '11-dev'
+        if: failure() && matrix.drupal-core == '11'
         with:
           name: playwright-screenshots-drupal-${{ matrix.drupal-core }}-php-${{ matrix.php-version }}
           path: ${{ env.DRUPAL_ROOT }}/${{ env.MODULE_PATH }}/test-results/**/*.png
