@@ -104,6 +104,7 @@ jobs:
         run: |
           composer config --no-plugins allow-plugins.phpstan/extension-installer true
           composer --no-interaction --no-progress install
+          composer --no-interaction require drupal/simple_oauth:^6
 
           npm install --include=dev
 
