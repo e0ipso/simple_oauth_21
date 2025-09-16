@@ -4,9 +4,9 @@ A comprehensive OAuth 2.1 compliance module that provides centralized coordinati
 
 ## Overview
 
-![Dashboard](./assets/simple_oauth_21.png)
-
 The Simple OAuth 2.1 module serves as an umbrella coordination module that ensures OAuth 2.1 compliance through integration with specialized submodules. It provides a professional compliance dashboard that monitors and assesses OAuth 2.1 implementation status in real-time.
+
+![Dashboard](./assets/simple_oauth_21.png)
 
 ### OAuth 2.1 Compliance
 
@@ -82,16 +82,10 @@ Implements RFC 8414 Authorization Server Metadata for automatic discovery.
 
 ## Installation
 
-### Requirements
-
-- Drupal 9.0+ or Drupal 10.0+
-- Simple OAuth module (contrib or core)
-- PHP 8.1+
-
 ### Installation via Composer
 
 ```bash
-composer require drupal/simple_oauth_21
+composer require e0ipso/simple_oauth_21
 ```
 
 ### Enable Modules
@@ -99,20 +93,14 @@ composer require drupal/simple_oauth_21
 Enable the umbrella module and desired submodules:
 
 ```bash
-# Enable the main coordination module
-drush pm:enable simple_oauth_21
-
-# Enable OAuth 2.1 compliance submodules
-drush pm:enable simple_oauth_pkce
-drush pm:enable simple_oauth_native_apps
-drush pm:enable simple_oauth_server_metadata
+# Enable the main coordination module and OAuth 2.1 compliance submodules.
+drush pm:enable simple_oauth_21 simple_oauth_pkce simple_oauth_native_apps simple_oauth_server_metadata
 ```
 
 ## Configuration
 
 ### Basic Setup
 
-1. **Enable Required Modules**: Install simple_oauth_21 and at least simple_oauth_pkce for basic OAuth 2.1 compliance
 2. **Access Dashboard**: Navigate to `/admin/config/people/simple_oauth/oauth-21`
 3. **Review Compliance**: Check overall compliance status and address critical issues
 4. **Configure Submodules**: Use dashboard links to configure individual submodules
@@ -149,6 +137,9 @@ drush pm:enable simple_oauth_server_metadata
 
 ## OAuth 2.1 Implementation Guide
 
+<details>
+<summary>Step-by-step Configuration</summary>
+
 ### Step 1: Core Requirements
 
 1. Enable `simple_oauth_pkce` module
@@ -179,45 +170,7 @@ drush pm:enable simple_oauth_server_metadata
 3. Address any remaining recommendations
 4. Test OAuth flows with real clients
 
-## Performance Considerations
-
-### Caching
-
-- Compliance assessments are cached for performance
-- Cache automatically invalidates on configuration changes
-- Manual cache clearing: `drush cache:rebuild`
-
-### Database Impact
-
-- Minimal database overhead
-- Configuration stored in standard Drupal config system
-- No custom tables required
-
-### Production Recommendations
-
-- Enable all recommended modules for full compliance
-- Monitor compliance dashboard regularly
-- Implement proper logging and monitoring
-- Consider CDN for metadata endpoints
-
-## Security Considerations
-
-### OAuth 2.1 Security Benefits
-
-- **PKCE Protection**: Prevents authorization code interception
-- **Implicit Flow Elimination**: Removes token exposure in browser history
-- **Enhanced Native Security**: Protects mobile and desktop applications
-- **Automatic Discovery**: Reduces configuration errors
-
-### Production Security Checklist
-
-- [ ] PKCE enforcement set to "mandatory"
-- [ ] S256 challenge method enabled
-- [ ] Plain challenge method disabled
-- [ ] WebView detection enabled (if using native apps)
-- [ ] HTTPS enforced for all OAuth endpoints
-- [ ] Implicit grant disabled
-- [ ] Regular compliance monitoring
+</details>
 
 ## Troubleshooting
 
@@ -242,49 +195,3 @@ Enable detailed logging by setting the log level to DEBUG for the 'simple_oauth_
 ```php
 \Drupal::logger('simple_oauth_21')->debug('Debug message');
 ```
-
-## Standards Compliance
-
-This module implements the following standards:
-
-- **OAuth 2.1 Draft**: Core specification compliance
-- **RFC 7636**: PKCE implementation and coordination
-- **RFC 8252**: Native application security coordination
-- **RFC 8414**: Server metadata compliance monitoring
-
-## Testing
-
-### Automated Testing
-
-The module includes comprehensive test suites:
-
-- **Unit Tests**: Service logic and configuration validation
-- **Kernel Tests**: Integration testing with Drupal core
-- **Functional Tests**: End-to-end compliance verification
-- **Browser Tests**: Dashboard functionality and user interface
-
-### Manual Testing
-
-1. **Compliance Verification**: Use dashboard to verify complete compliance
-2. **Configuration Testing**: Test all submodule configuration combinations
-3. **Client Integration**: Test with real OAuth clients
-4. **Security Testing**: Verify all security requirements
-
-## Contributing
-
-This module follows Drupal coding standards and contribution guidelines:
-
-- Code should follow Drupal Coding Standards
-- All changes should include appropriate tests
-- Security-related changes require thorough review
-- Documentation should be updated for feature changes
-
-## Support
-
-- **Issue Queue**: https://www.drupal.org/project/issues/simple_oauth_21
-- **Documentation**: https://www.drupal.org/docs/contributed-modules/simple-oauth-21
-- **Security Issues**: Follow Drupal security reporting procedures
-
-## License
-
-GPL-2.0+
