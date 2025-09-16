@@ -183,8 +183,8 @@ function simple_oauth_native_apps_entity_base_field_info(EntityTypeInterface $en
     // Enhanced PKCE requirement override.
     $fields['native_app_enhanced_pkce'] = BaseFieldDefinition::create('list_string')
       ->setLabel(t('Enhanced PKCE'))
-      ->setDescription(t('Override enhanced PKCE requirements for this client. Leave empty for automatic determination.'))
-      ->setRequired(FALSE)
+      ->setDescription(t('Override enhanced PKCE requirements for this client. Automatic determination enables enhanced PKCE for detected native clients based on redirect URI patterns.'))
+      ->setRequired(TRUE)
       ->setSetting('allowed_values', [
         '' => '- Automatic determination -',
         '0' => 'Disable Enhanced PKCE',

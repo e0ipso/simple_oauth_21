@@ -21,6 +21,9 @@ services:
       - '@logger.factory'
       - '@string_translation'
 
+  simple_oauth_native_apps.config_structure_mapper:
+    class: Drupal\simple_oauth_native_apps\Service\ConfigStructureMapper
+
   simple_oauth_native_apps.consumer_form_alter:
     class: Drupal\simple_oauth_native_apps\Form\ConsumerNativeAppsFormAlter
     arguments:
@@ -28,6 +31,7 @@ services:
       - '@entity_type.manager'
       - '@simple_oauth_native_apps.configuration_validator'
       - '@simple_oauth_native_apps.native_client_detector'
+      - '@simple_oauth_native_apps.config_structure_mapper'
 
   simple_oauth_native_apps.native_client_detector:
     class: Drupal\simple_oauth_native_apps\Service\NativeClientDetector
