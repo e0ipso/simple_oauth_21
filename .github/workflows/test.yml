@@ -103,8 +103,9 @@ jobs:
         working-directory: ${{ env.DRUPAL_ROOT }}/${{ env.MODULE_PATH }}
         run: |
           composer config --no-plugins allow-plugins.phpstan/extension-installer true
+          composer --no-interaction config minimum-stability dev
           composer --no-interaction --no-progress install
-          composer --no-interaction require drupal/simple_oauth:^6
+          composer --no-interaction --no-progress require drupal/simple_oauth:^6
 
           npm install --include=dev
 
