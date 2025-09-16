@@ -2,6 +2,7 @@
 argument-hint: [plan-ID]
 description: Execute the task in the plan
 ---
+
 # Task Execution
 
 You are the orchestrator responsible for executing all tasks defined in the execution blueprint of a plan document, so choose an appropriate sub-agent for this role. Your role is to coordinate phase-by-phase execution, manage parallel task processing, and ensure validation gates pass before phase transitions.
@@ -15,11 +16,13 @@ You are the orchestrator responsible for executing all tasks defined in the exec
 5. **Fail safely** - Better to halt and request help than corrupt the execution state
 
 ## Input Requirements
+
 - A plan document with an execution blueprint section. See @.ai/task-manager/TASK_MANAGER.md fo find the plan with ID $1
 - Task files with frontmatter metadata (id, group, dependencies, status)
 - Validation gates document: `@.ai/task-manager/config/hooks/POST_PHASE.md`
 
 ### Input Error Handling
+
 If the plan does not exist, or the plan does not have an execution blueprint section. Stop immediately and show an error to the user.
 
 ## Execution Process
@@ -42,33 +45,33 @@ Read and execute @.ai/task-manager/config/hooks/PRE_PHASE.md
 ### Phase Execution Workflow
 
 1. **Phase Initialization**
-    - Identify current phase from the execution blueprint
-    - List all tasks scheduled for parallel execution in this phase
+   - Identify current phase from the execution blueprint
+   - List all tasks scheduled for parallel execution in this phase
 
 2. **Agent Selection and Task Assignment**
-Read and execute @.ai/task-manager/config/hooks/PRE_TASK_ASSIGNMENT.md
+   Read and execute @.ai/task-manager/config/hooks/PRE_TASK_ASSIGNMENT.md
 
 3. **Parallel Execution**
-    - Deploy all selected agents simultaneously using your internal Task tool
-    - Monitor execution progress for each task
-    - Capture outputs and artifacts from each agent
-    - Update task status in real-time
+   - Deploy all selected agents simultaneously using your internal Task tool
+   - Monitor execution progress for each task
+   - Capture outputs and artifacts from each agent
+   - Update task status in real-time
 
 4. **Phase Completion Verification**
-    - Ensure all tasks in the phase have status: "completed"
-    - Collect and review all task outputs
-    - Document any issues or exceptions encountered
+   - Ensure all tasks in the phase have status: "completed"
+   - Collect and review all task outputs
+   - Document any issues or exceptions encountered
 
 5. **Validation Gate Execution**
-    - Reference validation criteria from `@.ai/task-manager/config/hooks/POST_PHASE.md`
-    - Execute all validation gates for the current phase
-    - Document validation results
-    - Only proceed if ALL validations pass
+   - Reference validation criteria from `@.ai/task-manager/config/hooks/POST_PHASE.md`
+   - Execute all validation gates for the current phase
+   - Document validation results
+   - Only proceed if ALL validations pass
 
 6. **Phase Transition**
-    - Update phase status to "completed"
-    - Initialize next phase
-    - Repeat process until all phases are complete
+   - Update phase status to "completed"
+   - Initialize next phase
+   - Repeat process until all phases are complete
 
 ### Execution Monitoring
 
@@ -81,7 +84,9 @@ Add ✔️ emoji in front of all the tasks in that phase, and update their statu
 `completed`.
 
 #### Task Status Updates
+
 Valid status transitions:
+
 - `pending` → `in-progress` (when agent starts)
 - `in-progress` → `completed` (successful execution)
 - `in-progress` → `failed` (execution error)
@@ -90,6 +95,7 @@ Valid status transitions:
 ### Error Handling
 
 #### Validation Gate Failures
+
 Read and execute @.ai/task-manager/config/hooks/POST_ERROR_DETECTION.md
 
 ### Output Requirements
@@ -116,12 +122,15 @@ Append an execution summary section to the plan document with the following form
 **Completed Date**: [YYYY-MM-DD]
 
 ### Results
+
 [Brief summary of execution results and key deliverables]
 
 ### Noteworthy Events
+
 [Highlight any unexpected events, challenges overcome, or significant findings during execution. If none occurred, state "No significant issues encountered."]
 
 ### Recommendations
+
 [Any follow-up actions or optimizations identified]
 ```
 
@@ -130,6 +139,7 @@ Append an execution summary section to the plan document with the following form
 After successfully appending the execution summary:
 
 **Move completed plan to archive**:
+
 ```bash
 mv .ai/task-manager/plans/[plan-folder] .ai/task-manager/archive/
 ```

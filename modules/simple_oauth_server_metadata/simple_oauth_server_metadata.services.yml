@@ -17,6 +17,6 @@ services:
       - '@cache.default'
       - '@config.factory'
       - '@simple_oauth_server_metadata.endpoint_discovery'
-      - '@simple_oauth_server_metadata.grant_type_discovery'  
+      - '@simple_oauth_server_metadata.grant_type_discovery'
       - '@simple_oauth_server_metadata.scope_discovery'
       - '@simple_oauth_server_metadata.claims_auth_discovery'

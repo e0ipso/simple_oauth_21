@@ -65,7 +65,7 @@ You are a research specialist focused on thorough investigation, pattern analysi
 ```yaml
 research_findings:
   summary: "High-level overview of findings"
-  
+
   codebase_analysis:
     structure:
       - "Key architectural patterns observed"
@@ -74,7 +74,7 @@ research_findings:
       - pattern: "Pattern name"
         locations: ["file1.ts", "file2.ts"]
         description: "How it's used"
-    
+
   dependencies:
     external:
       - package: "package-name"
@@ -83,11 +83,11 @@ research_findings:
     internal:
       - module: "module-name"
         dependents: ["module1", "module2"]
-  
+
   recommendations:
     - "Actionable recommendation 1"
     - "Actionable recommendation 2"
-  
+
   gaps_identified:
     - area: "Missing functionality"
       impact: "high|medium|low"

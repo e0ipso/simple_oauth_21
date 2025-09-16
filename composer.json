@@ -1,12 +1,12 @@
 {
-  "name": "example/gh_contrib_template",
-  "description": "A comprehensive Drupal module template with development infrastructure",
+  "name": "e0ipso/simple_oauth_21",
+  "description": "Implements OAuth 2.1 on top of Simple OAuth for Drupal",
   "type": "drupal-module",
   "license": "GPL-2.0-or-later",
   "authors": [
     {
-      "name": "Template Author",
-      "email": "template@example.com"
+      "name": "Mateu Aguiló Bosch",
+      "email": "mateu@mateuaguilo.com"
     }
   ],
   "require-dev": {

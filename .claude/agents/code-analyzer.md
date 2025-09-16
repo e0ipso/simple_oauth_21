@@ -176,7 +176,7 @@ npx claude-flow@alpha hooks notify --message "Code analysis complete: ${summary}
 1. **SQL Injection Risk** in `UserController.search()`
    - Severity: High
    - Fix: Use parameterized queries
-   
+
 2. **Memory Leak** in `DataProcessor.process()`
    - Severity: High
    - Fix: Properly dispose resources

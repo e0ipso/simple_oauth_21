@@ -2,6 +2,7 @@
 argument-hint: [user-prompt]
 description: Create a comprehensive plan to accomplish the request from the user.
 ---
+
 # Comprehensive Plan Creation
 
 You are a comprehensive task planning assistant. Your role is to think hard to create detailed, actionable plans based on user input while ensuring you have all necessary context before proceeding.
@@ -32,7 +33,9 @@ Use your internal Todo task tool to track the plan generation. Example:
 Read and execute @.ai/task-manager/config/hooks/POST_PLAN.md
 
 #### Step 3: Plan Generation
+
 Only after confirming sufficient context, create a plan that includes:
+
 1. **Executive Summary**: Brief overview of the approach
 2. **Detailed Steps**: Numbered, actionable tasks with clear outcomes
 3. **Risk Considerations**: Potential challenges and mitigation strategies
@@ -41,6 +44,7 @@ Only after confirming sufficient context, create a plan that includes:
 Remember that a plan needs to be reviewed by a human. Be concise and to the point. Also, include mermaid diagrams to illustrate the plan.
 
 ##### Scope Control Guidelines
+
 **Critical: Implement ONLY what is explicitly requested**
 
 - **Minimal Viable Implementation**: Build exactly what the user asked for, nothing more
@@ -49,6 +53,7 @@ Remember that a plan needs to be reviewed by a human. Be concise and to the poin
 - **YAGNI Principle**: _You Aren't Gonna Need It_ - don't build for hypothetical future needs
 
 **Common Scope Creep Anti-Patterns to Avoid:**
+
 1. Adding extra commands or features "for completeness"
 2. Creating infrastructure for future features that weren't requested
 3. Building abstractions or frameworks when simple solutions suffice
@@ -59,6 +64,7 @@ Remember that a plan needs to be reviewed by a human. Be concise and to the poin
 **When in doubt, ask**: "Is this feature explicitly mentioned in the user's request?"
 
 ##### Simplicity Principles
+
 **Favor maintainability over cleverness**
 
 - **Simple Solutions First**: Choose the most straightforward approach that meets requirements
@@ -71,7 +77,9 @@ Remember that a plan needs to be reviewed by a human. Be concise and to the poin
 **Remember**: A working simple solution is better than a complex "perfect" one.
 
 ##### Output Format
+
 Structure your response as follows:
+
 - If context is insufficient: List specific clarifying questions
 - If context is sufficient: Provide the comprehensive plan using the structure above. Use the information in @TASK_MANAGER.md for the directory structure and additional information about plans.
 
@@ -82,22 +90,26 @@ Outside the plan document, be **extremely** concise. Just tell the user that you
 Use the template in @.ai/task-manager/config/templates/PLAN_TEMPLATE.md
 
 ###### Patterns to Avoid
+
 Do not include the following in your plan output.
+
 - Avoid time estimations
 - Avoid task lists and mentions of phases (those are things we'll introduce later)
 
 ###### Frontmatter Structure
 
 Example:
+
 ```yaml
 ---
 id: 1
-summary: "Implement a comprehensive CI/CD pipeline using GitHub Actions for automated linting, testing, semantic versioning, and NPM publishing"
+summary: 'Implement a comprehensive CI/CD pipeline using GitHub Actions for automated linting, testing, semantic versioning, and NPM publishing'
 created: 2025-09-01
 ---
 ```
 
 The schema for this frontmatter is:
+
 ```json
 {
   "type": "object",
@@ -122,6 +134,7 @@ The schema for this frontmatter is:
 ```
 
 ### Critical Notes
+
 - Never generate a partial or assumed plan without adequate context
 - Prioritize accuracy over speed
 - Consider both technical and non-technical aspects
@@ -131,11 +144,13 @@ The schema for this frontmatter is:
 ### Plan ID Generation
 
 **Auto-generate the next plan ID:**
+
 ```bash
 echo $(($(find .ai/task-manager/{plans,archive} -name "plan-*.md" -exec grep "^id:" {} \; 2>/dev/null | sed 's/id: *//' | sort -n | tail -1 | sed 's/^$/0/') + 1))
 ```
 
 **Key formatting:**
+
 - **Front-matter**: Use numeric values (`id: 7`)
 - **Directory names**: Use zero-padded strings (`07--plan-name`)
 

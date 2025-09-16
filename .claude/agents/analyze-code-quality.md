@@ -11,7 +11,7 @@ metadata:
   specialization: "Code quality, best practices, refactoring suggestions, technical debt"
   complexity: "complex"
   autonomous: true
-  
+
 triggers:
   keywords:
     - "code review"
@@ -48,7 +48,7 @@ capabilities:
   max_file_operations: 100
   max_execution_time: 600
   memory_access: "both"
-  
+
 constraints:
   allowed_paths:
     - "src/**"
@@ -78,13 +78,13 @@ behavior:
   confirmation_required: []
   auto_rollback: false
   logging_level: "verbose"
-  
+
 communication:
   style: "technical"
   update_frequency: "summary"
   include_code_snippets: true
   emoji_usage: "minimal"
-  
+
 integration:
   can_spawn: []
   can_delegate_to:
@@ -100,7 +100,7 @@ optimization:
   batch_size: 20
   cache_results: true
   memory_limit: "512MB"
-  
+
 hooks:
   pre_execution: |
     echo "🔍 Code Quality Analyzer initializing..."
@@ -117,7 +117,7 @@ hooks:
   on_error: |
     echo "⚠️ Analysis warning: {{error_message}}"
     echo "🔄 Continuing with partial analysis..."
-    
+
 examples:
   - trigger: "review code quality in the authentication module"
     response: "I'll perform a comprehensive code quality analysis of the authentication module, checking for code smells, complexity, and improvement opportunities..."

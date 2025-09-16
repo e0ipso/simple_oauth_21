@@ -54,20 +54,26 @@ The module supports flexible deployment patterns:
 The Simple OAuth 2.1 ecosystem consists of specialized submodules:
 
 ### simple_oauth_pkce
+
 Implements RFC 7636 PKCE (Proof Key for Code Exchange) for OAuth 2.1 compliance.
+
 - Mandatory S256 challenge method support
 - Configurable enforcement levels
 - Authorization code interception protection
 
 ### simple_oauth_native_apps
+
 Provides RFC 8252 native application security enhancements.
+
 - WebView detection and blocking
 - Custom URI schemes and loopback redirects
 - Enhanced PKCE requirements for native clients
 - Exact redirect URI matching
 
 ### simple_oauth_server_metadata
+
 Implements RFC 8414 Authorization Server Metadata for automatic discovery.
+
 - `/.well-known/oauth-authorization-server` endpoint
 - Capability advertisement and automatic client configuration
 - Support for extended metadata fields
@@ -112,20 +118,24 @@ drush pm:enable simple_oauth_server_metadata
 ### Compliance Levels
 
 **Fully Compliant**: All mandatory and required features enabled
+
 - PKCE with S256 challenge method
 - Implicit grant disabled
 - Server metadata endpoint active
 - All critical security features enabled
 
 **Mostly Compliant**: Core requirements met with minor recommendations
+
 - Essential OAuth 2.1 features active
 - Some recommended features may be missing
 
 **Partially Compliant**: Basic functionality with compliance gaps
+
 - Some mandatory features missing
 - Security vulnerabilities may exist
 
 **Non-Compliant**: Critical OAuth 2.1 requirements missing
+
 - PKCE not enabled or improperly configured
 - Deprecated flows still active
 - Security requirements not met
@@ -138,6 +148,7 @@ drush pm:enable simple_oauth_server_metadata
 ## OAuth 2.1 Implementation Guide
 
 ### Step 1: Core Requirements
+
 1. Enable `simple_oauth_pkce` module
 2. Configure PKCE enforcement to "mandatory"
 3. Enable S256 challenge method
@@ -145,12 +156,14 @@ drush pm:enable simple_oauth_server_metadata
 5. Verify implicit grant is disabled
 
 ### Step 2: Server Metadata (Recommended)
+
 1. Enable `simple_oauth_server_metadata` module
 2. Configure optional endpoints (revocation, introspection)
 3. Add service documentation URLs
 4. Test `/.well-known/oauth-authorization-server` endpoint
 
 ### Step 3: Native App Security (If Applicable)
+
 1. Enable `simple_oauth_native_apps` module
 2. Configure WebView detection policy
 3. Enable custom URI schemes
@@ -158,6 +171,7 @@ drush pm:enable simple_oauth_server_metadata
 5. Enable exact redirect URI matching
 
 ### Step 4: Verification
+
 1. Access compliance dashboard
 2. Verify "Fully Compliant" status
 3. Address any remaining recommendations
@@ -166,16 +180,19 @@ drush pm:enable simple_oauth_server_metadata
 ## Performance Considerations
 
 ### Caching
+
 - Compliance assessments are cached for performance
 - Cache automatically invalidates on configuration changes
 - Manual cache clearing: `drush cache:rebuild`
 
 ### Database Impact
+
 - Minimal database overhead
 - Configuration stored in standard Drupal config system
 - No custom tables required
 
 ### Production Recommendations
+
 - Enable all recommended modules for full compliance
 - Monitor compliance dashboard regularly
 - Implement proper logging and monitoring
@@ -184,12 +201,14 @@ drush pm:enable simple_oauth_server_metadata
 ## Security Considerations
 
 ### OAuth 2.1 Security Benefits
+
 - **PKCE Protection**: Prevents authorization code interception
 - **Implicit Flow Elimination**: Removes token exposure in browser history
 - **Enhanced Native Security**: Protects mobile and desktop applications
 - **Automatic Discovery**: Reduces configuration errors
 
 ### Production Security Checklist
+
 - [ ] PKCE enforcement set to "mandatory"
 - [ ] S256 challenge method enabled
 - [ ] Plain challenge method disabled
@@ -234,13 +253,16 @@ This module implements the following standards:
 ## Testing
 
 ### Automated Testing
+
 The module includes comprehensive test suites:
+
 - **Unit Tests**: Service logic and configuration validation
 - **Kernel Tests**: Integration testing with Drupal core
 - **Functional Tests**: End-to-end compliance verification
 - **Browser Tests**: Dashboard functionality and user interface
 
 ### Manual Testing
+
 1. **Compliance Verification**: Use dashboard to verify complete compliance
 2. **Configuration Testing**: Test all submodule configuration combinations
 3. **Client Integration**: Test with real OAuth clients

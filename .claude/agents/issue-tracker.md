@@ -63,16 +63,16 @@ mcp__github__create_issue {
   repo: "ruv-FANN",
   title: "Integration Review: claude-code-flow and ruv-swarm complete integration",
   body: `## 🔄 Integration Review
-  
+
   ### Overview
   Comprehensive review and integration between packages.
-  
+
   ### Objectives
   - [ ] Verify dependencies and imports
   - [ ] Ensure MCP tools integration
   - [ ] Check hook system integration
   - [ ] Validate memory systems alignment
-  
+
   ### Swarm Coordination
   This issue will be managed by coordinated swarm agents for optimal progress tracking.`,
   labels: ["integration", "review", "enhancement"],
@@ -106,14 +106,14 @@ mcp__github__add_issue_comment {
   - ✅ Architecture review completed (agent-1751574161764)
   - ✅ Dependency analysis finished (agent-1751574162044)
   - ✅ Integration testing verified (agent-1751574162300)
-  
+
   ### Current Status
   - 🔄 Documentation review in progress
   - 📊 Integration score: 89% (Excellent)
-  
+
   ### Next Steps
   - Final validation and merge preparation
-  
+
   ---
   🤖 Generated with Claude Code using ruv-swarm coordination`
 }
@@ -156,34 +156,34 @@ mcp__github__update_issue {
   mcp__claude-flow__agent_spawn { type: "coordinator", name: "Issue Manager" }
   mcp__claude-flow__agent_spawn { type: "analyst", name: "Progress Tracker" }
   mcp__claude-flow__agent_spawn { type: "researcher", name: "Context Gatherer" }
-  
+
   // Create multiple related issues using gh CLI
   Bash(`gh issue create \
     --repo :owner/:repo \
     --title "Feature: Advanced GitHub Integration" \
     --body "Implement comprehensive GitHub workflow automation..." \
     --label "feature,github,high-priority"`)
-    
+
   Bash(`gh issue create \
     --repo :owner/:repo \
     --title "Bug: PR merge conflicts in integration branch" \
     --body "Resolve merge conflicts in integration/claude-code-flow-ruv-swarm..." \
     --label "bug,integration,urgent"`)
-    
+
   Bash(`gh issue create \
     --repo :owner/:repo \
     --title "Documentation: Update integration guides" \
     --body "Update all documentation to reflect new GitHub workflows..." \
     --label "documentation,integration"`)
-  
-  
+
+
   // Set up coordinated tracking
   TodoWrite { todos: [
     { id: "github-feature", content: "Implement GitHub integration", status: "pending", priority: "high" },
     { id: "merge-conflicts", content: "Resolve PR conflicts", status: "pending", priority: "critical" },
     { id: "docs-update", content: "Update documentation", status: "pending", priority: "medium" }
   ]}
-  
+
   // Store initial coordination state
   mcp__claude-flow__memory_usage {
     action: "store",
@@ -203,7 +203,7 @@ mcp__github__update_issue {
 
 ### Objectives
 - [ ] Component A integration
-- [ ] Component B validation  
+- [ ] Component B validation
 - [ ] Testing and verification
 - [ ] Documentation updates
 
@@ -213,7 +213,7 @@ mcp__github__update_issue {
 - [ ] Version compatibility
 - [ ] Import statements
 
-#### Functionality  
+#### Functionality
 - [ ] Core feature integration
 - [ ] API compatibility
 - [ ] Performance validation
@@ -246,7 +246,7 @@ Updates will be posted automatically by swarm agents during implementation.
 ### Expected Behavior
 [What should happen]
 
-### Actual Behavior  
+### Actual Behavior
 [What actually happens]
 
 ### Reproduction Steps

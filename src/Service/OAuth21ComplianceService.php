@@ -204,7 +204,6 @@ final class OAuth21ComplianceService {
     if ($this->isModuleEnabledWithFallback('simple_oauth_native_apps')) {
       $native_config = $this->getModuleConfig('simple_oauth_native_apps.settings');
 
-
       // Custom URI Schemes Support (RFC 8252 requirement).
       $allow_custom_schemes = (bool) ($native_config?->get('allow.custom_uri_schemes') ??
                                       $native_config?->get('allow_custom_uri_schemes') ?? FALSE);
@@ -357,7 +356,6 @@ final class OAuth21ComplianceService {
 
     if ($native_apps_enabled) {
       $native_config = $this->getModuleConfig('simple_oauth_native_apps.settings');
-
 
       // WebView Detection Policy (RFC 8252 recommended for native apps).
       $webview_detection = $native_config?->get('webview.detection') ?? 'off';
@@ -750,7 +748,6 @@ final class OAuth21ComplianceService {
     $config_name = $enabled_name . '.' . $config_suffix;
     return $this->getModuleConfig($config_name);
   }
-
 
   /**
    * Assesses the overall health of the OAuth module ecosystem.
@@ -1198,9 +1195,5 @@ final class OAuth21ComplianceService {
 
     return in_array(strtolower($host_without_port), array_map('strtolower', $loopback_hosts));
   }
-
-
-
-
 
 }

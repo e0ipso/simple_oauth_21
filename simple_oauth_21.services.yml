@@ -5,4 +5,10 @@ services:
 
   simple_oauth_21.compliance_service:
     class: Drupal\simple_oauth_21\Service\OAuth21ComplianceService
-    arguments: ['@module_handler', '@config.factory', '@extension.list.module', '@logger.channel.simple_oauth_21']
+    arguments:
+      [
+        '@module_handler',
+        '@config.factory',
+        '@extension.list.module',
+        '@logger.channel.simple_oauth_21',
+      ]

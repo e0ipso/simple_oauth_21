@@ -328,13 +328,13 @@ final class OAuth21ComplianceController extends ControllerBase {
       $section['errors'][$key]['content'] = [
         '#type' => 'markup',
         '#markup' => '<div class="critical-error-content">' .
-          '<div class="error-header">' .
-          '<h4 class="error-title">❌ ' . ($error['title'] ?? '') . '</h4>' .
-          '<span class="error-level level-' . strtolower($error['level'] ?? 'required') . '">' . $level_label . '</span>' .
-          '</div>' .
-          '<p class="error-description">' . ($error['description'] ?? '') . '</p>' .
-          '<p class="error-message"><strong>' . $this->t('Fix Required:') . '</strong> ' . ($error['message'] ?? '') . '</p>' .
-          '</div>',
+        '<div class="error-header">' .
+        '<h4 class="error-title">❌ ' . ($error['title'] ?? '') . '</h4>' .
+        '<span class="error-level level-' . strtolower($error['level'] ?? 'required') . '">' . $level_label . '</span>' .
+        '</div>' .
+        '<p class="error-description">' . ($error['description'] ?? '') . '</p>' .
+        '<p class="error-message"><strong>' . $this->t('Fix Required:') . '</strong> ' . ($error['message'] ?? '') . '</p>' .
+        '</div>',
       ];
     }
 
@@ -365,8 +365,8 @@ final class OAuth21ComplianceController extends ControllerBase {
     $best_practices = $compliance_status['best_practices'] ?? [];
 
     // Filter for non-compliant recommended items.
-    // Note: When recommended items are not configured, their status is 'recommended' not 'non_compliant'
-    $missing_recommendations = array_filter($best_practices, function($item) {
+    // Note: When recommended items are not configured, their status is 'recommended' not 'non_compliant'.
+    $missing_recommendations = array_filter($best_practices, function ($item) {
       return ($item['level'] ?? '') === 'recommended' &&
              ($item['status'] ?? '') === 'recommended';
     });
@@ -397,13 +397,13 @@ final class OAuth21ComplianceController extends ControllerBase {
       $section['recommendations'][$key]['content'] = [
         '#type' => 'markup',
         '#markup' => '<div class="recommendation-content">' .
-          '<div class="recommendation-header">' .
-          '<h4 class="recommendation-title">⚠️ ' . ($recommendation['title'] ?? '') . '</h4>' .
-          '</div>' .
-          '<p class="recommendation-description">' . ($recommendation['description'] ?? '') . '</p>' .
-          '<p class="recommendation-message"><strong>' . $this->t('Recommended Action:') . '</strong> ' . ($recommendation['message'] ?? '') . '</p>' .
-          '<p class="recommendation-link">' . $this->buildIndividualRecommendationLink($recommendation) . '</p>' .
-          '</div>',
+        '<div class="recommendation-header">' .
+        '<h4 class="recommendation-title">⚠️ ' . ($recommendation['title'] ?? '') . '</h4>' .
+        '</div>' .
+        '<p class="recommendation-description">' . ($recommendation['description'] ?? '') . '</p>' .
+        '<p class="recommendation-message"><strong>' . $this->t('Recommended Action:') . '</strong> ' . ($recommendation['message'] ?? '') . '</p>' .
+        '<p class="recommendation-link">' . $this->buildIndividualRecommendationLink($recommendation) . '</p>' .
+        '</div>',
       ];
     }
 

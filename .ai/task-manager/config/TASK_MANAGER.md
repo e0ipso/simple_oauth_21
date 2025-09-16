@@ -1,6 +1,6 @@
 # Task Manager General Information
 
-This document contains important information that is common to all the /task:*
+This document contains important information that is common to all the /task:\*
 commands for AI assistants.
 
 ## Types of Documents
@@ -22,6 +22,7 @@ task cannot be worked on (or completed) before some other task(s) are completed.
 ## Directory Structure
 
 To find a plan document from its ID use the following command (replace {planId} with the ID, like 06):
+
 ```shell
 find .ai/task-manager/{plans,archive} -name "plan-[0-9][0-9]*--*.md" -type f -exec grep -l "^id: \?{planId}$" {} \;
 ```
@@ -71,6 +72,7 @@ Plans follow a lifecycle that maintains workspace organization:
 3. **Archive Directory**: The `archive/` directory serves as permanent storage for completed work. This separation keeps the active workspace clean while preserving completed plans for reference.
 
 The archive system provides several benefits:
+
 - **Workspace Organization**: Active plans remain easily accessible while completed work doesn't clutter the workspace
 - **Historical Reference**: Completed plans and their tasks remain available for future reference or learning
 - **Automatic Management**: No manual intervention required - archival happens automatically upon successful completion

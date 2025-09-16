@@ -2,21 +2,21 @@
 
 declare(strict_types=1);
 
-namespace Drupal\Tests\gh_contrib_template\FunctionalJavascript;
+namespace Drupal\Tests\simple_oauth_21\FunctionalJavascript;
 
 use Drupal\FunctionalJavascriptTests\WebDriverTestBase;
 
 /**
  * Trivial functional javascript test to ensure JS test infrastructure works.
  *
- * @group gh_contrib_template
+ * @group simple_oauth_21
  */
 class TrivialFunctionalJavascriptTrivialTest extends WebDriverTestBase {
 
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['gh_contrib_template'];
+  protected static $modules = ['simple_oauth_21'];
 
   /**
    * {@inheritdoc}

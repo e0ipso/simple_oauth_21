@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Drupal\Tests\simple_oauth_21\Functional;
+namespace Drupal\Tests\simple_oauth_native_apps\FunctionalJavascript;
 
-use Drupal\Tests\BrowserTestBase;
+use Drupal\FunctionalJavascriptTests\WebDriverTestBase;
 
 /**
- * Trivial functional test to ensure functional test infrastructure works.
+ * Trivial functional javascript test to ensure JS test infrastructure works.
  *
  * @group simple_oauth_21
  */
-class TrivialFunctionalTrivialTest extends BrowserTestBase {
+class TrivialFunctionalJavascriptTrivialTest extends WebDriverTestBase {
 
   /**
    * {@inheritdoc}
@@ -24,7 +24,7 @@ class TrivialFunctionalTrivialTest extends BrowserTestBase {
   protected $defaultTheme = 'stark';
 
   /**
-   * Tests that functional tests can run.
+   * Tests that functional javascript tests can run.
    */
   public function testTrivial(): void {
     $this->assertEquals('trivial', strtolower('TRIVIAL'));

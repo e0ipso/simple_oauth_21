@@ -11,7 +11,7 @@
 function simple_oauth_pkce_install() {
   // Clear caches to register new services and ensure proper decoration.
   drupal_flush_all_caches();
-  
+
   \Drupal::messenger()->addStatus(
     t('Simple OAuth PKCE module has been installed. PKCE enforcement is now active with OAuth 2.1 compliant defaults.')
   );
@@ -23,7 +23,7 @@ function simple_oauth_pkce_install() {
 function simple_oauth_pkce_uninstall() {
   // Clear caches to remove service decorations.
   drupal_flush_all_caches();
-  
+
   \Drupal::messenger()->addStatus(
     t('Simple OAuth PKCE module has been uninstalled. PKCE enforcement is now disabled.')
   );

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\Tests\simple_oauth_21\Unit;
+namespace Drupal\Tests\simple_oauth_server_metadata\Unit;
 
 use PHPUnit\Framework\TestCase;
 

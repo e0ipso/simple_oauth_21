@@ -5,3 +5,4 @@ coverage/**/*
 ci-artifacts/**/*
 playwright-report/**/*
 test-results/**/*
+.claude/agents

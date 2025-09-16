@@ -2,21 +2,21 @@
 
 declare(strict_types=1);
 
-namespace Drupal\Tests\gh_contrib_template\Kernel;
+namespace Drupal\Tests\simple_oauth_21\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
 
 /**
  * Trivial kernel test to ensure kernel test infrastructure works.
  *
- * @group gh_contrib_template
+ * @group simple_oauth_21
  */
 class TrivialKernelTrivialTest extends KernelTestBase {
 
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['gh_contrib_template'];
+  protected static $modules = ['simple_oauth_21'];
 
   /**
    * Tests that kernel tests can run.

@@ -74,13 +74,13 @@ plan:
           dependencies: ["task-ids"]
           estimated_time: "15m"
           priority: "high|medium|low"
-  
+
   critical_path: ["task-1", "task-3", "task-7"]
-  
+
   risks:
     - description: "Potential issue"
       mitigation: "How to handle it"
-  
+
   success_criteria:
     - "Measurable outcome 1"
     - "Measurable outcome 2"

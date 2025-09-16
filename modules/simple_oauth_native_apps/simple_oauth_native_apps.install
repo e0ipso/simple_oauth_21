@@ -15,10 +15,10 @@ function simple_oauth_native_apps_install($is_syncing) {
     // Update the entity definition to include the new base fields.
     $entity_type_manager = \Drupal::entityTypeManager();
     $entity_type_manager->clearCachedDefinitions();
-    
+
     // Update the Consumer entity type definition.
     $definition_update_manager = \Drupal::entityDefinitionUpdateManager();
-    
+
     // Install the native_app_override field.
     if (!$definition_update_manager->getFieldStorageDefinition('native_app_override', 'consumer')) {
       $native_app_override = BaseFieldDefinition::create('list_string')
@@ -83,12 +83,12 @@ function simple_oauth_native_apps_install($is_syncing) {
 function simple_oauth_native_apps_uninstall($is_syncing) {
   if (!$is_syncing) {
     $definition_update_manager = \Drupal::entityDefinitionUpdateManager();
-    
+
     // Remove the native app override field.
     if ($field_storage_definition = $definition_update_manager->getFieldStorageDefinition('native_app_override', 'consumer')) {
       $definition_update_manager->uninstallFieldStorageDefinition($field_storage_definition);
     }
-    
+
     // Remove the enhanced PKCE field.
     if ($field_storage_definition = $definition_update_manager->getFieldStorageDefinition('native_app_enhanced_pkce', 'consumer')) {
       $definition_update_manager->uninstallFieldStorageDefinition($field_storage_definition);
