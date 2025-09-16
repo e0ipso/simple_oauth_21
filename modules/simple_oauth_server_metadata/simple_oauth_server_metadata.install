@@ -1,0 +1,164 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the Simple OAuth Server Metadata module.
+ */
+
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\user\Entity\User;
+
+/**
+ * Implements hook_install().
+ */
+function simple_oauth_server_metadata_install() {
+  $config = \Drupal::configFactory()->getEditable('simple_oauth_server_metadata.settings');
+  
+  // Auto-populate UI locales from enabled languages.
+  $languages = \Drupal::languageManager()->getLanguages();
+  $locales = [];
+  foreach ($languages as $langcode => $language) {
+    // Convert to BCP47 format with common country codes.
+    $locale = _simple_oauth_server_metadata_get_bcp47_locale($langcode);
+    if ($locale) {
+      $locales[] = $locale;
+    }
+  }
+  
+  if (!empty($locales)) {
+    $existing_locales = $config->get('ui_locales_supported') ?: [];
+    // Merge with existing, keeping existing ones first.
+    $merged_locales = array_unique(array_merge($existing_locales, $locales));
+    $config->set('ui_locales_supported', $merged_locales);
+  }
+  
+  // Auto-discover custom claims by executing the hook with mock data.
+  $custom_claims = _simple_oauth_server_metadata_discover_custom_claims();
+  if (!empty($custom_claims)) {
+    $existing_claims = $config->get('additional_claims_supported') ?: [];
+    // Merge with existing, keeping existing ones first.
+    $merged_claims = array_unique(array_merge($existing_claims, $custom_claims));
+    $config->set('additional_claims_supported', $merged_claims);
+  }
+  
+  // Set default registration endpoint to absolute URL if not already set.
+  if (empty($config->get('registration_endpoint'))) {
+    try {
+      $registration_url = \Drupal\Core\Url::fromRoute('entity.consumer.add_form')->setAbsolute()->toString();
+      $config->set('registration_endpoint', $registration_url);
+    }
+    catch (\Exception $e) {
+      // If route doesn't exist, don't set it.
+      \Drupal::logger('simple_oauth_server_metadata')->warning('Could not set default registration endpoint: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+    }
+  }
+  
+  $config->save();
+}
+
+/**
+ * Converts Drupal language codes to BCP47 locales.
+ *
+ * @param string $langcode
+ *   The Drupal language code.
+ *
+ * @return string|null
+ *   The BCP47 locale or NULL if not mappable.
+ */
+function _simple_oauth_server_metadata_get_bcp47_locale($langcode) {
+  // Common mappings from Drupal language codes to BCP47 locales.
+  $mappings = [
+    'en' => 'en-US',
+    'es' => 'es-ES', 
+    'fr' => 'fr-FR',
+    'de' => 'de-DE',
+    'it' => 'it-IT',
+    'pt' => 'pt-PT',
+    'pt-br' => 'pt-BR',
+    'nl' => 'nl-NL',
+    'da' => 'da-DK',
+    'sv' => 'sv-SE',
+    'no' => 'nb-NO',
+    'fi' => 'fi-FI',
+    'pl' => 'pl-PL',
+    'ru' => 'ru-RU',
+    'zh-hans' => 'zh-CN',
+    'zh-hant' => 'zh-TW',
+    'ja' => 'ja-JP',
+    'ko' => 'ko-KR',
+    'ar' => 'ar-SA',
+    'he' => 'he-IL',
+    'hi' => 'hi-IN',
+    'th' => 'th-TH',
+    'tr' => 'tr-TR',
+    'cs' => 'cs-CZ',
+    'sk' => 'sk-SK',
+    'hu' => 'hu-HU',
+    'ro' => 'ro-RO',
+    'bg' => 'bg-BG',
+    'hr' => 'hr-HR',
+    'sl' => 'sl-SI',
+    'et' => 'et-EE',
+    'lv' => 'lv-LV',
+    'lt' => 'lt-LT',
+    'uk' => 'uk-UA',
+  ];
+  
+  return $mappings[$langcode] ?? null;
+}
+
+/**
+ * Discovers custom claims by invoking hook_simple_oauth_oidc_claims_alter.
+ *
+ * @return array
+ *   Array of custom claim names.
+ */
+function _simple_oauth_server_metadata_discover_custom_claims() {
+  // Standard OIDC claims that we should not include in additional claims.
+  $standard_claims = [
+    'sub', 'name', 'given_name', 'family_name', 'middle_name', 'nickname',
+    'preferred_username', 'profile', 'picture', 'website', 'email', 
+    'email_verified', 'gender', 'birthdate', 'zoneinfo', 'locale',
+    'phone_number', 'phone_number_verified', 'address', 'updated_at',
+    'iss', 'aud', 'exp', 'iat', 'auth_time', 'nonce', 'acr', 'amr', 'azp'
+  ];
+  
+  try {
+    // Create a mock user account for testing.
+    $mock_user = User::getAnonymousUser();
+    
+    // Prepare mock context similar to what Simple OAuth would provide.
+    $context = [
+      'account' => $mock_user,
+      'claims' => [], // Empty claims array for discovery.
+    ];
+    
+    // Start with empty claim values.
+    $claim_values = [];
+    
+    // Invoke all implementations of hook_simple_oauth_oidc_claims_alter.
+    \Drupal::moduleHandler()->invokeAll('simple_oauth_oidc_claims_alter', [&$claim_values, &$context]);
+    
+    // Extract custom claim names (keys from the array).
+    $custom_claims = array_keys($claim_values);
+    
+    // Filter out standard OIDC claims.
+    $custom_claims = array_diff($custom_claims, $standard_claims);
+    
+    // Remove empty or non-string claims.
+    $custom_claims = array_filter($custom_claims, function($claim) {
+      return is_string($claim) && !empty(trim($claim));
+    });
+    
+    return array_values($custom_claims);
+  }
+  catch (\Exception $e) {
+    // If there's an error during discovery, log it but don't fail installation.
+    \Drupal::logger('simple_oauth_server_metadata')->warning('Failed to discover custom claims: @message', [
+      '@message' => $e->getMessage(),
+    ]);
+    return [];
+  }
+}

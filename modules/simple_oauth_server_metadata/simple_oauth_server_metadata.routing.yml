@@ -1,0 +1,22 @@
+simple_oauth_server_metadata.well_known:
+  path: '/.well-known/oauth-authorization-server'
+  defaults:
+    _controller: '\Drupal\simple_oauth_server_metadata\Controller\ServerMetadataController::metadata'
+    _title: 'OAuth 2.0 Authorization Server Metadata'
+  methods: [GET]
+  requirements:
+    _access: 'TRUE'
+  options:
+    _format: 'json'
+    no_cache: FALSE
+
+simple_oauth_server_metadata.settings:
+  path: '/admin/config/people/simple_oauth/oauth-21/server-metadata'
+  defaults:
+    _form: '\Drupal\simple_oauth_server_metadata\Form\ServerMetadataSettingsForm'
+    _title: 'Server Metadata Settings'
+  requirements:
+    _permission: 'administer simple_oauth entities'
+  options:
+    _admin_route: TRUE
+

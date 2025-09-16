@@ -1,0 +1,9 @@
+simple_oauth_pkce.settings:
+  path: '/admin/config/people/simple_oauth/oauth-21/pkce'
+  defaults:
+    _form: '\Drupal\simple_oauth_pkce\Form\PkceSettingsForm'
+    _title: 'PKCE Settings'
+  requirements:
+    _permission: 'administer simple_oauth entities'
+  options:
+    _admin_route: TRUE

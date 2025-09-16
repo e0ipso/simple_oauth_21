@@ -1,0 +1,8 @@
+services:
+  logger.channel.simple_oauth_21:
+    parent: logger.channel_base
+    arguments: ['simple_oauth_21']
+
+  simple_oauth_21.compliance_service:
+    class: Drupal\simple_oauth_21\Service\OAuth21ComplianceService
+    arguments: ['@module_handler', '@config.factory', '@extension.list.module', '@logger.channel.simple_oauth_21']

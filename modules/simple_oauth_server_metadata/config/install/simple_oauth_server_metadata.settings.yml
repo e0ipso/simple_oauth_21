@@ -1,0 +1,9 @@
+registration_endpoint: ''
+revocation_endpoint: ''
+introspection_endpoint: ''
+service_documentation: ''
+op_policy_uri: ''
+op_tos_uri: ''
+ui_locales_supported: []
+additional_claims_supported: []
+additional_signing_algorithms: []

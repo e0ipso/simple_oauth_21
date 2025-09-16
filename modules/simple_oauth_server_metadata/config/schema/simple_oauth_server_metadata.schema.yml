@@ -1,0 +1,46 @@
+simple_oauth_server_metadata.settings:
+  type: config_object
+  label: 'RFC 8414 Server Metadata Settings'
+  mapping:
+    registration_endpoint:
+      type: uri
+      label: 'Client Registration Endpoint'
+      description: 'URL of the OAuth 2.0 Client Registration endpoint'
+    revocation_endpoint:
+      type: uri
+      label: 'Token Revocation Endpoint'
+      description: 'URL of the OAuth 2.0 Token Revocation endpoint'
+    introspection_endpoint:
+      type: uri
+      label: 'Token Introspection Endpoint'
+      description: 'URL of the OAuth 2.0 Token Introspection endpoint'
+    service_documentation:
+      type: uri
+      label: 'Service Documentation'
+      description: 'URL for human-readable documentation of the authorization server'
+    op_policy_uri:
+      type: uri
+      label: 'Operator Policy URI'
+      description: 'URL for the authorization server policy document'
+    op_tos_uri:
+      type: uri
+      label: 'Operator Terms of Service URI'
+      description: 'URL for the authorization server terms of service'
+    ui_locales_supported:
+      type: sequence
+      label: 'Supported UI Locales'
+      description: 'Languages and scripts supported for the user interface'
+      sequence:
+        type: string
+    additional_claims_supported:
+      type: sequence
+      label: 'Additional Claims Supported'
+      description: 'Custom claims supported beyond defaults'
+      sequence:
+        type: string
+    additional_signing_algorithms:
+      type: sequence
+      label: 'Additional Signing Algorithms'
+      description: 'JWT signing algorithms supported beyond RS256'
+      sequence:
+        type: string

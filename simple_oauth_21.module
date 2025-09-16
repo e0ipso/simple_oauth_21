@@ -1,0 +1,23 @@
+<?php
+
+/**
+ * @file
+ * Simple OAuth 2.1 compliance umbrella module.
+ */
+
+declare(strict_types=1);
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function simple_oauth_21_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.simple_oauth_21':
+      return '<p>' . t('The Simple OAuth 2.1 module provides OAuth 2.1 compliance features and serves as an umbrella module for coordinating OAuth 2.1 related functionality.') . '</p>';
+
+    case 'simple_oauth_21.dashboard':
+      return '<p>' . t('This dashboard provides an overview of OAuth 2.1 compliance status and configuration options.') . '</p>';
+  }
+}

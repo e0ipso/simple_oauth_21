@@ -1,0 +1,53 @@
+<?php
+
+/**
+ * @file
+ * Contains simple_oauth_pkce.module.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function simple_oauth_pkce_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.simple_oauth_pkce':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('The Simple OAuth PKCE module implements RFC 7636 Proof Key for Code Exchange (PKCE) extension for OAuth 2.0 authorization flows. PKCE is designed to increase the security of OAuth 2.0 public clients and is mandatory for OAuth 2.1 compliance.') . '</p>';
+      
+      $output .= '<h3>' . t('Features') . '</h3>';
+      $output .= '<ul>';
+      $output .= '<li>' . t('Implements RFC 7636 PKCE specification') . '</li>';
+      $output .= '<li>' . t('OAuth 2.1 compliance support') . '</li>';
+      $output .= '<li>' . t('Configurable enforcement levels: disabled, optional, or mandatory') . '</li>';
+      $output .= '<li>' . t('Support for both S256 and plain challenge methods') . '</li>';
+      $output .= '<li>' . t('Enhanced security for public OAuth clients') . '</li>';
+      $output .= '</ul>';
+      
+      $output .= '<h3>' . t('Configuration') . '</h3>';
+      $output .= '<p>' . t('Configure PKCE settings at <a href=":url">Administration » Configuration » People » Simple OAuth » PKCE Settings</a>.', [
+        ':url' => \Drupal::url('simple_oauth_pkce.settings'),
+      ]) . '</p>';
+      
+      $output .= '<h3>' . t('Security Benefits') . '</h3>';
+      $output .= '<ul>';
+      $output .= '<li>' . t('Prevents authorization code interception attacks') . '</li>';
+      $output .= '<li>' . t('Eliminates need for client secrets in public clients') . '</li>';
+      $output .= '<li>' . t('Protects against malicious applications on the same device') . '</li>';
+      $output .= '</ul>';
+      
+      $output .= '<h3>' . t('Resources') . '</h3>';
+      $output .= '<ul>';
+      $output .= '<li><a href="https://tools.ietf.org/html/rfc7636" target="_blank">' . t('RFC 7636: Proof Key for Code Exchange by OAuth Public Clients') . '</a></li>';
+      $output .= '<li><a href="https://oauth.net/2.1/" target="_blank">' . t('OAuth 2.1 Security Best Current Practice') . '</a></li>';
+      $output .= '<li><a href="https://www.drupal.org/project/simple_oauth" target="_blank">' . t('Simple OAuth module project page') . '</a></li>';
+      $output .= '</ul>';
+      
+      return $output;
+      
+    case 'simple_oauth_pkce.settings':
+      return '<p>' . t('Configure PKCE (Proof Key for Code Exchange) settings for enhanced OAuth 2.0 security. PKCE is mandatory for OAuth 2.1 compliance and recommended for all OAuth implementations.') . '</p>';
+  }
+}

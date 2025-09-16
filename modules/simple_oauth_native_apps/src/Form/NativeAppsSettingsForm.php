@@ -1,0 +1,423 @@
+<?php
+
+namespace Drupal\simple_oauth_native_apps\Form;
+
+use Drupal\simple_oauth_native_apps\Service\UserAgentAnalyzer;
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\TypedConfigManagerInterface;
+use Drupal\Core\Form\ConfigFormBase;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Form\RedundantEditableConfigNamesTrait;
+use Drupal\Core\Messenger\MessengerInterface;
+use Drupal\simple_oauth_native_apps\Service\ConfigurationValidator;
+use Symfony\Component\DependencyInjection\ContainerInterface;
+
+/**
+ * Configure Simple OAuth Native Apps settings.
+ */
+class NativeAppsSettingsForm extends ConfigFormBase {
+
+  use RedundantEditableConfigNamesTrait;
+
+  /**
+   * The configuration validator.
+   *
+   * @var \Drupal\simple_oauth_native_apps\Service\ConfigurationValidator
+   */
+  protected ConfigurationValidator $configurationValidator;
+
+  /**
+   * The user agent analyzer service.
+   *
+   * @var \Drupal\simple_oauth_native_apps\Service\UserAgentAnalyzer
+   */
+  protected $userAgentAnalyzer;
+
+  /**
+   * Constructs a new NativeAppsSettingsForm.
+   *
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The factory for configuration objects.
+   * @param \Drupal\Core\Config\TypedConfigManagerInterface $typed_config_manager
+   *   The typed config manager.
+   * @param \Drupal\Core\Messenger\MessengerInterface $messenger
+   *   The messenger service.
+   * @param \Drupal\simple_oauth_native_apps\Service\ConfigurationValidator $configuration_validator
+   *   The configuration validator service.
+   * @param \Drupal\simple_oauth_native_apps\Service\UserAgentAnalyzer $user_agent_analyzer
+   *   The user agent analyzer service.
+   */
+  public function __construct(
+    ConfigFactoryInterface $config_factory,
+    TypedConfigManagerInterface $typed_config_manager,
+    MessengerInterface $messenger,
+    ConfigurationValidator $configuration_validator,
+    UserAgentAnalyzer $user_agent_analyzer,
+  ) {
+    parent::__construct($config_factory, $typed_config_manager);
+    $this->messenger = $messenger;
+    $this->configurationValidator = $configuration_validator;
+    $this->userAgentAnalyzer = $user_agent_analyzer;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container): self {
+    return new self(
+      $container->get('config.factory'),
+      $container->get('config.typed'),
+      $container->get('messenger'),
+      $container->get('simple_oauth_native_apps.configuration_validator'),
+      $container->get('simple_oauth_native_apps.user_agent_analyzer')
+    );
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getFormId(): string {
+    return 'simple_oauth_native_apps_settings';
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function getEditableConfigNames(): array {
+    return ['simple_oauth_native_apps.settings'];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function buildForm(array $form, FormStateInterface $form_state): array {
+    $config = $this->config('simple_oauth_native_apps.settings');
+
+    $form['#tree'] = TRUE;
+
+    // Module status section removed per request.
+    // Global security enforcement.
+    $form['security'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Security Settings'),
+      '#open' => TRUE,
+    ];
+
+    $form['security']['enforce_native_security'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enforce native app security'),
+      '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Enable RFC 8252 native app security requirements for comprehensive protection. This adds WebView detection, strict redirect URI validation, and enhanced PKCE requirements beyond basic OAuth 2.0. (<a href="https://datatracker.ietf.org/doc/html/rfc8252#section-8" target="_blank">RFC 8252 Section 8</a>)'),
+      '#default_value' => $config->get('enforce_native_security'),
+    ];
+
+    // WebView Detection Settings.
+    $form['webview'] = [
+      '#type' => 'details',
+      '#title' => $this->t('WebView Detection'),
+      '#description' => $this->t('Configure how to handle authorization requests from embedded WebViews. RFC 8252 recommends against using embedded WebViews for OAuth flows.'),
+      '#open' => TRUE,
+    ];
+
+    $form['webview']['webview_detection'] = [
+      '#type' => 'radios',
+      '#title' => $this->t('WebView detection policy'),
+      '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Set to "Block" to prevent WebView-based attacks in native applications. RFC 8252 explicitly recommends against embedded WebViews for OAuth flows due to security vulnerabilities. (<a href="https://datatracker.ietf.org/doc/html/rfc8252#section-8.12" target="_blank">RFC 8252 Section 8.12</a>)'),
+      '#options' => [
+        'off' => $this->t('Off - Allow all requests (not recommended)'),
+        'warn' => $this->t('Warn - Add headers but allow requests'),
+        'block' => $this->t('Block - Reject WebView requests (recommended)'),
+      ],
+      '#default_value' => $config->get('webview.detection'),
+      '#required' => TRUE,
+    ];
+
+    $form['webview']['webview_custom_message'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Custom WebView warning message'),
+      '#description' => $this->t('Custom message to display when embedded WebView is detected. Leave empty to use the default message.'),
+      '#default_value' => $config->get('webview.custom_message'),
+      '#rows' => 3,
+      '#states' => [
+        'visible' => [
+          ':input[name="webview[webview_detection]"]' => ['!value' => 'off'],
+        ],
+      ],
+    ];
+
+    $form['webview']['advanced'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Advanced WebView Detection'),
+      '#open' => FALSE,
+    ];
+
+    // Display current built-in patterns.
+    $form['webview']['advanced']['builtin_patterns'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Built-in WebView patterns (automatically blocked)'),
+      '#description' => $this->t('These patterns are built into the module and automatically detect embedded WebViews. The text areas below are for adding <strong>additional</strong> custom patterns.'),
+      '#open' => FALSE,
+    ];
+
+    $form['webview']['advanced']['builtin_patterns']['pattern_list'] = [
+      '#markup' => $this->getBuiltinPatternsMarkup(),
+    ];
+
+    $form['webview']['advanced']['webview_whitelist'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Additional WebView whitelist patterns'),
+      '#description' => $this->t('<strong>Additional</strong> user-agent patterns to whitelist (bypass WebView detection). These patterns will override the built-in detection above. Enter one pattern per line. Use regular expressions.'),
+      '#default_value' => implode("\n", $config->get('webview.whitelist') ?? []),
+      '#rows' => 4,
+      '#placeholder' => "MyTrustedApp/.*\nCompanyApp/[0-9.]+",
+    ];
+
+    $form['webview']['advanced']['webview_patterns'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Additional WebView detection patterns'),
+      '#description' => $this->t('<strong>Additional</strong> user-agent patterns to detect as embedded WebViews beyond the built-in patterns shown above. Enter one pattern per line. Use regular expressions.'),
+      '#default_value' => implode("\n", $config->get('webview.patterns') ?? []),
+      '#rows' => 4,
+      '#placeholder' => "SuspiciousWebView/.*\nEmbeddedBrowser/.*",
+    ];
+
+    // Redirect URI Validation Settings.
+    $form['redirect_uri'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Redirect URI Validation'),
+      '#description' => $this->t('Configure redirect URI validation methods and security levels for native applications.'),
+      '#open' => TRUE,
+    ];
+
+    $form['redirect_uri']['require_exact_redirect_match'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Require exact redirect URI match'),
+      '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Exact redirect URI matching prevents redirect manipulation attacks. This is essential for native app security and recommended for maximum protection. (<a href="https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/#section-4.1.3" target="_blank">OAuth 2.1 Draft Section 4.1.3</a>)'),
+      '#default_value' => $config->get('require_exact_redirect_match'),
+    ];
+
+    $form['redirect_uri']['allow_custom_uri_schemes'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Allow custom URI schemes'),
+      '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Custom URI schemes (e.g., myapp://callback) are the preferred redirect method for native applications. This provides better security than web-based redirects for mobile and desktop apps. (<a href="https://datatracker.ietf.org/doc/html/rfc8252#section-7.1" target="_blank">RFC 8252 Section 7.1</a>)'),
+      '#default_value' => $config->get('allow_custom_uri_schemes'),
+    ];
+
+    $form['redirect_uri']['allow_loopback_redirects'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Allow loopback redirects'),
+      '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Loopback redirects (e.g., http://127.0.0.1:8080/callback) are essential for command-line and desktop applications. RFC 8252 recommends this for native apps that cannot use custom URI schemes. (<a href="https://datatracker.ietf.org/doc/html/rfc8252#section-7.3" target="_blank">RFC 8252 Section 7.3</a>)'),
+      '#default_value' => $config->get('allow_loopback_redirects'),
+    ];
+
+    // PKCE Settings.
+    $form['pkce'] = [
+      '#type' => 'details',
+      '#title' => $this->t('PKCE (Proof Key for Code Exchange)'),
+      '#description' => $this->t('Configure enhanced PKCE requirements that work alongside the Simple OAuth PKCE module.'),
+      '#open' => TRUE,
+    ];
+
+    $form['pkce']['pkce_relationship'] = [
+      '#type' => 'item',
+      '#title' => $this->t('Understanding PKCE vs Enhanced Security'),
+      '#description' => $this->t('<ul>
+        <li><strong>Simple OAuth PKCE Module:</strong> Provides basic PKCE implementation (RFC 7636) for all OAuth clients</li>
+        <li><strong>Native Apps Enhanced Security:</strong> Adds RFC 8252 specific requirements for native applications</li>
+        <li><strong>When enhanced security is disabled:</strong> Native apps still receive basic PKCE protection but skip additional validations like WebView detection</li>
+      </ul>'),
+    ];
+
+    $form['pkce']['enhanced_pkce_for_native'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enhanced PKCE for native apps'),
+      '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Enhanced PKCE enforces mandatory S256 challenge method and stricter validation for native applications. This goes beyond basic PKCE to meet OAuth 2.1 security requirements for native apps. (<a href="https://datatracker.ietf.org/doc/html/rfc8252#section-8.1" target="_blank">RFC 8252 Section 8.1</a>)'),
+      '#default_value' => $config->get('enhanced_pkce_for_native'),
+    ];
+
+    // Add help text.
+    $form['help'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Help & Information'),
+      '#open' => FALSE,
+    ];
+
+    $form['help']['info'] = [
+      '#markup' => $this->t('<p><strong>About RFC 8252 Native Apps</strong></p>
+        <p>This module implements security recommendations from RFC 8252 "OAuth 2.0 for Native Apps". Key features include:</p>
+        <ul>
+          <li><strong>WebView Detection:</strong> Identifies and optionally blocks embedded WebView authorization attempts</li>
+          <li><strong>Enhanced Redirect URI Validation:</strong> Supports custom URI schemes and loopback redirects</li>
+          <li><strong>PKCE Enhancement:</strong> Provides additional PKCE validation for native applications</li>
+          <li><strong>Flexible Configuration:</strong> Allows per-client overrides of global settings</li>
+        </ul>
+        <p>For more information, see <a href="https://tools.ietf.org/html/rfc8252" target="_blank">RFC 8252</a>.</p>'),
+    ];
+
+    return parent::buildForm($form, $form_state);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function validateForm(array &$form, FormStateInterface $form_state): void {
+    parent::validateForm($form, $form_state);
+
+    $values = $form_state->getValues();
+
+    // Convert form values to config format for validation.
+    $config_values = $this->convertFormValuesToConfig($values);
+
+    // Use the configuration validator service.
+    $errors = $this->configurationValidator->validateConfiguration($config_values);
+
+    // Set form errors for validation failures.
+    foreach ($errors as $error) {
+      $form_state->setErrorByName('', $error);
+    }
+
+    // Additional form-specific validations.
+    $this->validateFormSpecificRules($values, $form_state);
+  }
+
+  /**
+   * Converts form values to configuration format.
+   *
+   * @param array $values
+   *   Form values.
+   *
+   * @return array
+   *   Configuration array.
+   */
+  protected function convertFormValuesToConfig(array $values): array {
+    return [
+      'enforce_native_security' => $values['security']['enforce_native_security'] ?? FALSE,
+      'webview_detection' => $values['webview']['webview_detection'] ?? 'warn',
+      'webview_custom_message' => $values['webview']['webview_custom_message'] ?? '',
+      'webview_whitelist' => !empty($values['webview']['advanced']['webview_whitelist'])
+        ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['webview_whitelist'])))
+        : [],
+      'webview_patterns' => !empty($values['webview']['advanced']['webview_patterns'])
+        ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['webview_patterns'])))
+        : [],
+      'require_exact_redirect_match' => $values['redirect_uri']['require_exact_redirect_match'] ?? TRUE,
+      'allow_custom_uri_schemes' => $values['redirect_uri']['allow_custom_uri_schemes'] ?? TRUE,
+      'allow_loopback_redirects' => $values['redirect_uri']['allow_loopback_redirects'] ?? TRUE,
+      'enhanced_pkce_for_native' => $values['pkce']['enhanced_pkce_for_native'] ?? TRUE,
+    ];
+  }
+
+  /**
+   * Validates form-specific rules and provides warnings.
+   *
+   * @param array $values
+   *   Form values.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   Form state.
+   */
+  protected function validateFormSpecificRules(array $values, FormStateInterface $form_state): void {
+    // Warning if security is not enforced.
+    if (!$values['security']['enforce_native_security']) {
+      $this->messenger->addWarning($this->t('Enhanced native security is disabled. Native apps will receive basic PKCE protection (RFC 7636) but skip WebView detection and strict redirect validation (RFC 8252).'));
+    }
+
+    // Warning if WebView detection is off.
+    if ($values['webview']['webview_detection'] === 'off') {
+      $this->messenger->addWarning($this->t('WebView detection is disabled. This is not recommended as it may allow insecure embedded WebView authorization flows.'));
+    }
+
+    // Information message for enhanced PKCE.
+    if ($values['pkce']['enhanced_pkce_for_native']) {
+      $this->messenger->addMessage($this->t('Enhanced PKCE is enabled, providing additional security for native applications.'));
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function submitForm(array &$form, FormStateInterface $form_state): void {
+    $values = $form_state->getValues();
+    $config = $this->config('simple_oauth_native_apps.settings');
+
+    // Save security settings.
+    $config->set('enforce_native_security', (bool) $values['security']['enforce_native_security']);
+
+    // Save WebView settings.
+    $config->set('webview.detection', $values['webview']['webview_detection']);
+    $config->set('webview.custom_message', $values['webview']['webview_custom_message']);
+
+    // Process and save WebView patterns.
+    $webview_whitelist = !empty($values['webview']['advanced']['webview_whitelist'])
+      ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['webview_whitelist'])))
+      : [];
+    $config->set('webview.whitelist', $webview_whitelist);
+
+    $webview_patterns = !empty($values['webview']['advanced']['webview_patterns'])
+      ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['webview_patterns'])))
+      : [];
+    $config->set('webview.patterns', $webview_patterns);
+
+    // Save redirect URI settings.
+    $config->set('require_exact_redirect_match', (bool) $values['redirect_uri']['require_exact_redirect_match']);
+    $config->set('allow_custom_uri_schemes', (bool) $values['redirect_uri']['allow_custom_uri_schemes']);
+    $config->set('allow_loopback_redirects', (bool) $values['redirect_uri']['allow_loopback_redirects']);
+
+    // Save PKCE settings.
+    $config->set('enhanced_pkce_for_native', (bool) $values['pkce']['enhanced_pkce_for_native']);
+
+    $config->save();
+
+    parent::submitForm($form, $form_state);
+  }
+
+  /**
+   * Generates markup for displaying built-in WebView patterns.
+   *
+   * @return string
+   *   HTML markup showing the patterns organized by category.
+   */
+  protected function getBuiltinPatternsMarkup(): string {
+    // Get the pattern statistics from the UserAgentAnalyzer service.
+    $stats = $this->userAgentAnalyzer->getPatternStatistics();
+
+    // Create organized display of pattern categories.
+    $categories = [
+      'ios_native' => $this->t('iOS Native WebViews'),
+      'android_native' => $this->t('Android Native WebViews'),
+      'social_media' => $this->t('Social Media Apps'),
+      'messaging_browsers' => $this->t('Messaging & Browser Apps'),
+      'other_apps' => $this->t('Other Mobile Apps'),
+      'cross_platform_frameworks' => $this->t('Cross-Platform Frameworks'),
+    ];
+
+    $output = '<div class="webview-patterns-summary">';
+    $output .= '<p><strong>' . $this->t('Pattern Summary') . ':</strong></p>';
+    $output .= '<ul>';
+
+    foreach ($categories as $category => $label) {
+      $count = $stats[$category] ?? 0;
+      if ($count > 0) {
+        $output .= '<li>' . $label . ': <strong>' . $count . '</strong> ' . $this->formatPlural($count, 'pattern', 'patterns') . '</li>';
+      }
+    }
+
+    $safe_count = $stats['safe_browsers'] ?? 0;
+    $output .= '<li>' . $this->t('Safe Browser Patterns') . ': <strong>' . $safe_count . '</strong> ' . $this->formatPlural($safe_count, 'pattern', 'patterns') . '</li>';
+    $output .= '</ul>';
+
+    $output .= '<p><em>' . $this->t('Total: @total detection patterns built-in', ['@total' => $stats['total'] - $safe_count]) . '</em></p>';
+
+    // Add examples of what gets detected.
+    $output .= '<details class="webview-examples"><summary>' . $this->t('Examples of detected apps') . '</summary>';
+    $output .= '<ul>';
+    $output .= '<li><strong>' . $this->t('Social Media') . ':</strong> Facebook, Instagram, Twitter, LinkedIn, WhatsApp, TikTok</li>';
+    $output .= '<li><strong>' . $this->t('Messaging') . ':</strong> WeChat, Line, Telegram, Baidu Browser</li>';
+    $output .= '<li><strong>' . $this->t('Mobile Frameworks') . ':</strong> Cordova, PhoneGap, Ionic, React Native, Electron, Capacitor</li>';
+    $output .= '<li><strong>' . $this->t('Native WebViews') . ':</strong> Android WebView, iOS WKWebView/UIWebView</li>';
+    $output .= '</ul></details>';
+
+    $output .= '</div>';
+
+    return $output;
+  }
+
+}

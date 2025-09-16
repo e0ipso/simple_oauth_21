@@ -1,0 +1,9 @@
+name: 'Simple OAuth PKCE'
+type: module
+description: 'Implements RFC 7636 PKCE (Proof Key for Code Exchange) for OAuth 2.1 compliance'
+package: 'Authentication'
+core_version_requirement: ^10.2 || ^11
+configure: simple_oauth_pkce.settings
+dependencies:
+  - simple_oauth_21:simple_oauth_21
+  - simple_oauth:simple_oauth

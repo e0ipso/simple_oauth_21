@@ -1,0 +1,97 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the Simple OAuth Native Apps module.
+ */
+
+use Drupal\Core\Field\BaseFieldDefinition;
+
+/**
+ * Implements hook_install().
+ */
+function simple_oauth_native_apps_install($is_syncing) {
+  if (!$is_syncing) {
+    // Update the entity definition to include the new base fields.
+    $entity_type_manager = \Drupal::entityTypeManager();
+    $entity_type_manager->clearCachedDefinitions();
+    
+    // Update the Consumer entity type definition.
+    $definition_update_manager = \Drupal::entityDefinitionUpdateManager();
+    
+    // Install the native_app_override field.
+    if (!$definition_update_manager->getFieldStorageDefinition('native_app_override', 'consumer')) {
+      $native_app_override = BaseFieldDefinition::create('list_string')
+        ->setLabel(t('Native App Override'))
+        ->setDescription(t('Manual override for native client detection. Leave empty for automatic detection.'))
+        ->setRequired(FALSE)
+        ->setSetting('allowed_values', [
+          '' => '- Automatic detection -',
+          '0' => 'Force as Web Client',
+          '1' => 'Force as Native App',
+        ])
+        ->setDefaultValue('')
+        ->setDisplayOptions('form', [
+          'type' => 'options_select',
+          'weight' => 10,
+          'settings' => [],
+        ])
+        ->setDisplayOptions('view', [
+          'type' => 'list_default',
+          'label' => 'above',
+          'weight' => 10,
+        ])
+        ->setDisplayConfigurable('form', TRUE)
+        ->setDisplayConfigurable('view', TRUE);
+
+      $definition_update_manager->installFieldStorageDefinition('native_app_override', 'consumer', 'simple_oauth_native_apps', $native_app_override);
+    }
+
+    // Install the native_app_enhanced_pkce field.
+    if (!$definition_update_manager->getFieldStorageDefinition('native_app_enhanced_pkce', 'consumer')) {
+      $native_app_enhanced_pkce = BaseFieldDefinition::create('list_string')
+        ->setLabel(t('Enhanced PKCE'))
+        ->setDescription(t('Override enhanced PKCE requirements for this client. Leave empty for automatic determination.'))
+        ->setRequired(FALSE)
+        ->setSetting('allowed_values', [
+          '' => '- Automatic determination -',
+          '0' => 'Disable Enhanced PKCE',
+          '1' => 'Require Enhanced PKCE',
+        ])
+        ->setDefaultValue('')
+        ->setDisplayOptions('form', [
+          'type' => 'options_select',
+          'weight' => 11,
+          'settings' => [],
+        ])
+        ->setDisplayOptions('view', [
+          'type' => 'list_default',
+          'label' => 'above',
+          'weight' => 11,
+        ])
+        ->setDisplayConfigurable('form', TRUE)
+        ->setDisplayConfigurable('view', TRUE);
+
+      $definition_update_manager->installFieldStorageDefinition('native_app_enhanced_pkce', 'consumer', 'simple_oauth_native_apps', $native_app_enhanced_pkce);
+    }
+  }
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function simple_oauth_native_apps_uninstall($is_syncing) {
+  if (!$is_syncing) {
+    $definition_update_manager = \Drupal::entityDefinitionUpdateManager();
+    
+    // Remove the native app override field.
+    if ($field_storage_definition = $definition_update_manager->getFieldStorageDefinition('native_app_override', 'consumer')) {
+      $definition_update_manager->uninstallFieldStorageDefinition($field_storage_definition);
+    }
+    
+    // Remove the enhanced PKCE field.
+    if ($field_storage_definition = $definition_update_manager->getFieldStorageDefinition('native_app_enhanced_pkce', 'consumer')) {
+      $definition_update_manager->uninstallFieldStorageDefinition($field_storage_definition);
+    }
+  }
+}

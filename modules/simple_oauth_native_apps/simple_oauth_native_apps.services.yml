@@ -1,0 +1,71 @@
+services:
+  logger.channel.simple_oauth_native_apps:
+    parent: logger.channel_base
+    arguments:
+      - 'simple_oauth_native_apps'
+
+  simple_oauth_native_apps.redirect_uri_validator:
+    class: Drupal\simple_oauth_native_apps\Service\RedirectUriValidator
+    arguments:
+      - '@config.factory'
+      - '@logger.channel.simple_oauth_native_apps'
+
+  simple_oauth_native_apps.user_agent_analyzer:
+    class: Drupal\simple_oauth_native_apps\Service\UserAgentAnalyzer
+    arguments:
+      - '@config.factory'
+
+  simple_oauth_native_apps.configuration_validator:
+    class: Drupal\simple_oauth_native_apps\Service\ConfigurationValidator
+    arguments:
+      - '@logger.factory'
+      - '@string_translation'
+
+  simple_oauth_native_apps.consumer_form_alter:
+    class: Drupal\simple_oauth_native_apps\Form\ConsumerNativeAppsFormAlter
+    arguments:
+      - '@config.factory'
+      - '@entity_type.manager'
+      - '@simple_oauth_native_apps.configuration_validator'
+      - '@simple_oauth_native_apps.native_client_detector'
+
+  simple_oauth_native_apps.native_client_detector:
+    class: Drupal\simple_oauth_native_apps\Service\NativeClientDetector
+    arguments:
+      - '@config.factory'
+      - '@logger.factory'
+      - '@entity_type.manager'
+
+  simple_oauth_native_apps.pkce_enhancement:
+    class: Drupal\simple_oauth_native_apps\Service\PKCEEnhancementService
+    arguments:
+      - '@config.factory'
+      - '@simple_oauth_native_apps.native_client_detector'
+      - '@logger.factory'
+
+  simple_oauth_native_apps.metadata_provider:
+    class: Drupal\simple_oauth_native_apps\Service\MetadataProvider
+    arguments:
+      - '@config.factory'
+      - '@url_generator'
+      - '@cache.default'
+
+  simple_oauth_native_apps.authorization_request_subscriber:
+    class: Drupal\simple_oauth_native_apps\EventSubscriber\AuthorizationRequestSubscriber
+    arguments:
+      - '@simple_oauth_native_apps.user_agent_analyzer'
+      - '@config.factory'
+      - '@module_handler'
+    tags:
+      - { name: event_subscriber }
+
+  simple_oauth_native_apps.pkce_validation_subscriber:
+    class: Drupal\simple_oauth_native_apps\EventSubscriber\PkceValidationSubscriber
+    arguments:
+      - '@simple_oauth_native_apps.pkce_enhancement'
+      - '@simple_oauth_native_apps.native_client_detector'
+      - '@config.factory'
+      - '@logger.factory'
+      - '@entity_type.manager'
+    tags:
+      - { name: event_subscriber }

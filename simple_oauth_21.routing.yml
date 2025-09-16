@@ -1,0 +1,7 @@
+simple_oauth_21.dashboard:
+  path: '/admin/config/people/simple_oauth/oauth-21'
+  defaults:
+    _controller: '\Drupal\simple_oauth_21\Controller\OAuth21ComplianceController::display'
+    _title: 'Dashboard'
+  requirements:
+    _permission: 'administer simple_oauth entities'

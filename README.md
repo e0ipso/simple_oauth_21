@@ -1,329 +1,266 @@
-# 🚀 GitHub Contrib Template
+# Simple OAuth 2.1
 
-A GitHub repository template for creating Drupal contrib modules with comprehensive testing infrastructure, code quality tools, and AI-friendly development environment. Because writing boilerplate is so last century! ✨
+A comprehensive OAuth 2.1 compliance module that provides centralized coordination and assessment of OAuth 2.1 implementation across Drupal's OAuth ecosystem.
 
-## 🎯 Quick Start
+## Overview
 
-1. 🖱️ Click "Use this template" on GitHub to create a new repository
-2. 📥 Clone your new repository locally
-3. 🛠️ Follow the setup instructions below to customize for your module
+The Simple OAuth 2.1 module serves as an umbrella coordination module that ensures OAuth 2.1 compliance through integration with specialized submodules. It provides a professional compliance dashboard that monitors and assesses OAuth 2.1 implementation status in real-time.
 
-## Setup Instructions
+### OAuth 2.1 Compliance
 
-After creating a repository from this template, follow these steps:
+OAuth 2.1 represents the next evolution of the OAuth 2.0 standard, consolidating security best practices and eliminating deprecated flows. This module coordinates compliance with:
 
-### 1. Rename Files and References
+- **Mandatory PKCE**: Proof Key for Code Exchange for all authorization code flows
+- **Enhanced Security**: Elimination of deprecated implicit grant flow
+- **Native App Security**: RFC 8252 compliance for mobile and desktop applications
+- **Server Metadata**: RFC 8414 automatic discovery capabilities
 
-Replace all instances of `gh_contrib_template` with your actual module name:
+## Features
 
-- Rename `gh_contrib_template.info.yml` to `your_module_name.info.yml`
-- Update module name references in all files
-- Update namespace references in PHP files
-- Update test class names and namespaces
+### Compliance Dashboard
 
-### 2. Install Git Hooks
+Access the comprehensive compliance dashboard at:
+**Administration → Configuration → People → Simple OAuth → OAuth 2.1 Dashboard**
 
-After cloning, install the pre-commit hooks that will automatically check code quality:
+The dashboard provides:
 
-```bash
-npm install  # Installs husky and other dependencies
-```
+- **Overall Compliance Status**: Visual assessment with clear compliance indicators
+- **Score Breakdown**: Detailed scoring across three categories:
+  - **Core Requirements** (Mandatory): Essential OAuth 2.1 compliance features
+  - **Server Metadata** (Required): RFC 8414 discovery and metadata
+  - **Best Practices** (Recommended): Additional security enhancements
+- **Critical Issues**: Identification of mandatory requirements that block compliance
+- **Actionable Recommendations**: Direct links to configuration pages for missing features
+- **Real-time Assessment**: Dynamic compliance monitoring with cache management
 
-This sets up automatic git hooks for:
+### Intelligent Module Detection
 
-- **Pre-commit**: Code quality checks
-  - PHP coding standards (Drupal/DrupalPractice)
-  - PHPStan static analysis
-  - JavaScript/CSS linting
-  - Code formatting
-- **Commit-msg**: Enforces [Conventional Commits](https://www.conventionalcommits.org/) format
-  - Example: `feat: add user authentication`
-  - Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
-- **Pre-push**: Validates branch naming ([Lullabot ADR](https://architecture.lullabot.com/adr/20220920-git-branch-naming/))
-  - Format: `[ticket-id]--[description]`
-  - Examples: `DRUPAL-123--fix-menu-bug`, `NOTICKET--update-readme`
+The module supports flexible deployment patterns:
 
-### 3. Configure AI Assistant (Optional)
+- **Submodule Installation**: Integrated submodules within the simple_oauth_21 package
+- **Standalone Modules**: Individual contrib modules (simple_oauth_pkce, etc.)
+- **Mixed Environments**: Combination of submodules and standalone installations
+- **Graceful Degradation**: Partial compliance assessment when modules are missing
 
-If you plan to use AI assistants for development:
+### Professional Interface
 
-- Rename `AGENTS.md` to match your preferred assistant (e.g., `CLAUDE.md`, `GEMINI.md`)
-- Rename `tests/e2e/AGENTS.md` to match your preferred assistant (e.g., `CLAUDE.md`, `GEMINI.md`)
-- Install the AI task manager:
+- **Responsive Design**: Mobile-friendly dashboard with accessibility support
+- **Visual Indicators**: Clear status icons and color-coded compliance levels
+- **Configuration Links**: Direct navigation to relevant settings pages
+- **Error Recovery**: Graceful handling of service failures with detailed diagnostics
 
-```bash
-npx @e0ipso/ai-task-manager init --assistants claude,gemini,opencode
-```
+## Submodules
 
-### 4. Configure GitHub Actions Permissions
+The Simple OAuth 2.1 ecosystem consists of specialized submodules:
 
-<details>
-<summary>⚠️ <strong>Fix "Permission denied" errors in GitHub Actions</strong></summary>
+### simple_oauth_pkce
+Implements RFC 7636 PKCE (Proof Key for Code Exchange) for OAuth 2.1 compliance.
+- Mandatory S256 challenge method support
+- Configurable enforcement levels
+- Authorization code interception protection
 
-#### Quick Fix
+### simple_oauth_native_apps
+Provides RFC 8252 native application security enhancements.
+- WebView detection and blocking
+- Custom URI schemes and loopback redirects
+- Enhanced PKCE requirements for native clients
+- Exact redirect URI matching
 
-Go to your repository **Settings** → **Actions** → **General** → **Workflow permissions**:
+### simple_oauth_server_metadata
+Implements RFC 8414 Authorization Server Metadata for automatic discovery.
+- `/.well-known/oauth-authorization-server` endpoint
+- Capability advertisement and automatic client configuration
+- Support for extended metadata fields
 
-- Select **Read and write permissions**
-- Check **Allow GitHub Actions to create and approve pull requests**
-- Click **Save**
+## Installation
 
-#### Alternative: Personal Access Token
+### Requirements
 
-1. Create a [Personal Access Token](https://github.com/settings/tokens/new?scopes=repo,workflow) with `repo` and `workflow` scopes
-2. Add it to your repository: **Settings** → **Secrets** → **Actions** → **New repository secret**
-   - Name: `GH_TOKEN`
-   - Value: Your token
-3. Update `.github/workflows/release.yml`:
-   ```yaml
-   env:
-     GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-   ```
+- Drupal 9.0+ or Drupal 10.0+
+- Simple OAuth module (contrib or core)
+- PHP 8.1+
 
-#### Best Practice: Service Accounts
-
-For team projects, use a dedicated bot account ([Lullabot ADR reference](https://architecture.lullabot.com/adr/20220426-use-dedicated-accounts-service-integrations/)):
-
-- Create a bot GitHub account (e.g., `your-project-bot`)
-- Add it as a collaborator with write permissions
-- Use its PAT for automated workflows
-- Benefits: Not tied to personal accounts, easier rotation, clear audit trail
-
-</details>
-
-### 5. Update Module Information
-
-- Edit the `.info.yml` file with your module's details
-- Update `composer.json` with your module's metadata
-- Customize the module description and dependencies
-
-### 6. Clean Up Example Files
-
-- Delete `dummy.css` and `dummy.js` files - these are only included to demonstrate that the linting and code quality checks work correctly
-- These files serve no functional purpose and should be removed once you've verified the linting works
-
-## 🎁 Features Included
-
-### 🧪 Testing Infrastructure
-
-- **PHPUnit Test Suites**: Unit, Kernel, Functional, and FunctionalJavaScript tests
-- **Trivial Test Examples**: Ready-to-adapt test templates for all test types
-- **GitHub CI/CD**: Automated testing on pull requests and pushes
-- **E2E Testing**: Playwright configuration for end-to-end testing
-
-### 🔍 Code Quality Tools
-
-- **PHPStan**: Static analysis configuration (`phpstan.neon`)
-- **ESLint**: JavaScript linting (`.eslintrc.json`)
-- **Prettier**: Code formatting (`.prettierrc.json`)
-- **Pre-commit Hooks**: Automated code quality checks
-
-### 🔧 Development Tools
-
-- **GitHub Actions Workflows**:
-  - `test.yml`: Comprehensive testing pipeline
-  - `claude.yml`: AI assistant integration
-  - `release.yml`: Release automation
-- **Git Hooks**: Automated pre-commit checks via Husky
-- **Node.js Integration**: Package management and frontend tooling
-- **Git Configuration**: Proper `.gitignore` files for Drupal modules
-
-### 🤖 AI-Friendly Configuration
-
-- **AGENTS.md**: Instructions for AI assistants working on the project
-- **Structured Documentation**: Clear patterns for AI to follow
-- **Task Management Integration**: Ready for AI task orchestration
-
-## 🧪 Testing
-
-The template includes comprehensive testing infrastructure that'll make your tests run smoother than a freshly cached Drupal site! 🏃‍♂️
-
-### PHPUnit Tests
+### Installation via Composer
 
 ```bash
-# Run all tests (grab a coffee ☕, this might take a moment)
-vendor/bin/phpunit
-
-# Run specific test suites (for the impatient developers)
-vendor/bin/phpunit --testsuite=unit
-vendor/bin/phpunit --testsuite=kernel
-vendor/bin/phpunit --testsuite=functional
-vendor/bin/phpunit --testsuite=functional-javascript
+composer require drupal/simple_oauth_21
 ```
 
-### Code Quality Checks
+### Enable Modules
+
+Enable the umbrella module and desired submodules:
 
 ```bash
-# Static analysis (let PHPStan judge your code so your colleagues don't have to)
-vendor/bin/phpstan analyze
+# Enable the main coordination module
+drush pm:enable simple_oauth_21
 
-# Coding standards checks and fixes (because consistency is key 🔑)
-composer run-script lint:check    # Check coding standards with PHPCS
-composer run-script lint:fix      # Fix coding standards with PHPCBF
-
-# JavaScript linting
-npm run lint
-
-# Code formatting
-npm run format
+# Enable OAuth 2.1 compliance submodules
+drush pm:enable simple_oauth_pkce
+drush pm:enable simple_oauth_native_apps
+drush pm:enable simple_oauth_server_metadata
 ```
 
-### E2E Testing
+## Configuration
 
-<details>
-<summary><strong>📦 E2E Dependencies Installation</strong></summary>
+### Basic Setup
 
-#### Prerequisites
+1. **Enable Required Modules**: Install simple_oauth_21 and at least simple_oauth_pkce for basic OAuth 2.1 compliance
+2. **Access Dashboard**: Navigate to `/admin/config/people/simple_oauth/oauth-21`
+3. **Review Compliance**: Check overall compliance status and address critical issues
+4. **Configure Submodules**: Use dashboard links to configure individual submodules
 
-- **Node.js**: Version 18.0.0 or higher
-- **npm**: Installed with Node.js
-- **Drupal Environment**: Running Drupal instance (local or remote)
+### Compliance Levels
 
-#### Step-by-Step Installation
+**Fully Compliant**: All mandatory and required features enabled
+- PKCE with S256 challenge method
+- Implicit grant disabled
+- Server metadata endpoint active
+- All critical security features enabled
 
-1. **Install Node.js Dependencies**
+**Mostly Compliant**: Core requirements met with minor recommendations
+- Essential OAuth 2.1 features active
+- Some recommended features may be missing
 
-   ```bash
-   # Install all npm dependencies (includes Playwright)
-   npm ci
-   ```
+**Partially Compliant**: Basic functionality with compliance gaps
+- Some mandatory features missing
+- Security vulnerabilities may exist
 
-2. **Install Playwright Browsers**
+**Non-Compliant**: Critical OAuth 2.1 requirements missing
+- PKCE not enabled or improperly configured
+- Deprecated flows still active
+- Security requirements not met
 
-   ```bash
-   # Download and install browser binaries (Chromium, Firefox, WebKit)
-   npm run e2e:install
-   ```
+### Permissions
 
-   This command downloads approximately 300MB of browser binaries and may take a few minutes on first run.
+- **administer simple_oauth entities**: Required to access the compliance dashboard
+- Individual submodules may have additional permission requirements
 
-3. **Verify Installation**
+## OAuth 2.1 Implementation Guide
 
-   ```bash
-   # Check Playwright installation
-   npx playwright --version
+### Step 1: Core Requirements
+1. Enable `simple_oauth_pkce` module
+2. Configure PKCE enforcement to "mandatory"
+3. Enable S256 challenge method
+4. Disable plain challenge method (production)
+5. Verify implicit grant is disabled
 
-   # List installed browsers
-   npx playwright install --dry-run
-   ```
+### Step 2: Server Metadata (Recommended)
+1. Enable `simple_oauth_server_metadata` module
+2. Configure optional endpoints (revocation, introspection)
+3. Add service documentation URLs
+4. Test `/.well-known/oauth-authorization-server` endpoint
 
-#### Environment Configuration
+### Step 3: Native App Security (If Applicable)
+1. Enable `simple_oauth_native_apps` module
+2. Configure WebView detection policy
+3. Enable custom URI schemes
+4. Enable loopback redirects
+5. Enable exact redirect URI matching
 
-Set the Drupal base URL (optional - defaults to `http://127.0.0.1:8080`):
+### Step 4: Verification
+1. Access compliance dashboard
+2. Verify "Fully Compliant" status
+3. Address any remaining recommendations
+4. Test OAuth flows with real clients
 
-```bash
-# For custom Drupal URL
-export DRUPAL_BASE_URL="https://your-drupal-site.local"
+## Performance Considerations
 
-# Or add to your .env file
-echo "DRUPAL_BASE_URL=https://your-drupal-site.local" >> .env
+### Caching
+- Compliance assessments are cached for performance
+- Cache automatically invalidates on configuration changes
+- Manual cache clearing: `drush cache:rebuild`
+
+### Database Impact
+- Minimal database overhead
+- Configuration stored in standard Drupal config system
+- No custom tables required
+
+### Production Recommendations
+- Enable all recommended modules for full compliance
+- Monitor compliance dashboard regularly
+- Implement proper logging and monitoring
+- Consider CDN for metadata endpoints
+
+## Security Considerations
+
+### OAuth 2.1 Security Benefits
+- **PKCE Protection**: Prevents authorization code interception
+- **Implicit Flow Elimination**: Removes token exposure in browser history
+- **Enhanced Native Security**: Protects mobile and desktop applications
+- **Automatic Discovery**: Reduces configuration errors
+
+### Production Security Checklist
+- [ ] PKCE enforcement set to "mandatory"
+- [ ] S256 challenge method enabled
+- [ ] Plain challenge method disabled
+- [ ] WebView detection enabled (if using native apps)
+- [ ] HTTPS enforced for all OAuth endpoints
+- [ ] Implicit grant disabled
+- [ ] Regular compliance monitoring
+
+## Troubleshooting
+
+### Common Issues
+
+**Q: Dashboard shows "Non-Compliant" despite enabling submodules**
+A: Clear the compliance cache by disabling/re-enabling modules or clearing Drupal caches.
+
+**Q: Configuration changes not reflected in dashboard**
+A: Configuration changes trigger automatic cache invalidation. Try clearing all caches if issues persist.
+
+**Q: Module compatibility issues**
+A: Ensure all modules are updated to compatible versions. Check module dependencies.
+
+**Q: Performance issues with compliance checking**
+A: Verify that caching is enabled and consider increasing cache lifetime for stable configurations.
+
+### Debug Mode
+
+Enable detailed logging by setting the log level to DEBUG for the 'simple_oauth_21' channel:
+
+```php
+\Drupal::logger('simple_oauth_21')->debug('Debug message');
 ```
 
-#### Test Environment Requirements
+## Standards Compliance
 
-- **Basic Tests**: Any accessible Drupal installation
-- **Authentication Tests**: Admin user with credentials (username: `admin`, password: `admin`)
-- **Module Tests**: Drupal site with your module enabled and admin access
+This module implements the following standards:
 
-#### Troubleshooting Installation
+- **OAuth 2.1 Draft**: Core specification compliance
+- **RFC 7636**: PKCE implementation and coordination
+- **RFC 8252**: Native application security coordination
+- **RFC 8414**: Server metadata compliance monitoring
 
-**Permission Issues on Linux/macOS:**
+## Testing
 
-```bash
-sudo npx playwright install-deps
-```
+### Automated Testing
+The module includes comprehensive test suites:
+- **Unit Tests**: Service logic and configuration validation
+- **Kernel Tests**: Integration testing with Drupal core
+- **Functional Tests**: End-to-end compliance verification
+- **Browser Tests**: Dashboard functionality and user interface
 
-**Network/Firewall Issues:**
+### Manual Testing
+1. **Compliance Verification**: Use dashboard to verify complete compliance
+2. **Configuration Testing**: Test all submodule configuration combinations
+3. **Client Integration**: Test with real OAuth clients
+4. **Security Testing**: Verify all security requirements
 
-```bash
-# Use alternative download method
-PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci
-npx playwright install chromium
-```
+## Contributing
 
-**Disk Space Issues:**
+This module follows Drupal coding standards and contribution guidelines:
 
-- Playwright browsers require ~1GB disk space
-- Use `npx playwright install chromium` to install only Chromium (smallest footprint)
+- Code should follow Drupal Coding Standards
+- All changes should include appropriate tests
+- Security-related changes require thorough review
+- Documentation should be updated for feature changes
 
-</details>
+## Support
 
-#### Running Tests
+- **Issue Queue**: https://www.drupal.org/project/issues/simple_oauth_21
+- **Documentation**: https://www.drupal.org/docs/contributed-modules/simple-oauth-21
+- **Security Issues**: Follow Drupal security reporting procedures
 
-```bash
-# Run all tests
-npm run e2e:test
+## License
 
-# Run with browser UI (for debugging)
-npm run e2e:test:headed
-
-# Run in debug mode with step-by-step execution
-npm run e2e:test:debug
-
-# View test reports
-npm run e2e:report
-```
-
-## 📁 Directory Structure
-
-```
-your_module_name/
-├── .github/workflows/          # CI/CD pipelines
-├── .claude/                   # AI assistant configuration
-├── src/                       # PHP source code
-├── tests/
-│   ├── src/                   # PHPUnit tests
-│   └── e2e/                   # Playwright E2E tests
-├── config/                    # Configuration files
-├── AGENTS.md                  # AI assistant instructions
-├── composer.json              # PHP dependencies
-├── package.json               # Node.js dependencies
-├── phpstan.neon              # Static analysis config
-└── your_module_name.info.yml  # Drupal module info
-```
-
-## ⚙️ GitHub Actions Integration
-
-The template includes three main workflows:
-
-- **Test Pipeline**: Runs on every PR and push, executing all test suites
-- **AI Integration**: Supports AI-assisted development workflows
-- **Release Automation**: Handles versioning and releases (see step 3 in setup for permissions)
-
-## 🔄 Development Workflow
-
-1. 🌿 Create feature branches from `main`
-2. ✍️ Write tests for new functionality (TDD FTW!)
-3. 💻 Implement features following Drupal coding standards
-4. 🤖 Code quality checks run automatically via GitHub Actions
-5. 🔀 Create pull requests for review
-6. 🎉 Merge after tests pass and review approval (victory dance optional but encouraged)
-
-## 🤖 AI Assistant Integration
-
-This template is optimized for AI-assisted development (yes, your robot overlords appreciate good code structure too!):
-
-- Clear file organization and naming conventions
-- Comprehensive documentation and examples
-- Structured test patterns for AI to follow
-- Pre-configured development tools and workflows
-
-## ✅ Compatibility
-
-- **Drupal**: 10.x, 11.x
-- **PHP**: 8.1+
-- **Node.js**: 18+
-- **GitHub Actions**: Latest runner versions
-
-## 🤝 Contributing
-
-After setting up your module (you're almost there!):
-
-1. Update this README with module-specific information
-2. Customize the GitHub templates and workflows
-3. Add your module's specific documentation
-4. Configure any additional development tools needed
-
-## 📜 License
-
-Update the license information according to your module's licensing requirements. Remember: sharing is caring! 💙
+GPL-2.0+

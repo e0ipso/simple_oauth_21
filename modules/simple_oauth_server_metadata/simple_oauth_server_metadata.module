@@ -1,0 +1,52 @@
+<?php
+
+/**
+ * @file
+ * Simple OAuth Server Metadata module.
+ */
+
+use Drupal\Core\Cache\Cache;
+use Drupal\Core\Hook\Attribute\LegacyModuleImplementsAlter;
+
+/**
+ * Implements hook_ENTITY_TYPE_presave() for user_role.
+ */
+function simple_oauth_server_metadata_user_role_presave($entity) {
+  // Invalidate cache when user roles change (affects scopes).
+  Cache::invalidateTags(['oauth2_server_metadata']);
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_delete() for user_role.
+ */
+function simple_oauth_server_metadata_user_role_delete($entity) {
+  // Invalidate cache when user roles are deleted.
+  Cache::invalidateTags(['oauth2_server_metadata']);
+}
+
+/**
+ * Implements hook_module_implements_alter().
+ */
+#[LegacyModuleImplementsAlter]
+function simple_oauth_server_metadata_module_implements_alter(&$implementations, $hook) {
+  // Ensure our cache invalidation runs after simple_oauth changes.
+  if ($hook == 'config_save' && isset($implementations['simple_oauth_server_metadata'])) {
+    $group = $implementations['simple_oauth_server_metadata'];
+    unset($implementations['simple_oauth_server_metadata']);
+    $implementations['simple_oauth_server_metadata'] = $group;
+  }
+}
+
+/**
+ * Implements hook_config_save().
+ */
+function simple_oauth_server_metadata_config_save($config) {
+  $config_names = [
+    'simple_oauth.settings',
+    'simple_oauth_server_metadata.settings',
+  ];
+
+  if (in_array($config->getName(), $config_names)) {
+    Cache::invalidateTags(['oauth2_server_metadata']);
+  }
+}

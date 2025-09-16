@@ -1,0 +1,9 @@
+name: 'Simple OAuth Server Metadata'
+type: module
+description: 'Implements RFC 8414 Authorization Server Metadata for automatic OAuth server discovery'
+package: Authentication
+core_version_requirement: ^10.2 || ^11
+configure: simple_oauth_server_metadata.settings
+dependencies:
+  - simple_oauth_21:simple_oauth_21
+  - simple_oauth:simple_oauth

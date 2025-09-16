@@ -1,0 +1,63 @@
+simple_oauth_native_apps.settings:
+  type: config_object
+  label: 'Simple OAuth Native Apps Settings'
+  mapping:
+    enforce_native_security:
+      type: boolean
+      label: 'Enforce native app security'
+      description: 'Apply RFC 8252 security requirements for native applications'
+    webview:
+      type: mapping
+      label: 'WebView detection settings'
+      mapping:
+        detection:
+          type: string
+          label: 'WebView detection policy'
+          description: 'How to handle WebView-based authorization requests'
+          constraints:
+            Choice:
+              choices: ['off', 'warn', 'block']
+        custom_message:
+          type: string
+          label: 'Custom webview warning message'
+          description: 'Custom message to display when embedded webview is detected'
+        whitelist:
+          type: sequence
+          label: 'Webview whitelist patterns'
+          description: 'List of user-agent patterns to whitelist (bypass webview detection)'
+          sequence:
+            type: string
+        patterns:
+          type: sequence
+          label: 'Custom webview detection patterns'
+          description: 'Additional user-agent patterns to detect as embedded webviews'
+          sequence:
+            type: string
+    require_exact_redirect_match:
+      type: boolean
+      label: 'Require exact redirect URI match'
+      description: 'Require exact redirect URI matching (disable partial matches)'
+    allow:
+      type: mapping
+      label: 'Allowed redirect types'
+      mapping:
+        custom_uri_schemes:
+          type: boolean
+          label: 'Allow custom URI schemes'
+          description: 'Allow custom URI schemes for native app redirects (e.g., myapp://callback)'
+        loopback_redirects:
+          type: boolean
+          label: 'Allow loopback redirects'
+          description: 'Allow loopback IP redirects for native applications (RFC 8252)'
+    enhanced_pkce_for_native:
+      type: boolean
+      label: 'Enhanced PKCE for native apps'
+      description: 'Apply enhanced PKCE requirements for native applications'
+    allow_custom_uri_schemes:
+      type: boolean
+      label: 'Allow custom URI schemes (deprecated)'
+      description: 'Legacy flat property for backward compatibility - use allow.custom_uri_schemes instead'
+    allow_loopback_redirects:
+      type: boolean
+      label: 'Allow loopback redirects (deprecated)'
+      description: 'Legacy flat property for backward compatibility - use allow.loopback_redirects instead'

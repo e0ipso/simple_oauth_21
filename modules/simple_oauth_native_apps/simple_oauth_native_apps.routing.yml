@@ -1,0 +1,9 @@
+simple_oauth_native_apps.settings:
+  path: '/admin/config/people/simple_oauth/oauth-21/native-apps'
+  defaults:
+    _title: 'Native Apps Settings'
+    _form: '\Drupal\simple_oauth_native_apps\Form\NativeAppsSettingsForm'
+  requirements:
+    _permission: 'administer simple_oauth entities'
+  options:
+    _admin_route: TRUE

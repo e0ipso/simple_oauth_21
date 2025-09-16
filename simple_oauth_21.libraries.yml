@@ -1,0 +1,4 @@
+compliance-dashboard:
+  css:
+    theme:
+      assets/css/compliance-dashboard.css: {}

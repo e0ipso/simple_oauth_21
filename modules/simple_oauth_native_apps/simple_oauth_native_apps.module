@@ -1,0 +1,253 @@
+<?php
+
+/**
+ * @file
+ * Contains simple_oauth_native_apps.module.
+ *
+ * Implements RFC 8252 native app support for OAuth 2.0 clients.
+ */
+
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\EntityTypeInterface;
+use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\Url;
+
+/**
+ * Implements hook_help().
+ */
+function simple_oauth_native_apps_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.simple_oauth_native_apps':
+      return _simple_oauth_native_apps_help_overview();
+
+    case 'simple_oauth_native_apps.settings':
+      return _simple_oauth_native_apps_help_settings();
+
+    case 'entity.consumer.collection':
+      return _simple_oauth_native_apps_help_consumers();
+
+    case 'entity.consumer.add_form':
+    case 'entity.consumer.edit_form':
+      return _simple_oauth_native_apps_help_consumer_form();
+  }
+}
+
+/**
+ * Provides overview help for the module.
+ */
+function _simple_oauth_native_apps_help_overview() {
+  $output = '<h2>' . t('About Simple OAuth Native Apps') . '</h2>';
+  $output .= '<p>' . t('The Simple OAuth Native Apps module extends Simple OAuth with RFC 8252 "OAuth 2.0 for Native Apps" security enhancements, providing comprehensive security features for mobile and desktop applications.') . '</p>';
+
+  $output .= '<h3>' . t('Key Features') . '</h3>';
+  $output .= '<ul>';
+  $output .= '<li>' . t('<strong>RFC 8252 Compliance:</strong> Full implementation of OAuth 2.0 for Native Apps specification') . '</li>';
+  $output .= '<li>' . t('<strong>WebView Detection:</strong> Identifies and blocks embedded WebViews per security best practices') . '</li>';
+  $output .= '<li>' . t('<strong>Enhanced PKCE:</strong> Mandatory Proof Key for Code Exchange with S256 method enforcement') . '</li>';
+  $output .= '<li>' . t('<strong>Custom URI Schemes:</strong> Support for app-specific redirect URI schemes') . '</li>';
+  $output .= '<li>' . t('<strong>Loopback Redirects:</strong> Native app-friendly localhost redirect support') . '</li>';
+  $output .= '<li>' . t('<strong>Security Monitoring:</strong> Comprehensive logging and threat detection') . '</li>';
+  $output .= '</ul>';
+
+  $output .= '<h3>' . t('Module Relationships') . '</h3>';
+  $output .= '<p>' . t('This module works alongside other Simple OAuth modules:') . '</p>';
+  $output .= '<ul>';
+  $output .= '<li>' . t('<strong>Simple OAuth PKCE:</strong> Provides basic PKCE implementation (RFC 7636) for all OAuth clients') . '</li>';
+  $output .= '<li>' . t('<strong>Simple OAuth Native Apps:</strong> Adds RFC 8252 specific requirements for native applications') . '</li>';
+  $output .= '</ul>';
+  $output .= '<p>' . t('When enhanced native security is disabled, native apps still receive basic PKCE protection but skip additional validations like WebView detection.') . '</p>';
+
+  $output .= '<h3>' . t('Getting Started') . '</h3>';
+  $output .= '<p>' . t('To configure native app security:') . '</p>';
+  $output .= '<ol>';
+  $output .= '<li>' . t('Navigate to <a href="@settings">Native Apps Settings</a> to configure global policies', [
+    '@settings' => Url::fromRoute('simple_oauth_native_apps.settings')->toString(),
+  ]) . '</li>';
+  $output .= '<li>' . t('Create or edit OAuth consumers to set up native app clients') . '</li>';
+  $output .= '<li>' . t('Configure redirect URIs using custom schemes or loopback addresses') . '</li>';
+  $output .= '</ol>';
+
+  return $output;
+}
+
+/**
+ * Provides help for the settings page.
+ */
+function _simple_oauth_native_apps_help_settings() {
+  $output = '<h3>' . t('Native Apps Security Settings') . '</h3>';
+  $output .= '<p>' . t('Configure global security policies for native applications that complement the basic PKCE provided by Simple OAuth PKCE module.') . '</p>';
+
+  $output .= '<h4>' . t('Security Layers') . '</h4>';
+  $output .= '<p>' . t('This module works with Simple OAuth PKCE to provide layered security:') . '</p>';
+  $output .= '<ul>';
+  $output .= '<li>' . t('<strong>Base Layer:</strong> Simple OAuth PKCE module provides PKCE for all OAuth clients') . '</li>';
+  $output .= '<li>' . t('<strong>Native Layer:</strong> This module adds RFC 8252 native app requirements (redirect validation, WebView detection)') . '</li>';
+  $output .= '</ul>';
+  $output .= '<p>' . t('<strong>The result</strong> is that native and terminal apps get both PKCE protection AND native-specific security checks') . '</p>';
+
+  $output .= '<h4>' . t('WebView Detection') . '</h4>';
+  $output .= '<p>' . t('WebView detection helps prevent security vulnerabilities in native applications by identifying embedded web browsers. When enabled, the server can block authentication attempts from embedded WebViews and require system browsers instead.') . '</p>';
+
+  $output .= '<h4>' . t('Terminal Applications') . '</h4>';
+  $output .= '<p>' . t('Terminal applications (command-line tools) have special considerations:') . '</p>';
+  $output .= '<ul>';
+  $output .= '<li>' . t('Must use loopback redirects (http://127.0.0.1:port)') . '</li>';
+  $output .= '<li>' . t('Cannot use custom URI schemes') . '</li>';
+  $output .= '<li>' . t('Should launch system browser for authentication (if they can)') . '</li>';
+  $output .= '<li>' . t('Are always treated as public clients') . '</li>';
+  $output .= '</ul>';
+
+  return $output;
+}
+
+/**
+ * Provides help for the consumers collection page.
+ */
+function _simple_oauth_native_apps_help_consumers() {
+  $output = '<h3>' . t('Managing OAuth Consumers for Native Apps') . '</h3>';
+  $output .= '<p>' . t('OAuth consumers represent client applications that can authenticate users. Native applications have specific security requirements that differ from web applications.') . '</p>';
+
+  $output .= '<h4>' . t('Native Client Detection') . '</h4>';
+  $output .= '<p>' . t('The module automatically detects native clients based on redirect URI patterns:') . '</p>';
+  $output .= '<ul>';
+  $output .= '<li>' . t('<strong>Mobile Apps:</strong> Custom URI schemes like "myapp://callback"') . '</li>';
+  $output .= '<li>' . t('<strong>Desktop Apps:</strong> Custom schemes or loopback addresses') . '</li>';
+  $output .= '<li>' . t('<strong>Terminal Apps:</strong> Loopback addresses like "http://127.0.0.1:8080/callback"') . '</li>';
+  $output .= '</ul>';
+
+  $output .= '<h4>' . t('Public vs Confidential Clients') . '</h4>';
+  $output .= '<p>' . t('Native applications should always be configured as <strong>public clients</strong> because they cannot securely store client secrets. The module can automatically enforce this setting for detected native clients.') . '</p>';
+
+  return $output;
+}
+
+/**
+ * Provides help for consumer forms.
+ */
+function _simple_oauth_native_apps_help_consumer_form() {
+  $output = '<h3>' . t('Native App Configuration') . '</h3>';
+  $output .= '<p>' . t('When configuring a consumer for a native application, consider these settings:') . '</p>';
+
+  $output .= '<h4>' . t('Redirect URIs') . '</h4>';
+  $output .= '<p>' . t('Choose appropriate redirect URI patterns:') . '</p>';
+  $output .= '<ul>';
+  $output .= '<li>' . t('<strong>Mobile Apps:</strong> Use custom URI schemes registered with the OS (e.g., "com.example.app://callback")') . '</li>';
+  $output .= '<li>' . t('<strong>Desktop Apps:</strong> Use custom schemes or loopback addresses') . '</li>';
+  $output .= '<li>' . t('<strong>Terminal Apps:</strong> Use loopback addresses only (e.g., "http://127.0.0.1:8080/callback")') . '</li>';
+  $output .= '</ul>';
+
+  $output .= '<h4>' . t('Override Options') . '</h4>';
+  $output .= '<p>' . t('The module provides override options for special cases:') . '</p>';
+  $output .= '<ul>';
+  $output .= '<li>' . t('<strong>Native App Override:</strong> Force classification as native or web client') . '</li>';
+  $output .= '<li>' . t('<strong>Enhanced PKCE:</strong> Override enhanced PKCE requirements for this specific client') . '</li>';
+  $output .= '</ul>';
+  $output .= '<p>' . t('Leave these empty for automatic detection and configuration based on global settings and redirect URI patterns.') . '</p>';
+
+  return $output;
+}
+
+/**
+ * Implements hook_entity_base_field_info().
+ */
+function simple_oauth_native_apps_entity_base_field_info(EntityTypeInterface $entity_type) {
+  $fields = [];
+
+  if ($entity_type->id() === 'consumer') {
+    // Manual override field for native client detection.
+    $fields['native_app_override'] = BaseFieldDefinition::create('list_string')
+      ->setLabel(t('Native App Override'))
+      ->setDescription(t('Manual override for native client detection. Leave empty for automatic detection.'))
+      ->setRequired(FALSE)
+      ->setSetting('allowed_values', [
+        '' => '- Automatic detection -',
+        '0' => 'Force as Web Client',
+        '1' => 'Force as Native App',
+      ])
+      ->setDefaultValue('')
+      ->setDisplayOptions('form', [
+        'type' => 'options_select',
+        'weight' => 10,
+        'settings' => [],
+      ])
+      ->setDisplayOptions('view', [
+        'type' => 'list_default',
+        'label' => 'above',
+        'weight' => 10,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+
+    // Enhanced PKCE requirement override.
+    $fields['native_app_enhanced_pkce'] = BaseFieldDefinition::create('list_string')
+      ->setLabel(t('Enhanced PKCE'))
+      ->setDescription(t('Override enhanced PKCE requirements for this client. Leave empty for automatic determination.'))
+      ->setRequired(FALSE)
+      ->setSetting('allowed_values', [
+        '' => '- Automatic determination -',
+        '0' => 'Disable Enhanced PKCE',
+        '1' => 'Require Enhanced PKCE',
+      ])
+      ->setDefaultValue('')
+      ->setDisplayOptions('form', [
+        'type' => 'options_select',
+        'weight' => 11,
+        'settings' => [],
+      ])
+      ->setDisplayOptions('view', [
+        'type' => 'list_default',
+        'label' => 'above',
+        'weight' => 11,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+  }
+
+  return $fields;
+}
+
+/**
+ * Implements hook_entity_insert().
+ */
+function simple_oauth_native_apps_entity_insert(EntityInterface $entity) {
+  if ($entity->getEntityTypeId() === 'consumer') {
+    // Clear native client detection cache when a consumer is inserted.
+    $detector = \Drupal::service('simple_oauth_native_apps.native_client_detector');
+    $detector->clearCache();
+  }
+}
+
+/**
+ * Implements hook_entity_update().
+ */
+function simple_oauth_native_apps_entity_update(EntityInterface $entity) {
+  if ($entity->getEntityTypeId() === 'consumer') {
+    // Clear cache for the specific client and global cache.
+    $detector = \Drupal::service('simple_oauth_native_apps.native_client_detector');
+    $detector->clearClientCache($entity);
+  }
+}
+
+/**
+ * Implements hook_entity_delete().
+ */
+function simple_oauth_native_apps_entity_delete(EntityInterface $entity) {
+  if ($entity->getEntityTypeId() === 'consumer') {
+    // Clear cache for the specific client.
+    $detector = \Drupal::service('simple_oauth_native_apps.native_client_detector');
+    $detector->clearClientCache($entity);
+  }
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function simple_oauth_native_apps_form_alter(array &$form, FormStateInterface $form_state, string $form_id) {
+  // Alter consumer forms to include native app settings.
+  if (in_array($form_id, ['consumer_add_form', 'consumer_edit_form', 'consumer_form'], TRUE)) {
+    $form_alter_service = \Drupal::service('simple_oauth_native_apps.consumer_form_alter');
+    $form_alter_service->alterForm($form, $form_state, $form_id);
+  }
+}

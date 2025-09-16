@@ -1,0 +1,11 @@
+enforce_native_security: true
+webview:
+  detection: 'block'
+  custom_message: ''
+  whitelist: []
+  patterns: []
+require_exact_redirect_match: true
+allow:
+  custom_uri_schemes: true
+  loopback_redirects: true
+enhanced_pkce_for_native: true
