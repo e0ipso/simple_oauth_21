@@ -159,8 +159,8 @@ function simple_oauth_native_apps_entity_base_field_info(EntityTypeInterface $en
     // Manual override field for native client detection.
     $fields['native_app_override'] = BaseFieldDefinition::create('list_string')
       ->setLabel(t('Native App Override'))
-      ->setDescription(t('Manual override for native client detection. Leave empty for automatic detection.'))
-      ->setRequired(FALSE)
+      ->setDescription(t('Manual override for native client detection. Automatic detection analyzes redirect URIs (custom schemes like "myapp://" and loopback addresses like "http://127.0.0.1" indicate native apps). Choose automatic detection for standard behavior, or force a specific client type when needed.'))
+      ->setRequired(TRUE)
       ->setSetting('allowed_values', [
         '' => '- Automatic detection -',
         '0' => 'Force as Web Client',

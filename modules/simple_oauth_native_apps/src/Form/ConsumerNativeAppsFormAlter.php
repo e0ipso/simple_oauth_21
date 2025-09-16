@@ -333,13 +333,17 @@ class ConsumerNativeAppsFormAlter {
   /**
    * Gets a human-readable label for a WebView detection setting.
    *
-   * @param string $setting
+   * @param string|null $setting
    *   The setting value.
    *
    * @return string
    *   The human-readable label.
    */
-  protected function getWebViewDetectionLabel(string $setting): string {
+  protected function getWebViewDetectionLabel(?string $setting): string {
+    if ($setting === NULL) {
+      return $this->t('Not configured');
+    }
+
     $labels = [
       'off' => $this->t('Off'),
       'warn' => $this->t('Warn'),
