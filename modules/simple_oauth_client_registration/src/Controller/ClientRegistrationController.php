@@ -3,11 +3,13 @@
 namespace Drupal\simple_oauth_client_registration\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
 use Drupal\simple_oauth_client_registration\Service\ClientRegistrationService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\Serializer\SerializerInterface;
 
 /**
  * Controller for RFC 7591 Dynamic Client Registration endpoint.
@@ -22,13 +24,23 @@ class ClientRegistrationController extends ControllerBase {
   protected $registrationService;
 
   /**
+   * The serializer.
+   *
+   * @var \Symfony\Component\Serializer\SerializerInterface
+   */
+  protected $serializer;
+
+  /**
    * Constructs a ClientRegistrationController object.
    *
    * @param \Drupal\simple_oauth_client_registration\Service\ClientRegistrationService $registration_service
    *   The client registration service.
+   * @param \Symfony\Component\Serializer\SerializerInterface $serializer
+   *   The serializer.
    */
-  public function __construct(ClientRegistrationService $registration_service) {
+  public function __construct(ClientRegistrationService $registration_service, SerializerInterface $serializer) {
     $this->registrationService = $registration_service;
+    $this->serializer = $serializer;
   }
 
   /**
@@ -36,7 +48,8 @@ class ClientRegistrationController extends ControllerBase {
    */
   public static function create(ContainerInterface $container) {
     return new self(
-      $container->get('simple_oauth_client_registration.service.registration')
+      $container->get('simple_oauth_client_registration.service.registration'),
+      $container->get('serializer')
     );
   }
 
@@ -57,13 +70,20 @@ class ClientRegistrationController extends ControllerBase {
         throw new BadRequestHttpException('Request body cannot be empty');
       }
 
-      $client_metadata = json_decode($content, TRUE);
-      if (json_last_error() !== JSON_ERROR_NONE) {
-        throw new BadRequestHttpException('Invalid JSON in request body');
+      // Deserialize the request to a ClientRegistration DTO.
+      try {
+        $clientRegistration = $this->serializer->deserialize(
+          $content,
+          ClientRegistration::class,
+          'json'
+        );
+      }
+      catch (\Exception $e) {
+        throw new BadRequestHttpException('Invalid client metadata: ' . $e->getMessage());
       }
 
-      // Validate and register the client.
-      $registration_response = $this->registrationService->registerClient($client_metadata);
+      // Register the client using the DTO.
+      $registration_response = $this->registrationService->registerClient($clientRegistration);
 
       // Create JSON response with proper headers.
       $response = new JsonResponse($registration_response);
@@ -220,13 +240,20 @@ class ClientRegistrationController extends ControllerBase {
       throw new BadRequestHttpException('Request body cannot be empty');
     }
 
-    $client_metadata = json_decode($content, TRUE);
-    if (json_last_error() !== JSON_ERROR_NONE) {
-      throw new BadRequestHttpException('Invalid JSON in request body');
+    // Deserialize the request to a ClientRegistration DTO.
+    try {
+      $clientRegistration = $this->serializer->deserialize(
+        $content,
+        ClientRegistration::class,
+        'json'
+      );
+    }
+    catch (\Exception $e) {
+      throw new BadRequestHttpException('Invalid client metadata: ' . $e->getMessage());
     }
 
-    // Update client metadata.
-    $updated_metadata = $this->registrationService->updateClientMetadata($client_id, $client_metadata);
+    // Update client metadata using the DTO.
+    $updated_metadata = $this->registrationService->updateClientMetadata($client_id, $clientRegistration);
 
     $response = new JsonResponse($updated_metadata);
     $response->headers->set('Content-Type', 'application/json; charset=utf-8');

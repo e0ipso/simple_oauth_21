@@ -25,3 +25,12 @@ services:
     arguments:
       - '@database'
       - '@logger.channel.simple_oauth_client_registration'
+
+  # Temporarily disabled to debug AJAX issue
+  # simple_oauth_client_registration.normalizer:
+  #   class: Drupal\simple_oauth_client_registration\Normalizer\ClientRegistrationNormalizer
+  #   arguments:
+  #     - '@simple_oauth_client_registration.service.registration'
+  #     - '@simple_oauth_client_registration.service.token'
+  #   tags:
+  #     - { name: normalizer, priority: 10 }

@@ -12,3 +12,7 @@ services:
         '@extension.list.module',
         '@logger.channel.simple_oauth_21',
       ]
+
+  simple_oauth_21.form_serialization_debugger:
+    class: Drupal\simple_oauth_21\Service\FormSerializationDebugger
+    arguments: ['@logger.channel.simple_oauth_21', '@config.factory']

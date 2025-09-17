@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Component\Uuid\UuidInterface;
 use Drupal\Component\Utility\Crypt;
 use Drupal\Core\Url;
+use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -41,28 +42,28 @@ final class ClientRegistrationService {
   ) {}
 
   /**
-   * Creates a Consumer entity from client registration data.
+   * Creates a Consumer entity from client registration DTO.
    *
-   * @param array $clientData
-   *   The client registration data.
+   * @param \Drupal\simple_oauth_client_registration\Dto\ClientRegistration $clientData
+   *   The client registration DTO.
    *
    * @return \Drupal\consumers\Entity\ConsumerInterface
    *   The created Consumer entity.
    */
-  public function createConsumer(array $clientData): ConsumerInterface {
+  public function createConsumer(ClientRegistration $clientData): ConsumerInterface {
     // Generate unique client ID.
     $client_id = $this->generateClientId();
 
     // Determine if client should be confidential.
-    $is_confidential = ($clientData['token_endpoint_auth_method'] ?? 'client_secret_basic') !== 'none';
+    $is_confidential = $clientData->isConfidential();
 
     // Map RFC 7591 fields to Consumer entity fields using Consumer::create.
     $values = [
       'client_id' => $client_id,
-      'label' => $clientData['client_name'] ?? 'Dynamically Registered Client',
+      'label' => $clientData->getClientName() ?? 'Dynamically Registered Client',
       'description' => 'Client registered via RFC 7591 Dynamic Client Registration',
-      'grant_types' => $clientData['grant_types'] ?? ['authorization_code'],
-      'redirect' => $clientData['redirect_uris'] ?? [],
+      'grant_types' => $clientData->getGrantTypes() ?: ['authorization_code'],
+      'redirect' => $clientData->getRedirectUris(),
       'confidential' => $is_confidential,
       'roles' => ['authenticated'],
       'is_default' => FALSE,
@@ -71,13 +72,13 @@ final class ClientRegistrationService {
       'access_token_expiration' => 300,
       'refresh_token_expiration' => 1209600,
       // RFC 7591 metadata fields.
-      'client_uri' => $clientData['client_uri'] ?? '',
-      'logo_uri' => $clientData['logo_uri'] ?? '',
-      'tos_uri' => $clientData['tos_uri'] ?? '',
-      'policy_uri' => $clientData['policy_uri'] ?? '',
-      'jwks_uri' => $clientData['jwks_uri'] ?? '',
-      'software_id' => $clientData['software_id'] ?? '',
-      'software_version' => $clientData['software_version'] ?? '',
+      'client_uri' => $clientData->getClientUri() ?? '',
+      'logo_uri' => $clientData->getLogoUri() ?? '',
+      'tos_uri' => $clientData->getTosUri() ?? '',
+      'policy_uri' => $clientData->getPolicyUri() ?? '',
+      'jwks_uri' => $clientData->getJwksUri() ?? '',
+      'software_id' => $clientData->getSoftwareId() ?? '',
+      'software_version' => $clientData->getSoftwareVersion() ?? '',
     ];
 
     // Generate client secret for confidential clients.
@@ -90,9 +91,10 @@ final class ClientRegistrationService {
     }
 
     // Handle contacts field (multiple cardinality)
-    if (!empty($clientData['contacts'])) {
+    $contacts = $clientData->getContacts();
+    if (!empty($contacts)) {
       $values['contacts'] = [];
-      foreach ($clientData['contacts'] as $contact) {
+      foreach ($contacts as $contact) {
         $values['contacts'][] = ['value' => $contact];
       }
     }
@@ -107,20 +109,17 @@ final class ClientRegistrationService {
   /**
    * Registers a new OAuth 2.0 client.
    *
-   * @param array $registrationData
-   *   The client registration data.
+   * @param \Drupal\simple_oauth_client_registration\Dto\ClientRegistration $registrationData
+   *   The client registration DTO.
    *
    * @return array
    *   The registration response data.
    */
-  public function registerClient(array $registrationData): array {
+  public function registerClient(ClientRegistration $registrationData): array {
     try {
       $this->logger->info('Client registration request received with data: @data', [
-        '@data' => json_encode($registrationData),
+        '@data' => json_encode($registrationData->toArray()),
       ]);
-
-      // Validate required client metadata.
-      $this->validateClientMetadata($registrationData);
 
       // Create the Consumer entity using the proven creation pattern.
       $consumer = $this->createConsumer($registrationData);
@@ -186,38 +185,53 @@ final class ClientRegistrationService {
    *
    * @param string $client_id
    *   The client identifier.
-   * @param array $metadata
-   *   The updated metadata.
+   * @param \Drupal\simple_oauth_client_registration\Dto\ClientRegistration $metadata
+   *   The updated metadata DTO.
    *
    * @return array
    *   The updated client metadata.
    */
-  public function updateClientMetadata(string $client_id, array $metadata): array {
+  public function updateClientMetadata(string $client_id, ClientRegistration $metadata): array {
     $consumer = $this->loadConsumer($client_id);
 
-    // Validate metadata.
-    $this->validateClientMetadata($metadata);
-
     // Handle client_name specially - it maps to the label field.
-    if (isset($metadata['client_name'])) {
-      $consumer->set('label', $metadata['client_name']);
+    if ($metadata->getClientName() !== NULL) {
+      $consumer->set('label', $metadata->getClientName());
     }
 
     // Update RFC 7591 fields.
-    $rfc_fields = [
-      'client_uri', 'logo_uri', 'contacts',
-      'tos_uri', 'policy_uri', 'jwks_uri', 'software_id', 'software_version',
-    ];
+    if ($metadata->getClientUri() !== NULL) {
+      $consumer->set('client_uri', $metadata->getClientUri());
+    }
+    if ($metadata->getLogoUri() !== NULL) {
+      $consumer->set('logo_uri', $metadata->getLogoUri());
+    }
+    if ($metadata->getTosUri() !== NULL) {
+      $consumer->set('tos_uri', $metadata->getTosUri());
+    }
+    if ($metadata->getPolicyUri() !== NULL) {
+      $consumer->set('policy_uri', $metadata->getPolicyUri());
+    }
+    if ($metadata->getJwksUri() !== NULL) {
+      $consumer->set('jwks_uri', $metadata->getJwksUri());
+    }
+    if ($metadata->getSoftwareId() !== NULL) {
+      $consumer->set('software_id', $metadata->getSoftwareId());
+    }
+    if ($metadata->getSoftwareVersion() !== NULL) {
+      $consumer->set('software_version', $metadata->getSoftwareVersion());
+    }
 
-    foreach ($rfc_fields as $field) {
-      if (isset($metadata[$field])) {
-        $consumer->set($field, $metadata[$field]);
-      }
+    // Update contacts if provided.
+    $contacts = $metadata->getContacts();
+    if (!empty($contacts)) {
+      $consumer->set('contacts', $contacts);
     }
 
     // Update redirect URIs if provided.
-    if (isset($metadata['redirect_uris'])) {
-      $consumer->set('redirect', $metadata['redirect_uris']);
+    $redirectUris = $metadata->getRedirectUris();
+    if (!empty($redirectUris)) {
+      $consumer->set('redirect', $redirectUris);
     }
 
     $consumer->save();
@@ -290,60 +304,6 @@ final class ClientRegistrationService {
     return Crypt::randomBytesBase64(32);
   }
 
-  /**
-   * Validates client metadata according to RFC 7591.
-   *
-   * @param array $metadata
-   *   The client metadata to validate.
-   *
-   * @throws \Symfony\Component\HttpKernel\Exception\BadRequestHttpException
-   *   If validation fails.
-   */
-  private function validateClientMetadata(array $metadata): void {
-    // Validate redirect URIs if provided.
-    if (isset($metadata['redirect_uris'])) {
-      if (!is_array($metadata['redirect_uris']) || empty($metadata['redirect_uris'])) {
-        throw new BadRequestHttpException('redirect_uris must be a non-empty array');
-      }
-
-      foreach ($metadata['redirect_uris'] as $uri) {
-        if (!filter_var($uri, FILTER_VALIDATE_URL)) {
-          throw new BadRequestHttpException('Invalid redirect URI: ' . $uri);
-        }
-      }
-    }
-
-    // Validate URI fields.
-    $uri_fields = ['client_uri', 'logo_uri', 'tos_uri', 'policy_uri', 'jwks_uri'];
-    foreach ($uri_fields as $field) {
-      if (isset($metadata[$field]) && !empty($metadata[$field])) {
-        if (!filter_var($metadata[$field], FILTER_VALIDATE_URL)) {
-          throw new BadRequestHttpException('Invalid URI for ' . $field . ': ' . $metadata[$field]);
-        }
-      }
-    }
-
-    // Validate contacts array.
-    if (isset($metadata['contacts'])) {
-      if (!is_array($metadata['contacts'])) {
-        throw new BadRequestHttpException('contacts must be an array');
-      }
-
-      foreach ($metadata['contacts'] as $contact) {
-        if (!filter_var($contact, FILTER_VALIDATE_EMAIL)) {
-          throw new BadRequestHttpException('Invalid email in contacts: ' . $contact);
-        }
-      }
-    }
-
-    // Validate string fields.
-    $string_fields = ['client_name', 'software_id', 'software_version'];
-    foreach ($string_fields as $field) {
-      if (isset($metadata[$field]) && !is_string($metadata[$field])) {
-        throw new BadRequestHttpException($field . ' must be a string');
-      }
-    }
-  }
 
   /**
    * Loads a consumer entity by client ID.

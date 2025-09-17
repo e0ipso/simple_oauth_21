@@ -103,9 +103,9 @@ function simple_oauth_client_registration_install($is_syncing) {
         'description' => 'URL that references a logo for the client application.',
       ],
       'contacts' => [
-        'type' => 'text_long',
-        'label' => 'Contacts',
-        'description' => 'Array of email addresses of people responsible for this client.',
+        'type' => 'email',
+        'label' => 'Contact Email',
+        'description' => 'Email addresses of people responsible for this client.',
         'cardinality' => -1,
       ],
       'tos_uri' => [
@@ -185,6 +185,19 @@ function simple_oauth_client_registration_install($is_syncing) {
             ])
             ->setDisplayOptions('view', [
               'type' => 'text_default',
+              'label' => 'above',
+              'weight' => $weight,
+            ]);
+        }
+        elseif ($field_config['type'] === 'email') {
+          $field_definition
+            ->setDisplayOptions('form', [
+              'type' => 'email_default',
+              'weight' => $weight,
+              'settings' => ['size' => 60, 'placeholder' => 'admin@example.com'],
+            ])
+            ->setDisplayOptions('view', [
+              'type' => 'basic_string',
               'label' => 'above',
               'weight' => $weight,
             ]);

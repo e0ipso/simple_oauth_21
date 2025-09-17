@@ -7,6 +7,7 @@
 
 declare(strict_types=1);
 
+use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 
 /**
@@ -19,5 +20,114 @@ function simple_oauth_21_help($route_name, RouteMatchInterface $route_match) {
 
     case 'simple_oauth_21.dashboard':
       return '<p>' . t('This dashboard provides an overview of OAuth 2.1 compliance status and configuration options.') . '</p>';
+  }
+}
+
+/**
+ * Implements hook_form_alter().
+ *
+ * Instruments forms for serialization debugging, particularly Consumer entity forms
+ * that may have AJAX serialization issues due to non-serializable closures.
+ */
+function simple_oauth_21_form_alter(array &$form, FormStateInterface $form_state, string $form_id): void {
+  // Only instrument Consumer entity forms and other OAuth-related forms.
+  $targetForms = [
+    'consumer_add_form',
+    'consumer_edit_form',
+    'consumer_delete_form',
+    'simple_oauth_settings',
+  ];
+
+  // Check if this is a form we want to debug.
+  $isTargetForm = FALSE;
+  foreach ($targetForms as $targetForm) {
+    if (str_contains($form_id, $targetForm) || $form_id === $targetForm) {
+      $isTargetForm = TRUE;
+      break;
+    }
+  }
+
+  // Also check for any form containing 'consumer' or 'oauth' in the ID.
+  if (!$isTargetForm && (str_contains($form_id, 'consumer') || str_contains($form_id, 'oauth'))) {
+    $isTargetForm = TRUE;
+  }
+
+  if (!$isTargetForm) {
+    return;
+  }
+
+  try {
+    /** @var \Drupal\simple_oauth_21\Service\FormSerializationDebugger $debugger */
+    $debugger = \Drupal::service('simple_oauth_21.form_serialization_debugger');
+
+    // Log that we're altering this form.
+    $debugger->logFormAlterHook($form_id, 'simple_oauth_21_form_alter', [
+      'form_keys' => array_keys($form),
+      'form_state_class' => get_class($form_state),
+    ]);
+
+    // Inspect the form for serialization issues.
+    $issues = $debugger->inspectFormState($form, $form_state, $form_id);
+
+    // Generate and log a report if issues were found.
+    if (!empty($issues)) {
+      $report = $debugger->generateReport($issues, $form_id);
+
+      // Add a form validation handler to capture additional debugging info.
+      $form['#validate'][] = 'simple_oauth_21_debug_form_validate';
+
+      // Store debug info in form state for validation handler.
+      $form_state->set('simple_oauth_21_debug_info', [
+        'form_id' => $form_id,
+        'issues' => $issues,
+        'report' => $report,
+      ]);
+    }
+  }
+  catch (\Exception $e) {
+    // Log error but don't break form functionality.
+    \Drupal::logger('simple_oauth_21')->error('Error in form_alter debugging: @message', [
+      '@message' => $e->getMessage(),
+      'form_id' => $form_id,
+      'trace' => $e->getTraceAsString(),
+    ]);
+  }
+}
+
+/**
+ * Form validation handler for debugging serialization issues.
+ *
+ * This validation handler is added to forms that have detected serialization
+ * issues and provides additional debugging information during form submission.
+ */
+function simple_oauth_21_debug_form_validate(array &$form, FormStateInterface $form_state): void {
+  $debugInfo = $form_state->get('simple_oauth_21_debug_info');
+  if (empty($debugInfo)) {
+    return;
+  }
+
+  try {
+    /** @var \Drupal\simple_oauth_21\Service\FormSerializationDebugger $debugger */
+    $debugger = \Drupal::service('simple_oauth_21.form_serialization_debugger');
+
+    // Re-inspect the form during validation to catch any new issues.
+    $validationIssues = $debugger->inspectFormState($form, $form_state, $debugInfo['form_id']);
+
+    if (!empty($validationIssues)) {
+      $validationReport = $debugger->generateReport($validationIssues, $debugInfo['form_id']);
+
+      \Drupal::logger('simple_oauth_21')->warning('Form validation serialization issues detected in @form_id', [
+        '@form_id' => $debugInfo['form_id'],
+        'original_issues' => count($debugInfo['issues']),
+        'validation_issues' => count($validationIssues),
+        'validation_report' => $validationReport,
+      ]);
+    }
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('simple_oauth_21')->error('Error in debug form validation: @message', [
+      '@message' => $e->getMessage(),
+      'form_id' => $debugInfo['form_id'] ?? 'unknown',
+    ]);
   }
 }
