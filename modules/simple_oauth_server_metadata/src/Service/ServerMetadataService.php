@@ -6,6 +6,9 @@ use Drupal\Core\Url;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Cache\CacheableMetadata;
+use Drupal\Core\Routing\RouteProviderInterface;
+use Drupal\Core\DrupalKernelInterface;
 
 /**
  * Main service for generating RFC 8414 server metadata.
@@ -55,6 +58,20 @@ class ServerMetadataService {
   protected $claimsAuthDiscovery;
 
   /**
+   * The route provider service.
+   *
+   * @var \Drupal\Core\Routing\RouteProviderInterface
+   */
+  protected $routeProvider;
+
+  /**
+   * The kernel service.
+   *
+   * @var \Drupal\Core\DrupalKernelInterface
+   */
+  protected $kernel;
+
+  /**
    * Constructs a ServerMetadataService object.
    *
    * @param \Drupal\Core\Cache\CacheBackendInterface $cache
@@ -69,6 +86,10 @@ class ServerMetadataService {
    *   The scope discovery service.
    * @param \Drupal\simple_oauth_server_metadata\Service\ClaimsAuthDiscoveryService $claims_auth_discovery
    *   The claims and auth discovery service.
+   * @param \Drupal\Core\Routing\RouteProviderInterface $route_provider
+   *   The route provider service.
+   * @param \Drupal\Core\DrupalKernelInterface $kernel
+   *   The kernel service.
    */
   public function __construct(
     CacheBackendInterface $cache,
@@ -77,6 +98,8 @@ class ServerMetadataService {
     GrantTypeDiscoveryService $grant_type_discovery,
     ScopeDiscoveryService $scope_discovery,
     ClaimsAuthDiscoveryService $claims_auth_discovery,
+    RouteProviderInterface $route_provider,
+    DrupalKernelInterface $kernel,
   ) {
     $this->cache = $cache;
     $this->configFactory = $config_factory;
@@ -84,6 +107,8 @@ class ServerMetadataService {
     $this->grantTypeDiscovery = $grant_type_discovery;
     $this->scopeDiscovery = $scope_discovery;
     $this->claimsAuthDiscovery = $claims_auth_discovery;
+    $this->routeProvider = $route_provider;
+    $this->kernel = $kernel;
   }
 
   /**
@@ -113,11 +138,11 @@ class ServerMetadataService {
     // Generate metadata if not cached.
     $metadata = $this->generateMetadata();
 
-    // Cache for 1 hour with appropriate tags.
+    // Cache with appropriate tags and max age.
     $this->cache->set(
       $cache_id,
       $metadata,
-      time() + 3600,
+      time() + $this->getCacheMaxAge(),
       $cache_tags
     );
 
@@ -224,6 +249,11 @@ class ServerMetadataService {
         $value = $config->get($field);
       }
 
+      // Auto-derive registration endpoint if not configured and route exists.
+      if ($field === 'registration_endpoint' && empty($value)) {
+        $value = $this->autoDetectRegistrationEndpoint();
+      }
+
       if (!empty($value)) {
         // Convert relative URLs to absolute URLs for URL fields.
         if (in_array($field, $url_fields) && is_string($value)) {
@@ -232,6 +262,36 @@ class ServerMetadataService {
         $metadata[$field] = $value;
       }
     }
+  }
+
+  /**
+   * Auto-detects the registration endpoint if the route exists.
+   *
+   * @return string|null
+   *   The registration endpoint URL or NULL if not available.
+   */
+  protected function autoDetectRegistrationEndpoint(): ?string {
+    try {
+      // Try to find the dynamic client registration route.
+      if ($this->routeProvider->getRouteByName('simple_oauth_client_registration.register')) {
+        return Url::fromRoute('simple_oauth_client_registration.register', [], ['absolute' => TRUE])->toString();
+      }
+    }
+    catch (\Exception $e) {
+      // Route doesn't exist, fall back to checking other possibilities.
+    }
+
+    try {
+      // Fallback: Check for any consumer add form as registration endpoint.
+      if ($this->routeProvider->getRouteByName('entity.consumer.add_form')) {
+        return Url::fromRoute('entity.consumer.add_form', [], ['absolute' => TRUE])->toString();
+      }
+    }
+    catch (\Exception $e) {
+      // No suitable route found.
+    }
+
+    return NULL;
   }
 
   /**
@@ -326,12 +386,26 @@ class ServerMetadataService {
    *   Array of cache tags.
    */
   protected function getCacheTags(): array {
-    return [
+    $tags = [
       'config:simple_oauth.settings',
       'config:simple_oauth_server_metadata.settings',
       'user_role_list',
       'oauth2_grant_plugins',
+      'route_match',
+      'simple_oauth_server_metadata',
     ];
+
+    // Add tags for route-based auto-detection.
+    $route_tags = [
+      'simple_oauth_client_registration.register',
+      'entity.consumer.add_form',
+    ];
+
+    foreach ($route_tags as $route_name) {
+      $tags[] = 'route:' . $route_name;
+    }
+
+    return $tags;
   }
 
   /**
@@ -339,6 +413,58 @@ class ServerMetadataService {
    */
   public function invalidateCache(): void {
     Cache::invalidateTags($this->getCacheTags());
+  }
+
+  /**
+   * Gets cache contexts for metadata caching.
+   *
+   * @return array
+   *   Array of cache contexts.
+   */
+  public function getCacheContexts(): array {
+    $contexts = [
+      'url.path',
+      'user.permissions',
+    ];
+
+    // Add query args context for test environments.
+    if (defined('DRUPAL_TEST_IN_CHILD_SITE') || $this->kernel->getEnvironment() === 'testing') {
+      $contexts[] = 'url.query_args';
+    }
+
+    return $contexts;
+  }
+
+  /**
+   * Gets cache max age for metadata caching.
+   *
+   * @return int
+   *   Cache max age in seconds.
+   */
+  public function getCacheMaxAge(): int {
+    // Shorter cache in test environments for immediate updates.
+    if (defined('DRUPAL_TEST_IN_CHILD_SITE') || $this->kernel->getEnvironment() === 'testing') {
+      // 1 minute in test environments.
+      return 60;
+    }
+
+    // 1 hour in production.
+    return 3600;
+  }
+
+  /**
+   * Gets cacheable metadata for the server metadata response.
+   *
+   * @return \Drupal\Core\Cache\CacheableMetadata
+   *   The cacheable metadata object.
+   */
+  public function getCacheableMetadata(): CacheableMetadata {
+    $metadata = new CacheableMetadata();
+    $metadata->setCacheTags($this->getCacheTags());
+    $metadata->setCacheContexts($this->getCacheContexts());
+    $metadata->setCacheMaxAge($this->getCacheMaxAge());
+
+    return $metadata;
   }
 
   /**

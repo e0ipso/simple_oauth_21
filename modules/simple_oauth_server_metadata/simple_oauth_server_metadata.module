@@ -47,6 +47,74 @@ function simple_oauth_server_metadata_config_save($config) {
   ];
 
   if (in_array($config->getName(), $config_names)) {
-    Cache::invalidateTags(['oauth2_server_metadata']);
+    // Invalidate comprehensive cache tags for config changes.
+    $tags = [
+      'oauth2_server_metadata',
+      'simple_oauth_server_metadata',
+      'config:' . $config->getName(),
+    ];
+    Cache::invalidateTags($tags);
+
+    // Also warm the cache to ensure fresh metadata is available.
+    try {
+      $service = \Drupal::service('simple_oauth_server_metadata.server_metadata');
+      $service->warmCache();
+    }
+    catch (\Exception $e) {
+      // Log error but don't fail config save.
+      \Drupal::logger('simple_oauth_server_metadata')->error(
+        'Failed to warm metadata cache after config save: @message',
+        ['@message' => $e->getMessage()]
+      );
+    }
   }
+}
+
+/**
+ * Implements hook_routing_route_alter().
+ */
+function simple_oauth_server_metadata_routing_route_alter($collection) {
+  // Invalidate metadata cache when routes are rebuilt (affects endpoint detection).
+  $route_names = [
+    'simple_oauth_client_registration.register',
+    'entity.consumer.add_form',
+  ];
+
+  foreach ($route_names as $route_name) {
+    if ($collection->get($route_name)) {
+      // Route exists, invalidate cache to detect new endpoints.
+      $tags = [
+        'simple_oauth_server_metadata',
+        'route:' . $route_name,
+        'route_match',
+      ];
+      Cache::invalidateTags($tags);
+    }
+  }
+}
+
+/**
+ * Implements hook_module_install().
+ */
+function simple_oauth_server_metadata_module_install() {
+  // Invalidate cache when modules are installed (may add new endpoints).
+  $tags = [
+    'simple_oauth_server_metadata',
+    'oauth2_grant_plugins',
+    'route_match',
+  ];
+  Cache::invalidateTags($tags);
+}
+
+/**
+ * Implements hook_module_uninstall().
+ */
+function simple_oauth_server_metadata_module_uninstall() {
+  // Invalidate cache when modules are uninstalled (may remove endpoints).
+  $tags = [
+    'simple_oauth_server_metadata',
+    'oauth2_grant_plugins',
+    'route_match',
+  ];
+  Cache::invalidateTags($tags);
 }
