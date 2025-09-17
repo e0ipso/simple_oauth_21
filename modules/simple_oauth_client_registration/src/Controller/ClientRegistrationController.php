@@ -88,7 +88,8 @@ class ClientRegistrationController extends ControllerBase {
       // Create JSON response with proper headers.
       $response = new JsonResponse($registration_response);
 
-      // Set appropriate caching headers (no caching for registration responses).
+      // Set appropriate caching headers (no caching for registration
+      // responses).
       $response->setMaxAge(0);
       $response->setPrivate();
 

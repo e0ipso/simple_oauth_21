@@ -31,7 +31,7 @@ class ClientRegistrationNormalizer implements NormalizerInterface, DenormalizerI
   /**
    * {@inheritdoc}
    */
-  public function normalize($object, string $format = NULL, array $context = []): array {
+  public function normalize($object, ?string $format = NULL, array $context = []): array {
     if ($object instanceof ClientRegistration) {
       // Normalize DTO to array.
       return $object->toArray();
@@ -48,7 +48,7 @@ class ClientRegistrationNormalizer implements NormalizerInterface, DenormalizerI
   /**
    * {@inheritdoc}
    */
-  public function denormalize($data, string $type, string $format = NULL, array $context = []): ClientRegistration {
+  public function denormalize($data, string $type, ?string $format = NULL, array $context = []): ClientRegistration {
     // Validate required data structure.
     if (!is_array($data)) {
       throw new BadRequestHttpException('Invalid request body');
@@ -64,14 +64,14 @@ class ClientRegistrationNormalizer implements NormalizerInterface, DenormalizerI
   /**
    * {@inheritdoc}
    */
-  public function supportsNormalization($data, string $format = NULL, array $context = []): bool {
+  public function supportsNormalization($data, ?string $format = NULL, array $context = []): bool {
     return $data instanceof ClientRegistration || $data instanceof ConsumerInterface;
   }
 
   /**
    * {@inheritdoc}
    */
-  public function supportsDenormalization($data, string $type, string $format = NULL, array $context = []): bool {
+  public function supportsDenormalization($data, string $type, ?string $format = NULL, array $context = []): bool {
     return $type === ClientRegistration::class;
   }
 
@@ -142,7 +142,8 @@ class ClientRegistrationNormalizer implements NormalizerInterface, DenormalizerI
       // Include client secret if available in context.
       if (!empty($context['client_secret'])) {
         $metadata['client_secret'] = $context['client_secret'];
-        $metadata['client_secret_expires_at'] = 0; // Never expires.
+        // Never expires.
+        $metadata['client_secret_expires_at'] = 0;
       }
     }
 

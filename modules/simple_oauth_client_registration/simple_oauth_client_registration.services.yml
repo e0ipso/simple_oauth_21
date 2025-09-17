@@ -19,6 +19,7 @@ services:
       - '@logger.channel.simple_oauth_client_registration'
       - '@uuid'
       - '@simple_oauth_client_registration.service.token'
+      - '@file_url_generator'
 
   simple_oauth_client_registration.service.token:
     class: Drupal\simple_oauth_client_registration\Service\RegistrationTokenService

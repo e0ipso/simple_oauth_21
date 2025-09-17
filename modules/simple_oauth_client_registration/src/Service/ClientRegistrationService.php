@@ -11,9 +11,9 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Component\Uuid\UuidInterface;
 use Drupal\Component\Utility\Crypt;
 use Drupal\Core\Url;
+use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
@@ -39,6 +39,7 @@ final class ClientRegistrationService {
     private readonly LoggerInterface $logger,
     private readonly UuidInterface $uuid,
     private readonly RegistrationTokenService $tokenService,
+    private readonly FileUrlGeneratorInterface $fileUrlGenerator,
   ) {}
 
   /**
@@ -143,7 +144,8 @@ final class ClientRegistrationService {
 
       // Include client secret for confidential clients.
       if ($consumer->get('confidential')->value && !empty($this->generatedSecret)) {
-        // Return the original secret value, not the hashed version stored in DB.
+        // Return the original secret value, not the hashed version stored in
+        // DB.
         $response['client_secret'] = $this->generatedSecret;
         // Never expires.
         $response['client_secret_expires_at'] = 0;
@@ -300,10 +302,10 @@ final class ClientRegistrationService {
    *   A client secret.
    */
   private function generateClientSecret(): string {
-    // Generate a cryptographically secure secret using the same method as Simple OAuth.
+    // Generate a cryptographically secure secret using the same method as
+    // Simple OAuth.
     return Crypt::randomBytesBase64(32);
   }
-
 
   /**
    * Loads a consumer entity by client ID.
@@ -400,7 +402,7 @@ final class ClientRegistrationService {
         $file = $image_field->entity;
         // Generate absolute URL for the image file.
         $file_uri = $file->getFileUri();
-        return \Drupal::service('file_url_generator')->generateAbsoluteString($file_uri);
+        return $this->fileUrlGenerator->generateAbsoluteString($file_uri);
       }
     }
 

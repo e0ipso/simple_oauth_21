@@ -1,3 +1,0 @@
-form_serialization_debugging: false
-log_level: 'debug'
-max_recursion_depth: 10

@@ -91,17 +91,16 @@ class ConsumerAjaxFormTest extends BrowserTestBase {
     // Test adding another contact email field via AJAX.
     $add_buttons = $this->getSession()->getPage()->findAll('css', 'input[value="Add another item"]');
     if (!empty($add_buttons)) {
-      $add_buttons[0]->click(); // Click first "Add another item" button
-      $this->assertSession()->assertWaitOnAjaxRequest();
+      // Click first "Add another item" button.
+      $add_buttons[0]->click();
+      $this->getSession()->wait(2000);
 
       // Fill in email addresses using the discovered field pattern.
-      if ($contact_field_found) {
-        $this->getSession()->getPage()->fillField($contact_field_found, 'admin@example.com');
-      }
+      $this->getSession()->getPage()->fillField($contact_field_found, 'admin@example.com');
     }
 
     // Test basic form functionality without specific field names for now.
-    $this->assertTrue(TRUE, 'Contact field AJAX operations test completed');
+    $this->assertNotEmpty($add_buttons, 'Contact field AJAX operations completed with add buttons present');
   }
 
   /**
@@ -138,13 +137,14 @@ class ConsumerAjaxFormTest extends BrowserTestBase {
       // Try alternative selectors.
       $add_buttons = $this->getSession()->getPage()->findAll('css', 'input[value="Add another item"]');
       if (count($add_buttons) > 1) {
-        $redirect_add_button = $add_buttons[1]; // Second "Add another item" button might be for redirect
+        // Second "Add another item" button might be for redirect.
+        $redirect_add_button = $add_buttons[1];
       }
     }
 
     if ($redirect_add_button) {
       $redirect_add_button->click();
-      $this->assertSession()->assertWaitOnAjaxRequest();
+      $this->getSession()->wait(2000);
 
       // Fill in redirect URI using the discovered field pattern.
       if ($redirect_field_found) {
@@ -153,7 +153,7 @@ class ConsumerAjaxFormTest extends BrowserTestBase {
     }
 
     // Test basic form functionality.
-    $this->assertTrue(TRUE, 'Redirect URI field AJAX operations test completed');
+    $this->assertNotFalse($redirect_field_found, 'Redirect URI field AJAX operations completed successfully');
   }
 
   /**
@@ -172,7 +172,7 @@ class ConsumerAjaxFormTest extends BrowserTestBase {
     // Add multiple contact emails.
     $this->getSession()->getPage()->fillField('contacts[0][value]', 'primary@example.com');
     $this->getSession()->getPage()->pressButton('Add another item');
-    $this->assertSession()->assertWaitOnAjaxRequest();
+    $this->getSession()->wait(2000);
     $this->getSession()->getPage()->fillField('contacts[1][value]', 'secondary@example.com');
 
     // Add multiple redirect URIs.
@@ -180,7 +180,7 @@ class ConsumerAjaxFormTest extends BrowserTestBase {
     $redirect_add_button = $this->getSession()->getPage()->find('css', 'input[data-drupal-selector="edit-redirect-add-more"]');
     if ($redirect_add_button) {
       $redirect_add_button->click();
-      $this->assertSession()->assertWaitOnAjaxRequest();
+      $this->getSession()->wait(2000);
       $this->getSession()->getPage()->fillField('redirect[1][value]', 'myapp://callback');
     }
 
@@ -235,7 +235,7 @@ class ConsumerAjaxFormTest extends BrowserTestBase {
 
     // Add another contact via AJAX.
     $this->getSession()->getPage()->pressButton('Add another item');
-    $this->assertSession()->assertWaitOnAjaxRequest();
+    $this->getSession()->wait(2000);
     $this->getSession()->getPage()->fillField('contacts[3][value]', 'new@example.com');
 
     // Submit the form.
@@ -263,7 +263,7 @@ class ConsumerAjaxFormTest extends BrowserTestBase {
     // Perform multiple AJAX operations in sequence.
     for ($i = 0; $i < 3; $i++) {
       $this->getSession()->getPage()->pressButton('Add another item');
-      $this->assertSession()->assertWaitOnAjaxRequest();
+      $this->getSession()->wait(2000);
 
       // Fill in a contact email.
       $this->getSession()->getPage()->fillField("contacts[{$i}][value]", "test{$i}@example.com");
@@ -275,7 +275,7 @@ class ConsumerAjaxFormTest extends BrowserTestBase {
       for ($i = 0; $i < 2; $i++) {
         if ($i > 0) {
           $redirect_add_button->click();
-          $this->assertSession()->assertWaitOnAjaxRequest();
+          $this->getSession()->wait(2000);
         }
         $this->getSession()->getPage()->fillField("redirect[{$i}][value]", "https://app{$i}.example.com/callback");
       }
@@ -285,7 +285,7 @@ class ConsumerAjaxFormTest extends BrowserTestBase {
     $remove_buttons = $this->getSession()->getPage()->findAll('css', 'input[value="Remove"]');
     if (!empty($remove_buttons)) {
       $remove_buttons[0]->click();
-      $this->assertSession()->assertWaitOnAjaxRequest();
+      $this->getSession()->wait(2000);
     }
 
     // Verify that the page still works and no errors are present.
@@ -303,20 +303,21 @@ class ConsumerAjaxFormTest extends BrowserTestBase {
     $this->drupalGet(Url::fromRoute('entity.consumer.add_form'));
 
     // Test rapid successive AJAX operations.
-    $start_time = microtime(true);
+    $start_time = microtime(TRUE);
 
     for ($i = 0; $i < 5; $i++) {
       $this->getSession()->getPage()->pressButton('Add another item');
-      $this->assertSession()->assertWaitOnAjaxRequest();
+      $this->getSession()->wait(2000);
 
       // Verify the field appears promptly.
       $this->assertSession()->fieldExists("contacts[{$i}][value]");
     }
 
-    $end_time = microtime(true);
+    $end_time = microtime(TRUE);
     $total_time = $end_time - $start_time;
 
-    // AJAX operations should complete within reasonable time (5 seconds for 5 operations).
+    // AJAX operations should complete within reasonable time (5 seconds for 5
+    // operations).
     $this->assertLessThan(5.0, $total_time, 'AJAX operations should complete within 5 seconds for good user experience.');
 
     // Test that all fields are functional after rapid operations.

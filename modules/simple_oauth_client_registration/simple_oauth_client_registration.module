@@ -227,7 +227,7 @@ function simple_oauth_client_registration_entity_base_field_info(EntityTypeInter
     // policy_uri - Privacy policy URI.
     $fields['policy_uri'] = BaseFieldDefinition::create('uri')
       ->setLabel(t('Policy URI'))
-      ->setDescription(t('URL that the relying party client provides to the end user to read about the relying party\'s terms of service.'))
+      ->setDescription(t("URL that the relying party client provides to the end user to read about the relying party's terms of service."))
       ->setRequired(FALSE)
       ->setDisplayOptions('form', [
         'type' => 'uri',
@@ -245,7 +245,7 @@ function simple_oauth_client_registration_entity_base_field_info(EntityTypeInter
     // jwks_uri - JSON Web Key Set URI.
     $fields['jwks_uri'] = BaseFieldDefinition::create('uri')
       ->setLabel(t('JWKS URI'))
-      ->setDescription(t('URL for the client\'s JSON Web Key Set document.'))
+      ->setDescription(t("URL for the client's JSON Web Key Set document."))
       ->setRequired(FALSE)
       ->setDisplayOptions('form', [
         'type' => 'uri',
@@ -307,7 +307,8 @@ function simple_oauth_client_registration_entity_base_field_info(EntityTypeInter
  */
 function simple_oauth_client_registration_form_consumer_form_alter(&$form, FormStateInterface $form_state, $form_id) {
 
-  // Enhance the image field description to explain the difference with logo_uri.
+  // Enhance the image field description to explain the difference with
+  // logo_uri.
   if (isset($form['image'])) {
     $form['image']['widget'][0]['#description'] = t('Upload a logo file for this client. This logo will be prioritized in API responses over the "Logo URI" field below.');
   }
