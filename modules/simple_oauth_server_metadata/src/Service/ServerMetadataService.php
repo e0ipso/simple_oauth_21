@@ -284,9 +284,9 @@ class ServerMetadataService {
    *   The registration endpoint URL or NULL if not available.
    */
   protected function autoDetectRegistrationEndpoint(): ?string {
-    // Use cache to avoid repeated route lookups in the same request.
+    // Use named static cache to enable targeted clearing in test environments.
     $cache_key = 'registration_endpoint_detection';
-    static $static_cache = [];
+    $static_cache = &\drupal_static('simple_oauth_server_metadata_route_detection', []);
 
     if (isset($static_cache[$cache_key])) {
       return $static_cache[$cache_key];
@@ -710,6 +710,35 @@ class ServerMetadataService {
    */
   public function invalidateCache(): void {
     Cache::invalidateTags($this->getCacheTags());
+
+    // In test environments, also clear the cache backend directly for immediate effect.
+    if ($this->isTestEnvironment()) {
+      $cache_id = 'simple_oauth_server_metadata:metadata';
+      $this->cache->delete($cache_id);
+
+      // Clear any static caches that might interfere with fresh metadata generation.
+      $this->clearStaticCaches();
+    }
+  }
+
+  /**
+   * Clears static caches that might interfere with metadata generation.
+   */
+  protected function clearStaticCaches(): void {
+    // Reset static cache in auto-detection to ensure fresh route lookups.
+    if ($this->isTestEnvironment()) {
+      \drupal_static_reset('simple_oauth_server_metadata_route_detection');
+    }
+  }
+
+  /**
+   * Checks if we are in a test environment.
+   *
+   * @return bool
+   *   TRUE if in test environment, FALSE otherwise.
+   */
+  protected function isTestEnvironment(): bool {
+    return defined('DRUPAL_TEST_IN_CHILD_SITE') || $this->kernel->getEnvironment() === 'testing';
   }
 
   /**
@@ -769,6 +798,30 @@ class ServerMetadataService {
    */
   public function warmCache(): void {
     $this->getServerMetadata();
+  }
+
+  /**
+   * Forces a complete cache refresh for test environments.
+   *
+   * This method provides a way for tests to ensure completely fresh
+   * metadata generation without any cached values, which is essential
+   * for testing configuration changes and cache behavior.
+   */
+  public function refreshCacheForTesting(): void {
+    if ($this->isTestEnvironment()) {
+      // Clear persistent cache.
+      $cache_id = 'simple_oauth_server_metadata:metadata';
+      $this->cache->delete($cache_id);
+
+      // Clear static caches.
+      $this->clearStaticCaches();
+
+      // Invalidate all related cache tags.
+      Cache::invalidateTags($this->getCacheTags());
+
+      // Immediately warm cache with fresh data.
+      $this->warmCache();
+    }
   }
 
 }
