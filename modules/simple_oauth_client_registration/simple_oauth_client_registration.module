@@ -9,6 +9,7 @@
 
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Url;
 
@@ -167,18 +168,18 @@ function simple_oauth_client_registration_entity_base_field_info(EntityTypeInter
 
     // logo_uri - Client logo URI.
     $fields['logo_uri'] = BaseFieldDefinition::create('uri')
-      ->setLabel(t('Logo URI'))
-      ->setDescription(t('URL that references a logo for the client application.'))
+      ->setLabel(t('Logo URI (Alternative)'))
+      ->setDescription(t('URL that references an external logo for the client application. Use this field for API-registered clients that host their logo externally, or as an alternative to uploading a logo file above.'))
       ->setRequired(FALSE)
       ->setDisplayOptions('form', [
         'type' => 'uri',
-        'weight' => 22,
+        'weight' => -2,
         'settings' => ['size' => 60],
       ])
       ->setDisplayOptions('view', [
         'type' => 'uri_link',
         'label' => 'above',
-        'weight' => 22,
+        'weight' => -2,
       ])
       ->setDisplayConfigurable('form', TRUE)
       ->setDisplayConfigurable('view', TRUE);
@@ -296,4 +297,19 @@ function simple_oauth_client_registration_entity_base_field_info(EntityTypeInter
   }
 
   return $fields;
+}
+
+/**
+ * Implements hook_form_BASE_FORM_ID_alter().
+ */
+function simple_oauth_client_registration_form_consumer_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // Enhance the image field description to explain the difference with logo_uri.
+  if (isset($form['image'])) {
+    $form['image']['widget'][0]['#description'] = t('Upload a logo file for this client. For API-registered clients or external logos, use the "Logo URI" field below instead.');
+  }
+
+  // Ensure logo_uri appears right after image field.
+  if (isset($form['logo_uri'])) {
+    $form['logo_uri']['#weight'] = $form['image']['#weight'] + 0.1;
+  }
 }
