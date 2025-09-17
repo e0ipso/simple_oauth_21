@@ -385,7 +385,7 @@ final class ClientRegistrationService {
       'client_id' => $consumer->getClientId(),
       'client_name' => $consumer->label(),
       'client_uri' => $consumer->get('client_uri')->value ?? '',
-      'logo_uri' => $consumer->get('logo_uri')->value ?? '',
+      'logo_uri' => $this->getLogoUri($consumer),
       'tos_uri' => $consumer->get('tos_uri')->value ?? '',
       'policy_uri' => $consumer->get('policy_uri')->value ?? '',
       'jwks_uri' => $consumer->get('jwks_uri')->value ?? '',
@@ -421,6 +421,31 @@ final class ClientRegistrationService {
     return array_filter($metadata, function ($value) {
       return $value !== '' && $value !== [];
     });
+  }
+
+  /**
+   * Gets the logo URI for a consumer, prioritizing image field over logo_uri.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $consumer
+   *   The consumer entity.
+   *
+   * @return string
+   *   The logo URI or empty string if none available.
+   */
+  private function getLogoUri($consumer): string {
+    // First, check if there's an uploaded image file.
+    if (!$consumer->get('image')->isEmpty()) {
+      $image_field = $consumer->get('image')->first();
+      if ($image_field && $image_field->entity) {
+        $file = $image_field->entity;
+        // Generate absolute URL for the image file.
+        $file_uri = $file->getFileUri();
+        return \Drupal::service('file_url_generator')->generateAbsoluteString($file_uri);
+      }
+    }
+
+    // Fallback to logo_uri field if no image uploaded.
+    return $consumer->get('logo_uri')->value ?? '';
   }
 
 }
