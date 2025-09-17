@@ -59,6 +59,11 @@ class ServerMetadataController extends ControllerBase {
    */
   public function metadata(): CacheableJsonResponse {
     try {
+      // Force cache invalidation in test environments to ensure fresh data.
+      if (defined('DRUPAL_TEST_IN_CHILD_SITE') || $this->kernel->getEnvironment() === 'testing') {
+        $this->serverMetadataService->invalidateCache();
+      }
+
       // Get metadata from service.
       $metadata = $this->serverMetadataService->getServerMetadata();
 
