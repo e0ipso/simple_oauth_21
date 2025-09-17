@@ -82,8 +82,11 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
 
   /**
    * Test RFC 7591 client registration workflow.
+   *
+   * @return array<string, mixed>
+   *   The client registration response data.
    */
-  public function testClientRegistrationWorkflow() {
+  public function testClientRegistrationWorkflow(): array {
     // Prepare valid RFC 7591 client registration request.
     $client_metadata = [
       'client_name' => 'Test OAuth Client',
@@ -205,7 +208,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   /**
    * Test client management operations using registration access token.
    */
-  public function testClientManagementOperations() {
+  public function testClientManagementOperations(): void {
     // First register a client.
     $registration_data = $this->testClientRegistrationWorkflow();
     $client_id = $registration_data['client_id'];
@@ -248,7 +251,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   /**
    * Test registration error conditions.
    */
-  public function testRegistrationErrorConditions() {
+  public function testRegistrationErrorConditions(): void {
     // Test empty request body.
     $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
       RequestOptions::HEADERS => [
@@ -299,7 +302,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   /**
    * Test metadata endpoints functionality.
    */
-  public function testMetadataEndpoints() {
+  public function testMetadataEndpoints(): void {
     // Ensure cache isolation for HTTP-based metadata endpoint testing.
     $this->ensureCacheIsolation();
 
@@ -352,7 +355,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   /**
    * Test registration access token authentication.
    */
-  public function testRegistrationTokenAuthentication() {
+  public function testRegistrationTokenAuthentication(): void {
     // Register a client first.
     $registration_data = $this->testClientRegistrationWorkflow();
     $client_id = $registration_data['client_id'];
@@ -396,7 +399,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
    * - Cache isolation between test operations
    * - Consistent behavior across multiple requests.
    */
-  public function testCacheIsolationAndConsistency() {
+  public function testCacheIsolationAndConsistency(): void {
     // Get initial metadata service.
     $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
 
