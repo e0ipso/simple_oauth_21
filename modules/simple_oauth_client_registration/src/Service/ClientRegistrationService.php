@@ -23,6 +23,13 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 final class ClientRegistrationService {
 
   /**
+   * Temporarily stores the generated secret for return in response.
+   *
+   * @var string|null
+   */
+  private ?string $generatedSecret = NULL;
+
+  /**
    * Constructor.
    */
   public function __construct(
@@ -46,6 +53,9 @@ final class ClientRegistrationService {
     // Generate unique client ID.
     $client_id = $this->generateClientId();
 
+    // Determine if client should be confidential.
+    $is_confidential = ($clientData['token_endpoint_auth_method'] ?? 'client_secret_basic') !== 'none';
+
     // Map RFC 7591 fields to Consumer entity fields using Consumer::create.
     $values = [
       'client_id' => $client_id,
@@ -53,7 +63,7 @@ final class ClientRegistrationService {
       'description' => 'Client registered via RFC 7591 Dynamic Client Registration',
       'grant_types' => $clientData['grant_types'] ?? ['authorization_code'],
       'redirect' => $clientData['redirect_uris'] ?? [],
-      'confidential' => ($clientData['token_endpoint_auth_method'] ?? 'client_secret_basic') !== 'none',
+      'confidential' => $is_confidential,
       'roles' => ['authenticated'],
       'is_default' => FALSE,
       'third_party' => TRUE,
@@ -64,13 +74,29 @@ final class ClientRegistrationService {
       'client_name' => $clientData['client_name'] ?? '',
       'client_uri' => $clientData['client_uri'] ?? '',
       'logo_uri' => $clientData['logo_uri'] ?? '',
-      'contacts' => $clientData['contacts'] ?? [],
       'tos_uri' => $clientData['tos_uri'] ?? '',
       'policy_uri' => $clientData['policy_uri'] ?? '',
       'jwks_uri' => $clientData['jwks_uri'] ?? '',
       'software_id' => $clientData['software_id'] ?? '',
       'software_version' => $clientData['software_version'] ?? '',
     ];
+
+    // Generate client secret for confidential clients.
+    if ($is_confidential) {
+      $this->generatedSecret = $this->generateClientSecret();
+      $values['secret'] = $this->generatedSecret;
+    }
+    else {
+      $this->generatedSecret = NULL;
+    }
+
+    // Handle contacts field (multiple cardinality)
+    if (!empty($clientData['contacts'])) {
+      $values['contacts'] = [];
+      foreach ($clientData['contacts'] as $contact) {
+        $values['contacts'][] = ['value' => $contact];
+      }
+    }
 
     // Create Consumer using the proven Consumer::create() pattern.
     $consumer = Consumer::create($values);
@@ -118,8 +144,9 @@ final class ClientRegistrationService {
       ];
 
       // Include client secret for confidential clients.
-      if ($consumer->get('confidential')->value) {
-        $response['client_secret'] = $consumer->getSecret();
+      if ($consumer->get('confidential')->value && !empty($this->generatedSecret)) {
+        // Return the original secret value, not the hashed version stored in DB.
+        $response['client_secret'] = $this->generatedSecret;
         // Never expires.
         $response['client_secret_expires_at'] = 0;
       }
@@ -242,10 +269,21 @@ final class ClientRegistrationService {
       // Generate a random client ID using the same method as Simple OAuth.
       $client_id = Crypt::randomBytesBase64(32);
       // Ensure uniqueness by checking existing Consumer entities.
-      $existing = $consumer_storage->loadByProperties(['uuid' => $client_id]);
+      $existing = $consumer_storage->loadByProperties(['client_id' => $client_id]);
     } while (!empty($existing));
 
     return $client_id;
+  }
+
+  /**
+   * Generates a client secret for confidential clients.
+   *
+   * @return string
+   *   A client secret.
+   */
+  private function generateClientSecret(): string {
+    // Generate a cryptographically secure secret using the same method as Simple OAuth.
+    return Crypt::randomBytesBase64(32);
   }
 
   /**
@@ -319,7 +357,7 @@ final class ClientRegistrationService {
     $consumer_storage = $this->entityTypeManager->getStorage('consumer');
 
     $consumers = $consumer_storage->loadByProperties([
-      'uuid' => $client_id,
+      'client_id' => $client_id,
     ]);
 
     if (empty($consumers)) {
@@ -342,15 +380,16 @@ final class ClientRegistrationService {
     $metadata = [
       'client_id' => $consumer->getClientId(),
       'client_name' => $consumer->get('client_name')->value ?? '',
-      'client_uri' => $consumer->get('client_uri')->uri ?? '',
-      'logo_uri' => $consumer->get('logo_uri')->uri ?? '',
-      'tos_uri' => $consumer->get('tos_uri')->uri ?? '',
-      'policy_uri' => $consumer->get('policy_uri')->uri ?? '',
-      'jwks_uri' => $consumer->get('jwks_uri')->uri ?? '',
+      'client_uri' => $consumer->get('client_uri')->value ?? '',
+      'logo_uri' => $consumer->get('logo_uri')->value ?? '',
+      'tos_uri' => $consumer->get('tos_uri')->value ?? '',
+      'policy_uri' => $consumer->get('policy_uri')->value ?? '',
+      'jwks_uri' => $consumer->get('jwks_uri')->value ?? '',
       'software_id' => $consumer->get('software_id')->value ?? '',
       'software_version' => $consumer->get('software_version')->value ?? '',
       'redirect_uris' => [],
       'contacts' => [],
+      'grant_types' => [],
     ];
 
     // Get redirect URIs.
@@ -364,6 +403,13 @@ final class ClientRegistrationService {
     if (!$consumer->get('contacts')->isEmpty()) {
       foreach ($consumer->get('contacts') as $contact) {
         $metadata['contacts'][] = $contact->value;
+      }
+    }
+
+    // Get grant types.
+    if (!$consumer->get('grant_types')->isEmpty()) {
+      foreach ($consumer->get('grant_types') as $grant_type) {
+        $metadata['grant_types'][] = $grant_type->value;
       }
     }
 

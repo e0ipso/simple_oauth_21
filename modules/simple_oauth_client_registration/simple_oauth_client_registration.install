@@ -5,6 +5,7 @@
  * Install/uninstall functions for Simple OAuth Client Registration module.
  */
 
+use Drupal\Core\Url;
 use Drupal\Core\Field\BaseFieldDefinition;
 
 /**
@@ -61,6 +62,21 @@ function simple_oauth_client_registration_schema() {
  */
 function simple_oauth_client_registration_install($is_syncing) {
   if (!$is_syncing) {
+    // Configure the registration endpoint in server metadata if server metadata module is enabled.
+    if (\Drupal::moduleHandler()->moduleExists('simple_oauth_server_metadata')) {
+      $config = \Drupal::configFactory()->getEditable('simple_oauth_server_metadata.settings');
+      if (empty($config->get('registration_endpoint'))) {
+        try {
+          $registration_url = Url::fromRoute('simple_oauth_client_registration.register')->setAbsolute()->toString();
+          $config->set('registration_endpoint', $registration_url);
+          $config->save();
+        }
+        catch (\Exception $e) {
+          // If route doesn't exist, don't set it.
+        }
+      }
+    }
+
     // Update the entity definition to include the new base fields.
     $entity_type_manager = \Drupal::entityTypeManager();
     $entity_type_manager->clearCachedDefinitions();
@@ -122,7 +138,14 @@ function simple_oauth_client_registration_install($is_syncing) {
     ];
 
     foreach ($rfc_fields as $field_name => $field_config) {
-      if (!$definition_update_manager->getFieldStorageDefinition($field_name, 'consumer')) {
+      try {
+        $existing_definition = $definition_update_manager->getFieldStorageDefinition($field_name, 'consumer');
+      }
+      catch (\Exception $e) {
+        $existing_definition = NULL;
+      }
+
+      if (!$existing_definition) {
         $field_definition = BaseFieldDefinition::create($field_config['type'])
           ->setLabel(t($field_config['label']))
           ->setDescription(t($field_config['description']))
@@ -152,7 +175,8 @@ function simple_oauth_client_registration_install($is_syncing) {
               'label' => 'above',
               'weight' => $weight,
             ]);
-        } elseif ($field_config['type'] === 'text_long') {
+        }
+        elseif ($field_config['type'] === 'text_long') {
           $field_definition
             ->setDisplayOptions('form', [
               'type' => 'text_textarea',
@@ -164,7 +188,8 @@ function simple_oauth_client_registration_install($is_syncing) {
               'label' => 'above',
               'weight' => $weight,
             ]);
-        } else {
+        }
+        else {
           $field_definition
             ->setDisplayOptions('form', [
               'type' => 'string_textfield',
@@ -182,7 +207,16 @@ function simple_oauth_client_registration_install($is_syncing) {
           ->setDisplayConfigurable('form', TRUE)
           ->setDisplayConfigurable('view', TRUE);
 
-        $definition_update_manager->installFieldStorageDefinition($field_name, 'consumer', 'simple_oauth_client_registration', $field_definition);
+        try {
+          $definition_update_manager->installFieldStorageDefinition($field_name, 'consumer', 'simple_oauth_client_registration', $field_definition);
+        }
+        catch (\Exception $e) {
+          // Log the error but don't fail the install.
+          \Drupal::logger('simple_oauth_client_registration')->error('Failed to install field @field: @error', [
+            '@field' => $field_name,
+            '@error' => $e->getMessage(),
+          ]);
+        }
       }
     }
   }
@@ -193,6 +227,16 @@ function simple_oauth_client_registration_install($is_syncing) {
  */
 function simple_oauth_client_registration_uninstall($is_syncing) {
   if (!$is_syncing) {
+    // Clear the registration endpoint from server metadata if it points to our endpoint.
+    if (\Drupal::moduleHandler()->moduleExists('simple_oauth_server_metadata')) {
+      $config = \Drupal::configFactory()->getEditable('simple_oauth_server_metadata.settings');
+      $registration_endpoint = $config->get('registration_endpoint');
+      if (!empty($registration_endpoint) && strpos($registration_endpoint, '/oauth/register') !== FALSE) {
+        $config->set('registration_endpoint', '');
+        $config->save();
+      }
+    }
+
     $definition_update_manager = \Drupal::entityDefinitionUpdateManager();
 
     // Remove all RFC 7591 client metadata fields.

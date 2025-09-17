@@ -147,7 +147,7 @@ function simple_oauth_client_registration_entity_base_field_info(EntityTypeInter
   $fields = [];
 
   if ($entity_type->id() === 'consumer') {
-    // client_name - Human-readable client name
+    // client_name - Human-readable client name.
     $fields['client_name'] = BaseFieldDefinition::create('string')
       ->setLabel(t('Client Name'))
       ->setDescription(t('Human-readable name of the client to be presented to the end user.'))
@@ -166,7 +166,7 @@ function simple_oauth_client_registration_entity_base_field_info(EntityTypeInter
       ->setDisplayConfigurable('form', TRUE)
       ->setDisplayConfigurable('view', TRUE);
 
-    // client_uri - Client information URI
+    // client_uri - Client information URI.
     $fields['client_uri'] = BaseFieldDefinition::create('uri')
       ->setLabel(t('Client URI'))
       ->setDescription(t('URL of the home page of the client.'))
@@ -184,7 +184,7 @@ function simple_oauth_client_registration_entity_base_field_info(EntityTypeInter
       ->setDisplayConfigurable('form', TRUE)
       ->setDisplayConfigurable('view', TRUE);
 
-    // logo_uri - Client logo URI
+    // logo_uri - Client logo URI.
     $fields['logo_uri'] = BaseFieldDefinition::create('uri')
       ->setLabel(t('Logo URI'))
       ->setDescription(t('URL that references a logo for the client application.'))
@@ -202,7 +202,7 @@ function simple_oauth_client_registration_entity_base_field_info(EntityTypeInter
       ->setDisplayConfigurable('form', TRUE)
       ->setDisplayConfigurable('view', TRUE);
 
-    // contacts - Contact information
+    // Contacts - Contact information.
     $fields['contacts'] = BaseFieldDefinition::create('text_long')
       ->setLabel(t('Contacts'))
       ->setDescription(t('Array of email addresses of people responsible for this client.'))
@@ -221,7 +221,7 @@ function simple_oauth_client_registration_entity_base_field_info(EntityTypeInter
       ->setDisplayConfigurable('form', TRUE)
       ->setDisplayConfigurable('view', TRUE);
 
-    // tos_uri - Terms of service URI
+    // tos_uri - Terms of service URI.
     $fields['tos_uri'] = BaseFieldDefinition::create('uri')
       ->setLabel(t('Terms of Service URI'))
       ->setDescription(t('URL that the relying party client provides to the end user to read about the how the profile data will be used.'))
@@ -239,7 +239,7 @@ function simple_oauth_client_registration_entity_base_field_info(EntityTypeInter
       ->setDisplayConfigurable('form', TRUE)
       ->setDisplayConfigurable('view', TRUE);
 
-    // policy_uri - Privacy policy URI
+    // policy_uri - Privacy policy URI.
     $fields['policy_uri'] = BaseFieldDefinition::create('uri')
       ->setLabel(t('Policy URI'))
       ->setDescription(t('URL that the relying party client provides to the end user to read about the relying party\'s terms of service.'))
@@ -257,7 +257,7 @@ function simple_oauth_client_registration_entity_base_field_info(EntityTypeInter
       ->setDisplayConfigurable('form', TRUE)
       ->setDisplayConfigurable('view', TRUE);
 
-    // jwks_uri - JSON Web Key Set URI
+    // jwks_uri - JSON Web Key Set URI.
     $fields['jwks_uri'] = BaseFieldDefinition::create('uri')
       ->setLabel(t('JWKS URI'))
       ->setDescription(t('URL for the client\'s JSON Web Key Set document.'))
@@ -275,7 +275,7 @@ function simple_oauth_client_registration_entity_base_field_info(EntityTypeInter
       ->setDisplayConfigurable('form', TRUE)
       ->setDisplayConfigurable('view', TRUE);
 
-    // software_id - Software identifier
+    // software_id - Software identifier.
     $fields['software_id'] = BaseFieldDefinition::create('string')
       ->setLabel(t('Software ID'))
       ->setDescription(t('A unique identifier string (UUID or other identifier) assigned by the client developer or software publisher.'))
@@ -294,7 +294,7 @@ function simple_oauth_client_registration_entity_base_field_info(EntityTypeInter
       ->setDisplayConfigurable('form', TRUE)
       ->setDisplayConfigurable('view', TRUE);
 
-    // software_version - Software version
+    // software_version - Software version.
     $fields['software_version'] = BaseFieldDefinition::create('string')
       ->setLabel(t('Software Version'))
       ->setDescription(t('A version identifier string for the client software.'))

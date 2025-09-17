@@ -18,9 +18,10 @@ simple_oauth_client_registration.manage:
     _title: 'OAuth 2.0 Client Management'
   methods: [GET, PUT, DELETE]
   requirements:
-    # Requires registration access token authentication
+    # Public endpoint - authentication handled in controller
     _access: 'TRUE'
-    client_id: '^[a-f0-9\-]{36}$'
+    client_id: '^[a-zA-Z0-9_\-\/\+=]{32,128}$'
   options:
     _format: 'json'
     no_cache: TRUE
+    _oauth_skip_auth: TRUE

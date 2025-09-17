@@ -58,10 +58,15 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
   }
 
   /**
-   * Test OAuth workflow in web context (HTTP requests).
+   * Comprehensive OAuth integration testing across all contexts.
+   *
+   * This test consolidates OAuth functionality testing across web, API, and
+   * cache contexts for improved performance while maintaining comprehensive
+   * coverage.
    */
-  public function testWebContextOAuthWorkflow() {
-    // Test metadata endpoints are accessible via HTTP.
+  public function testComprehensiveOauthIntegrationAcrossContexts() {
+    // === Web Context OAuth Workflow ===
+    // Test metadata endpoints are accessible via HTTP
     $this->drupalGet('/.well-known/oauth-authorization-server');
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->responseHeaderContains('Content-Type', 'application/json');
@@ -70,123 +75,94 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     $this->assertArrayHasKey('registration_endpoint', $auth_metadata, 'Registration endpoint must be advertised in web context');
 
     // Test client registration via HTTP.
-    $client_metadata = [
+    $web_client_metadata = [
       'client_name' => 'Web Context Test Client',
       'redirect_uris' => ['https://example.com/callback'],
       'grant_types' => ['authorization_code'],
     ];
-
-    $response = $this->httpClient->post($auth_metadata['registration_endpoint'], [
-      RequestOptions::JSON => $client_metadata,
-      RequestOptions::HEADERS => [
-        'Content-Type' => 'application/json',
-        'Accept' => 'application/json',
-      ],
+    $web_response = $this->httpClient->post($auth_metadata['registration_endpoint'], [
+      RequestOptions::JSON => $web_client_metadata,
+      RequestOptions::HEADERS => ['Content-Type' => 'application/json', 'Accept' => 'application/json'],
     ]);
+    $this->assertEquals(200, $web_response->getStatusCode(), 'Client registration should work in web context');
+    $web_client_data = Json::decode($web_response->getBody()->getContents());
+    $this->assertArrayHasKey('client_id', $web_client_data, 'Client ID should be generated in web context');
 
-    $this->assertEquals(200, $response->getStatusCode(), 'Client registration should work in web context');
-    $client_data = Json::decode($response->getBody()->getContents());
-    $this->assertArrayHasKey('client_id', $client_data, 'Client ID should be generated in web context');
-
-    return $client_data;
-  }
-
-  /**
-   * Test OAuth functionality in API/service context (direct service calls).
-   */
-  public function testAPIContextOAuthFunctionality() {
-    // Get metadata service directly.
+    // === API Context OAuth Functionality ===
+    // Get metadata service directly
     $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
-    $metadata = $metadata_service->getServerMetadata();
-
-    $this->assertArrayHasKey('registration_endpoint', $metadata, 'Registration endpoint must be available in API context');
-    $this->assertStringContainsString('/oauth/register', $metadata['registration_endpoint'], 'Registration endpoint URL must be correct in API context');
+    $api_metadata = $metadata_service->getServerMetadata();
+    $this->assertArrayHasKey('registration_endpoint', $api_metadata, 'Registration endpoint must be available in API context');
+    $this->assertStringContainsString('/oauth/register', $api_metadata['registration_endpoint'], 'Registration endpoint URL must be correct in API context');
 
     // Test client registration service directly.
     $registration_service = $this->container->get('simple_oauth_client_registration.service.registration');
-
-    $client_metadata = [
+    $api_client_metadata = [
       'client_name' => 'API Context Test Client',
       'redirect_uris' => ['https://api.example.com/callback'],
       'grant_types' => ['authorization_code', 'refresh_token'],
     ];
-
-    $client_data = $registration_service->registerClient($client_metadata);
-
-    $this->assertArrayHasKey('client_id', $client_data, 'Client ID should be generated in API context');
-    $this->assertArrayHasKey('client_secret', $client_data, 'Client secret should be generated in API context');
-    $this->assertArrayHasKey('registration_access_token', $client_data, 'Registration access token should be generated in API context');
+    $api_client_data = $registration_service->registerClient($api_client_metadata);
+    $this->assertArrayHasKey('client_id', $api_client_data, 'Client ID should be generated in API context');
+    $this->assertArrayHasKey('client_secret', $api_client_data, 'Client secret should be generated in API context');
+    $this->assertArrayHasKey('registration_access_token', $api_client_data, 'Registration access token should be generated in API context');
 
     // Test client retrieval.
-    $retrieved_metadata = $registration_service->getClientMetadata($client_data['client_id']);
-    $this->assertEquals($client_metadata['client_name'], $retrieved_metadata['client_name'], 'Client metadata should be retrievable in API context');
+    $retrieved_metadata = $registration_service->getClientMetadata($api_client_data['client_id']);
+    $this->assertEquals($api_client_metadata['client_name'], $retrieved_metadata['client_name'], 'Client metadata should be retrievable in API context');
 
-    return $client_data;
-  }
-
-  /**
-   * Test cache behavior across different contexts.
-   */
-  public function testCacheBehaviorAcrossContexts() {
-    $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
-
-    // Test 1: Generate metadata and cache it.
+    // === Cache Behavior Across Contexts ===
+    // Test cache generation and consistency
     $metadata_service->invalidateCache();
     $metadata1 = $metadata_service->getServerMetadata();
-
-    // Test 2: Retrieve from cache.
     $metadata2 = $metadata_service->getServerMetadata();
-
-    // Verify consistency.
     $this->assertEquals($metadata1['registration_endpoint'], $metadata2['registration_endpoint'], 'Cached metadata should be consistent');
 
-    // Test 3: HTTP context should use same cache.
+    // Test HTTP context uses same cache.
     $this->drupalGet('/.well-known/oauth-authorization-server');
     $this->assertSession()->statusCodeEquals(200);
     $http_metadata = Json::decode($this->getSession()->getPage()->getContent());
-
     $this->assertEquals($metadata1['registration_endpoint'], $http_metadata['registration_endpoint'], 'HTTP and API contexts should use same cache');
 
-    // Test 4: Cache invalidation affects both contexts.
+    // Test cache invalidation affects both contexts.
     $metadata_service->invalidateCache();
     $fresh_metadata = $metadata_service->getServerMetadata();
-
     $this->drupalGet('/.well-known/oauth-authorization-server');
     $this->assertSession()->statusCodeEquals(200);
     $fresh_http_metadata = Json::decode($this->getSession()->getPage()->getContent());
-
     $this->assertEquals($fresh_metadata['registration_endpoint'], $fresh_http_metadata['registration_endpoint'], 'Cache invalidation should affect both contexts');
-  }
 
-  /**
-   * Test error handling consistency across contexts.
-   */
-  public function testErrorHandlingConsistencyAcrossContexts() {
-    // Test HTTP context error handling.
-    $this->drupalGet('/.well-known/oauth-authorization-server');
-    $auth_metadata = Json::decode($this->getSession()->getPage()->getContent());
+    // === Cross-Context Client Management ===
+    // Verify that clients registered in different contexts can coexist
+    $this->assertNotEquals($web_client_data['client_id'], $api_client_data['client_id'], 'Web and API clients should have different IDs');
 
-    $invalid_metadata = [
-      'client_name' => 'Invalid Client',
-      'redirect_uris' => ['not-a-url'],
-    ];
-
-    $http_response = $this->httpClient->post($auth_metadata['registration_endpoint'], [
-      RequestOptions::JSON => $invalid_metadata,
+    // Test updating web-registered client via HTTP.
+    $updated_metadata_http = ['client_name' => 'Updated Web Client', 'client_uri' => 'https://updated-web.example.com'];
+    $update_response = $this->httpClient->put($web_client_data['registration_client_uri'], [
+      RequestOptions::JSON => $updated_metadata_http,
       RequestOptions::HEADERS => [
+        'Authorization' => 'Bearer ' . $web_client_data['registration_access_token'],
         'Content-Type' => 'application/json',
         'Accept' => 'application/json',
       ],
+    ]);
+    $this->assertEquals(200, $update_response->getStatusCode(), 'Client should be updatable via HTTP');
+    $updated_data = Json::decode($update_response->getBody()->getContents());
+    $this->assertEquals('Updated Web Client', $updated_data['client_name'], 'Client name should be updated via HTTP');
+
+    // === Error Handling Consistency ===
+    // Test HTTP context error handling
+    $invalid_metadata = ['client_name' => 'Invalid Client', 'redirect_uris' => ['not-a-url']];
+    $http_error_response = $this->httpClient->post($auth_metadata['registration_endpoint'], [
+      RequestOptions::JSON => $invalid_metadata,
+      RequestOptions::HEADERS => ['Content-Type' => 'application/json', 'Accept' => 'application/json'],
       RequestOptions::HTTP_ERRORS => FALSE,
     ]);
-
-    $this->assertEquals(400, $http_response->getStatusCode(), 'HTTP context should return 400 for invalid data');
-    $http_error = Json::decode($http_response->getBody()->getContents());
+    $this->assertEquals(400, $http_error_response->getStatusCode(), 'HTTP context should return 400 for invalid data');
+    $http_error = Json::decode($http_error_response->getBody()->getContents());
     $this->assertEquals('invalid_client_metadata', $http_error['error'], 'HTTP context should return correct error code');
 
     // Test API context error handling.
-    $registration_service = $this->container->get('simple_oauth_client_registration.service.registration');
-
     $exception_thrown = FALSE;
     try {
       $registration_service->registerClient($invalid_metadata);
@@ -195,101 +171,44 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
       $exception_thrown = TRUE;
       $this->assertStringContainsString('Invalid redirect URI', $e->getMessage(), 'API context should throw meaningful exception');
     }
-
     $this->assertTrue($exception_thrown, 'API context should throw exception for invalid data');
-  }
 
-  /**
-   * Test client management across contexts.
-   */
-  public function testClientManagementAcrossContexts() {
-    // Register client via HTTP.
-    $web_client_data = $this->testWebContextOAuthWorkflow();
-
-    // Manage client via API.
-    $registration_service = $this->container->get('simple_oauth_client_registration.service.registration');
-
-    $retrieved_metadata = $registration_service->getClientMetadata($web_client_data['client_id']);
-    $this->assertEquals($web_client_data['client_name'], $retrieved_metadata['client_name'], 'Client registered via HTTP should be accessible via API');
-
-    // Update client via API.
-    $updated_metadata = [
-      'client_name' => 'Updated via API',
-      'client_uri' => 'https://updated.example.com',
-    ];
-
-    $updated_data = $registration_service->updateClientMetadata($web_client_data['client_id'], $updated_metadata);
-    $this->assertEquals('Updated via API', $updated_data['client_name'], 'Client should be updatable via API');
-
-    // Verify update via HTTP.
-    $http_response = $this->httpClient->get($web_client_data['registration_client_uri'], [
-      RequestOptions::HEADERS => [
-        'Authorization' => 'Bearer ' . $web_client_data['registration_access_token'],
-        'Accept' => 'application/json',
-      ],
-    ]);
-
-    $this->assertEquals(200, $http_response->getStatusCode(), 'Updated client should be accessible via HTTP');
-    $http_data = Json::decode($http_response->getBody()->getContents());
-    $this->assertEquals('Updated via API', $http_data['client_name'], 'Updates via API should be visible via HTTP');
-  }
-
-  /**
-   * Test route discovery and URL generation across contexts.
-   */
-  public function testRouteDiscoveryAcrossContexts() {
-    $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
-
-    // Test multiple cache invalidations and regenerations.
+    // === Route Discovery and Concurrent Access ===
+    // Test multiple cache invalidations and regenerations
     for ($i = 0; $i < 3; $i++) {
       $metadata_service->invalidateCache();
       $metadata = $metadata_service->getServerMetadata();
-
       $this->assertArrayHasKey('registration_endpoint', $metadata, "Registration endpoint should be discoverable in iteration $i");
       $this->assertStringContainsString('/oauth/register', $metadata['registration_endpoint'], "Registration endpoint URL should be correct in iteration $i");
 
       // Verify HTTP access still works.
       $this->drupalGet('/.well-known/oauth-authorization-server');
       $this->assertSession()->statusCodeEquals(200);
-      $http_metadata = Json::decode($this->getSession()->getPage()->getContent());
-
-      $this->assertEquals($metadata['registration_endpoint'], $http_metadata['registration_endpoint'], "HTTP and API endpoints should match in iteration $i");
+      $http_iter_metadata = Json::decode($this->getSession()->getPage()->getContent());
+      $this->assertEquals($metadata['registration_endpoint'], $http_iter_metadata['registration_endpoint'], "HTTP and API endpoints should match in iteration $i");
     }
-  }
-
-  /**
-   * Test concurrent access and race conditions.
-   */
-  public function testConcurrentAccessAndRaceConditions() {
-    $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
 
     // Simulate concurrent metadata generation.
     $metadata_service->invalidateCache();
-
     $metadata_results = [];
     for ($i = 0; $i < 5; $i++) {
       $metadata_results[] = $metadata_service->getServerMetadata();
     }
-
-    // All results should be identical (no race conditions).
+    // All results should be identical (no race conditions)
     $first_result = $metadata_results[0];
     foreach ($metadata_results as $index => $result) {
       $this->assertEquals($first_result['registration_endpoint'], $result['registration_endpoint'], "Concurrent access result $index should be consistent");
     }
 
     // Test concurrent client registrations.
-    $registration_service = $this->container->get('simple_oauth_client_registration.service.registration');
-
     $client_results = [];
     for ($i = 0; $i < 3; $i++) {
-      $client_metadata = [
+      $concurrent_metadata = [
         'client_name' => "Concurrent Test Client $i",
         'redirect_uris' => ["https://example$i.com/callback"],
       ];
-
-      $client_results[] = $registration_service->registerClient($client_metadata);
+      $client_results[] = $registration_service->registerClient($concurrent_metadata);
     }
-
     // All clients should have unique IDs.
     $client_ids = array_column($client_results, 'client_id');
     $unique_ids = array_unique($client_ids);
@@ -297,16 +216,19 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
   }
 
   /**
-   * Test configuration changes propagation across contexts.
+   * Test configuration changes and existing client integration.
+   *
+   * Tests configuration propagation across contexts and integration with
+   * pre-existing OAuth clients.
    */
-  public function testConfigurationChangesPropagationAcrossContexts() {
+  public function testConfigurationAndExistingClientIntegration() {
+    // === Configuration Changes Propagation ===
     $config = $this->container->get('config.factory')->getEditable('simple_oauth_server_metadata.settings');
     $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
 
-    // Test 1: Clear registration endpoint config to test auto-detection.
+    // Test auto-detection.
     $config->clear('registration_endpoint')->save();
     $metadata_service->invalidateCache();
-
     $metadata = $metadata_service->getServerMetadata();
     $this->assertArrayHasKey('registration_endpoint', $metadata, 'Auto-detection should provide registration endpoint');
 
@@ -316,11 +238,10 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     $http_metadata = Json::decode($this->getSession()->getPage()->getContent());
     $this->assertEquals($metadata['registration_endpoint'], $http_metadata['registration_endpoint'], 'HTTP endpoint should reflect auto-detected endpoint');
 
-    // Test 2: Set explicit registration endpoint.
+    // Test explicit configuration override.
     $custom_endpoint = 'https://custom.example.com/oauth/register';
     $config->set('registration_endpoint', $custom_endpoint)->save();
     $metadata_service->invalidateCache();
-
     $metadata = $metadata_service->getServerMetadata();
     $this->assertEquals($custom_endpoint, $metadata['registration_endpoint'], 'Explicit configuration should override auto-detection');
 
@@ -329,20 +250,15 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     $http_metadata = Json::decode($this->getSession()->getPage()->getContent());
     $this->assertEquals($custom_endpoint, $http_metadata['registration_endpoint'], 'HTTP endpoint should reflect explicit configuration');
 
-    // Test 3: Restore auto-detection.
+    // Restore auto-detection.
     $config->clear('registration_endpoint')->save();
     $metadata_service->invalidateCache();
-
     $metadata = $metadata_service->getServerMetadata();
     $this->assertArrayHasKey('registration_endpoint', $metadata, 'Auto-detection should work after clearing explicit config');
     $this->assertStringContainsString('/oauth/register', $metadata['registration_endpoint'], 'Auto-detected endpoint should be correct');
-  }
 
-  /**
-   * Test integration with existing OAuth clients.
-   */
-  public function testIntegrationWithExistingOAuthClients() {
-    // Create a pre-existing consumer (simulating manually configured client).
+    // === Integration with Existing OAuth Clients ===
+    // Create a pre-existing consumer (simulating manually configured client)
     $consumer = Consumer::create([
       'uuid' => 'existing-client-id',
       'label' => 'Existing OAuth Client',
@@ -358,28 +274,23 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     // Test that metadata endpoints work with existing clients.
     $this->drupalGet('/.well-known/oauth-authorization-server');
     $this->assertSession()->statusCodeEquals(200);
-    $metadata = Json::decode($this->getSession()->getPage()->getContent());
-
-    $this->assertArrayHasKey('registration_endpoint', $metadata, 'Metadata should include registration endpoint even with existing clients');
+    $metadata_with_existing = Json::decode($this->getSession()->getPage()->getContent());
+    $this->assertArrayHasKey('registration_endpoint', $metadata_with_existing, 'Metadata should include registration endpoint even with existing clients');
 
     // Test that new dynamic registration still works.
     $registration_service = $this->container->get('simple_oauth_client_registration.service.registration');
-
     $new_client_metadata = [
       'client_name' => 'New Dynamic Client',
       'redirect_uris' => ['https://new.example.com/callback'],
     ];
-
     $new_client_data = $registration_service->registerClient($new_client_metadata);
     $this->assertArrayHasKey('client_id', $new_client_data, 'New client registration should work alongside existing clients');
     $this->assertNotEquals('existing-client-id', $new_client_data['client_id'], 'New client should have different ID from existing client');
 
     // Test that both clients are accessible.
     $consumer_storage = $this->container->get('entity_type.manager')->getStorage('consumer');
-
     $existing_client = $consumer_storage->loadByProperties(['uuid' => 'existing-client-id']);
     $this->assertNotEmpty($existing_client, 'Existing client should still be accessible');
-
     $new_client = $consumer_storage->loadByProperties(['uuid' => $new_client_data['client_id']]);
     $this->assertNotEmpty($new_client, 'New client should be accessible');
   }
