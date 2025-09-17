@@ -147,25 +147,6 @@ function simple_oauth_client_registration_entity_base_field_info(EntityTypeInter
   $fields = [];
 
   if ($entity_type->id() === 'consumer') {
-    // client_name - Human-readable client name.
-    $fields['client_name'] = BaseFieldDefinition::create('string')
-      ->setLabel(t('Client Name'))
-      ->setDescription(t('Human-readable name of the client to be presented to the end user.'))
-      ->setRequired(FALSE)
-      ->setSetting('max_length', 255)
-      ->setDisplayOptions('form', [
-        'type' => 'string_textfield',
-        'weight' => 20,
-        'settings' => ['size' => 60],
-      ])
-      ->setDisplayOptions('view', [
-        'type' => 'string',
-        'label' => 'above',
-        'weight' => 20,
-      ])
-      ->setDisplayConfigurable('form', TRUE)
-      ->setDisplayConfigurable('view', TRUE);
-
     // client_uri - Client information URI.
     $fields['client_uri'] = BaseFieldDefinition::create('uri')
       ->setLabel(t('Client URI'))

@@ -71,7 +71,6 @@ final class ClientRegistrationService {
       'access_token_expiration' => 300,
       'refresh_token_expiration' => 1209600,
       // RFC 7591 metadata fields.
-      'client_name' => $clientData['client_name'] ?? '',
       'client_uri' => $clientData['client_uri'] ?? '',
       'logo_uri' => $clientData['logo_uri'] ?? '',
       'tos_uri' => $clientData['tos_uri'] ?? '',
@@ -199,9 +198,14 @@ final class ClientRegistrationService {
     // Validate metadata.
     $this->validateClientMetadata($metadata);
 
+    // Handle client_name specially - it maps to the label field.
+    if (isset($metadata['client_name'])) {
+      $consumer->set('label', $metadata['client_name']);
+    }
+
     // Update RFC 7591 fields.
     $rfc_fields = [
-      'client_name', 'client_uri', 'logo_uri', 'contacts',
+      'client_uri', 'logo_uri', 'contacts',
       'tos_uri', 'policy_uri', 'jwks_uri', 'software_id', 'software_version',
     ];
 
@@ -379,7 +383,7 @@ final class ClientRegistrationService {
   private function getClientMetadataArray($consumer): array {
     $metadata = [
       'client_id' => $consumer->getClientId(),
-      'client_name' => $consumer->get('client_name')->value ?? '',
+      'client_name' => $consumer->label(),
       'client_uri' => $consumer->get('client_uri')->value ?? '',
       'logo_uri' => $consumer->get('logo_uri')->value ?? '',
       'tos_uri' => $consumer->get('tos_uri')->value ?? '',
