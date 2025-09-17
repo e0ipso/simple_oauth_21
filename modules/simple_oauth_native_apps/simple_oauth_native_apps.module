@@ -251,3 +251,37 @@ function simple_oauth_native_apps_form_alter(array &$form, FormStateInterface $f
     $form_alter_service->alterForm($form, $form_state, $form_id);
   }
 }
+
+/**
+ * Form validation wrapper for consumer native apps settings.
+ *
+ * This function serves as a serializable wrapper for the validation method
+ * in the ConsumerNativeAppsFormAlter service, avoiding closure serialization
+ * issues in Drupal's form caching system.
+ *
+ * @param array $form
+ *   The form array.
+ * @param \Drupal\Core\Form\FormStateInterface $form_state
+ *   The form state.
+ */
+function simple_oauth_native_apps_validate_consumer_settings(array $form, FormStateInterface $form_state): void {
+  $form_alter_service = \Drupal::service('simple_oauth_native_apps.consumer_form_alter');
+  $form_alter_service->validateConsumerNativeAppsSettings($form, $form_state);
+}
+
+/**
+ * Form submission wrapper for consumer native apps settings.
+ *
+ * This function serves as a serializable wrapper for the submission method
+ * in the ConsumerNativeAppsFormAlter service, avoiding closure serialization
+ * issues in Drupal's form caching system.
+ *
+ * @param array $form
+ *   The form array.
+ * @param \Drupal\Core\Form\FormStateInterface $form_state
+ *   The form state.
+ */
+function simple_oauth_native_apps_submit_consumer_settings(array $form, FormStateInterface $form_state): void {
+  $form_alter_service = \Drupal::service('simple_oauth_native_apps.consumer_form_alter');
+  $form_alter_service->submitConsumerNativeAppsSettings($form, $form_state);
+}
