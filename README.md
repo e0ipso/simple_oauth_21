@@ -17,6 +17,21 @@ OAuth 2.1 represents the next evolution of the OAuth 2.0 standard, consolidating
 - **Native App Security**: RFC 8252 compliance for mobile and desktop applications
 - **Server Metadata**: RFC 8414 automatic discovery capabilities
 
+## OAuth 2.0 RFC Compliance
+
+This module now provides complete compliance with:
+
+- **RFC 7591**: Dynamic Client Registration - Automated client onboarding via `/oauth/register`
+- **RFC 9728**: Protected Resource Metadata - Resource discovery via `/.well-known/oauth-protected-resource`
+- **RFC 8414**: Authorization Server Metadata - 100% compliant server discovery
+
+### Available Endpoints
+
+- `/.well-known/oauth-authorization-server` - Authorization server metadata
+- `/.well-known/oauth-protected-resource` - Protected resource metadata
+- `/oauth/register` - Dynamic client registration (POST)
+- `/oauth/register/{client_id}` - Client management (GET/PUT/DELETE)
+
 ## Features
 
 ### Compliance Dashboard
@@ -73,6 +88,15 @@ Implements RFC 8414 Authorization Server Metadata for automatic discovery.
 - Capability advertisement and automatic client configuration
 - Support for extended metadata fields
 
+### simple_oauth_client_registration
+
+Implements RFC 7591 Dynamic Client Registration for automated client onboarding.
+
+- `/oauth/register` endpoint for dynamic client registration
+- Full CRUD operations for client management
+- RFC 7591 compliant client metadata support
+- Automatic client configuration and credential generation
+
 ## Installation
 
 ### Installation via Composer
@@ -87,7 +111,7 @@ Enable the umbrella module and desired submodules:
 
 ```bash
 # Enable the main coordination module and OAuth 2.1 compliance submodules.
-drush pm:enable simple_oauth_21 simple_oauth_pkce simple_oauth_native_apps simple_oauth_server_metadata
+drush pm:enable simple_oauth_21 simple_oauth_pkce simple_oauth_native_apps simple_oauth_server_metadata simple_oauth_client_registration
 ```
 
 ## Configuration
@@ -156,7 +180,14 @@ drush pm:enable simple_oauth_21 simple_oauth_pkce simple_oauth_native_apps simpl
 4. Enable loopback redirects
 5. Enable exact redirect URI matching
 
-### Step 4: Verification
+### Step 4: Dynamic Client Registration (Optional)
+
+1. Enable `simple_oauth_client_registration` module
+2. Configure registration endpoint permissions
+3. Test `/oauth/register` endpoint functionality
+4. Configure client metadata requirements
+
+### Step 5: Verification
 
 1. Access compliance dashboard
 2. Verify "Fully Compliant" status
@@ -164,6 +195,14 @@ drush pm:enable simple_oauth_21 simple_oauth_pkce simple_oauth_native_apps simpl
 4. Test OAuth flows with real clients
 
 </details>
+
+## Documentation
+
+### Additional Resources
+
+- **[API Documentation](./API.md)**: Comprehensive API reference for all OAuth RFC compliance endpoints
+- **[Migration Guide](./MIGRATION.md)**: Step-by-step guide for upgrading existing installations
+- **[Module Help](/admin/help/simple_oauth_client_registration)**: In-context help for client registration features
 
 ## Troubleshooting
 

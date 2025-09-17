@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Drupal\simple_oauth_client_registration\Service;
 
+use Drupal\consumers\Entity\Consumer;
+use Drupal\consumers\Entity\ConsumerInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Component\Uuid\UuidInterface;
+use Drupal\Component\Utility\Crypt;
 use Drupal\Core\Url;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -31,6 +34,52 @@ final class ClientRegistrationService {
   ) {}
 
   /**
+   * Creates a Consumer entity from client registration data.
+   *
+   * @param array $clientData
+   *   The client registration data.
+   *
+   * @return \Drupal\consumers\Entity\ConsumerInterface
+   *   The created Consumer entity.
+   */
+  public function createConsumer(array $clientData): ConsumerInterface {
+    // Generate unique client ID.
+    $client_id = $this->generateClientId();
+
+    // Map RFC 7591 fields to Consumer entity fields using Consumer::create.
+    $values = [
+      'client_id' => $client_id,
+      'label' => $clientData['client_name'] ?? 'Dynamically Registered Client',
+      'description' => 'Client registered via RFC 7591 Dynamic Client Registration',
+      'grant_types' => $clientData['grant_types'] ?? ['authorization_code'],
+      'redirect' => $clientData['redirect_uris'] ?? [],
+      'confidential' => ($clientData['token_endpoint_auth_method'] ?? 'client_secret_basic') !== 'none',
+      'roles' => ['authenticated'],
+      'is_default' => FALSE,
+      'third_party' => TRUE,
+      // Set token expiration defaults from ConsumerEntityTest.php patterns.
+      'access_token_expiration' => 300,
+      'refresh_token_expiration' => 1209600,
+      // RFC 7591 metadata fields.
+      'client_name' => $clientData['client_name'] ?? '',
+      'client_uri' => $clientData['client_uri'] ?? '',
+      'logo_uri' => $clientData['logo_uri'] ?? '',
+      'contacts' => $clientData['contacts'] ?? [],
+      'tos_uri' => $clientData['tos_uri'] ?? '',
+      'policy_uri' => $clientData['policy_uri'] ?? '',
+      'jwks_uri' => $clientData['jwks_uri'] ?? '',
+      'software_id' => $clientData['software_id'] ?? '',
+      'software_version' => $clientData['software_version'] ?? '',
+    ];
+
+    // Create Consumer using the proven Consumer::create() pattern.
+    $consumer = Consumer::create($values);
+    $consumer->save();
+
+    return $consumer;
+  }
+
+  /**
    * Registers a new OAuth 2.0 client.
    *
    * @param array $registrationData
@@ -48,28 +97,8 @@ final class ClientRegistrationService {
       // Validate required client metadata.
       $this->validateClientMetadata($registrationData);
 
-      // Create the Consumer entity.
-      $consumer_storage = $this->entityTypeManager->getStorage('consumer');
-      $consumer = $consumer_storage->create([
-        'label' => $registrationData['client_name'] ?? 'Dynamically Registered Client',
-        'description' => 'Client registered via RFC 7591 Dynamic Client Registration',
-        'roles' => ['authenticated'],
-        'is_default' => FALSE,
-        'confidential' => $registrationData['token_endpoint_auth_method'] !== 'none',
-        'redirect' => $registrationData['redirect_uris'] ?? [],
-        // RFC 7591 metadata fields.
-        'client_name' => $registrationData['client_name'] ?? '',
-        'client_uri' => $registrationData['client_uri'] ?? '',
-        'logo_uri' => $registrationData['logo_uri'] ?? '',
-        'contacts' => $registrationData['contacts'] ?? [],
-        'tos_uri' => $registrationData['tos_uri'] ?? '',
-        'policy_uri' => $registrationData['policy_uri'] ?? '',
-        'jwks_uri' => $registrationData['jwks_uri'] ?? '',
-        'software_id' => $registrationData['software_id'] ?? '',
-        'software_version' => $registrationData['software_version'] ?? '',
-      ]);
-
-      $consumer->save();
+      // Create the Consumer entity using the proven creation pattern.
+      $consumer = $this->createConsumer($registrationData);
       $client_id = $consumer->getClientId();
 
       // Generate registration access token.
@@ -198,6 +227,25 @@ final class ClientRegistrationService {
    */
   public function validateRegistrationToken(string $client_id, string $token): bool {
     return $this->tokenService->validateRegistrationAccessToken($client_id, $token);
+  }
+
+  /**
+   * Generates a unique client ID.
+   *
+   * @return string
+   *   A unique client identifier.
+   */
+  private function generateClientId(): string {
+    $consumer_storage = $this->entityTypeManager->getStorage('consumer');
+
+    do {
+      // Generate a random client ID using the same method as Simple OAuth.
+      $client_id = Crypt::randomBytesBase64(32);
+      // Ensure uniqueness by checking existing Consumer entities.
+      $existing = $consumer_storage->loadByProperties(['uuid' => $client_id]);
+    } while (!empty($existing));
+
+    return $client_id;
   }
 
   /**
