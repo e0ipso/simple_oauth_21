@@ -31,5 +31,6 @@ services:
     arguments:
       - '@simple_oauth_client_registration.service.registration'
       - '@simple_oauth_client_registration.service.token'
+      - '@file_url_generator'
     tags:
       - { name: normalizer, priority: 10 }

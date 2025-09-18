@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\simple_oauth_client_registration\Normalizer;
 
 use Drupal\consumers\Entity\ConsumerInterface;
+use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Url;
 use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
 use Drupal\simple_oauth_client_registration\Service\ClientRegistrationService;
@@ -26,6 +27,7 @@ class ClientRegistrationNormalizer implements NormalizerInterface, DenormalizerI
   public function __construct(
     private readonly ClientRegistrationService $registrationService,
     private readonly RegistrationTokenService $tokenService,
+    private readonly FileUrlGeneratorInterface $fileUrlGenerator,
   ) {}
 
   /**
@@ -170,7 +172,7 @@ class ClientRegistrationNormalizer implements NormalizerInterface, DenormalizerI
         $file = $image_field->entity;
         // Generate absolute URL for the image file.
         $file_uri = $file->getFileUri();
-        return \Drupal::service('file_url_generator')->generateAbsoluteString($file_uri);
+        return $this->fileUrlGenerator->generateAbsoluteString($file_uri);
       }
     }
 
