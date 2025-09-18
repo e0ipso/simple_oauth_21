@@ -6,6 +6,7 @@ use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
 use Drupal\simple_oauth_server_metadata\Service\ServerMetadataService;
+use Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -21,13 +22,23 @@ class ServerMetadataSettingsForm extends ConfigFormBase {
   protected $serverMetadataService;
 
   /**
+   * The resource metadata service.
+   *
+   * @var \Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService
+   */
+  protected $resourceMetadataService;
+
+  /**
    * Constructs a ServerMetadataSettingsForm object.
    *
    * @param \Drupal\simple_oauth_server_metadata\Service\ServerMetadataService $server_metadata_service
    *   The server metadata service.
+   * @param \Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService $resource_metadata_service
+   *   The resource metadata service.
    */
-  public function __construct(ServerMetadataService $server_metadata_service) {
+  public function __construct(ServerMetadataService $server_metadata_service, ResourceMetadataService $resource_metadata_service) {
     $this->serverMetadataService = $server_metadata_service;
+    $this->resourceMetadataService = $resource_metadata_service;
   }
 
   /**
@@ -35,7 +46,8 @@ class ServerMetadataSettingsForm extends ConfigFormBase {
    */
   public static function create(ContainerInterface $container) {
     return new static(
-      $container->get('simple_oauth_server_metadata.server_metadata')
+      $container->get('simple_oauth_server_metadata.server_metadata'),
+      $container->get('simple_oauth_server_metadata.resource_metadata')
     );
   }
 
@@ -160,11 +172,46 @@ class ServerMetadataSettingsForm extends ConfigFormBase {
       '#rows' => 4,
     ];
 
-    // Link to live metadata endpoint.
-    $form['metadata_link'] = [
-      '#markup' => '<p>' . $this->t('View live metadata: <a href="@url" target="_blank" rel="noopener">@url</a>', [
+    // Resource metadata section.
+    $form['resource_metadata'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Protected Resource Metadata (RFC 9728)'),
+      '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> RFC 9728 Protected Resource Metadata helps clients discover resource server capabilities and policies. This enhances OAuth 2.1 compliance by providing standardized resource server information. (<a href="https://datatracker.ietf.org/doc/html/rfc9728" target="_blank">RFC 9728</a>)'),
+      '#open' => FALSE,
+    ];
+
+    $form['resource_metadata']['resource_documentation'] = [
+      '#type' => 'url',
+      '#title' => $this->t('Resource Documentation'),
+      '#description' => $this->t('URL for human-readable documentation of the protected resource server. This should explain available resources and how to access them.'),
+      '#default_value' => $config->get('resource_documentation'),
+    ];
+
+    $form['resource_metadata']['resource_policy_uri'] = [
+      '#type' => 'url',
+      '#title' => $this->t('Resource Policy URI'),
+      '#description' => $this->t('URL for the protected resource server policy document. This typically covers resource access policies and data handling practices.'),
+      '#default_value' => $config->get('resource_policy_uri'),
+    ];
+
+    $form['resource_metadata']['resource_tos_uri'] = [
+      '#type' => 'url',
+      '#title' => $this->t('Resource Terms of Service URI'),
+      '#description' => $this->t('URL for the protected resource server terms of service document.'),
+      '#default_value' => $config->get('resource_tos_uri'),
+    ];
+
+    // Link to live metadata endpoints.
+    $form['metadata_links'] = [
+      '#markup' => '<p>' . $this->t('View live metadata:') . '</p>' .
+      '<ul>' .
+      '<li>' . $this->t('Authorization Server: <a href="@url" target="_blank" rel="noopener">@url</a>', [
         '@url' => Url::fromRoute('simple_oauth_server_metadata.well_known', [], ['absolute' => TRUE])->toString(),
-      ]) . '</p>',
+      ]) . '</li>' .
+      '<li>' . $this->t('Protected Resource: <a href="@url" target="_blank" rel="noopener">@url</a>', [
+        '@url' => Url::fromRoute('simple_oauth_server_metadata.resource_metadata', [], ['absolute' => TRUE])->toString(),
+      ]) . '</li>' .
+      '</ul>',
     ];
 
     return parent::buildForm($form, $form_state);
@@ -236,6 +283,9 @@ class ServerMetadataSettingsForm extends ConfigFormBase {
       'ui_locales_supported',
       'additional_claims_supported',
       'additional_signing_algorithms',
+      'resource_documentation',
+      'resource_policy_uri',
+      'resource_tos_uri',
     ];
 
     foreach ($fields as $field) {

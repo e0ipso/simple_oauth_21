@@ -25,3 +25,16 @@ services:
       - '@simple_oauth_server_metadata.grant_type_discovery'
       - '@simple_oauth_server_metadata.scope_discovery'
       - '@simple_oauth_server_metadata.claims_auth_discovery'
+      - '@router.route_provider'
+      - '@kernel'
+      - '@request_stack'
+  simple_oauth_server_metadata.resource_metadata:
+    class: Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService
+    arguments:
+      - '@cache.default'
+      - '@config.factory'
+      - '@simple_oauth_server_metadata.endpoint_discovery'
+  simple_oauth_server_metadata.route_subscriber:
+    class: Drupal\simple_oauth_server_metadata\Routing\RouteSubscriber
+    tags:
+      - { name: event_subscriber }

@@ -1,0 +1,27 @@
+services:
+  logger.channel.simple_oauth_client_registration:
+    parent: logger.channel_base
+    arguments:
+      - 'simple_oauth_client_registration'
+
+  simple_oauth_client_registration.controller.registration:
+    class: Drupal\simple_oauth_client_registration\Controller\ClientRegistrationController
+    arguments:
+      - '@simple_oauth_client_registration.service.registration'
+      - '@logger.channel.simple_oauth_client_registration'
+      - '@serializer'
+
+  simple_oauth_client_registration.service.registration:
+    class: Drupal\simple_oauth_client_registration\Service\ClientRegistrationService
+    arguments:
+      - '@entity_type.manager'
+      - '@config.factory'
+      - '@logger.channel.simple_oauth_client_registration'
+      - '@uuid'
+      - '@simple_oauth_client_registration.service.token'
+
+  simple_oauth_client_registration.service.token:
+    class: Drupal\simple_oauth_client_registration\Service\RegistrationTokenService
+    arguments:
+      - '@database'
+      - '@logger.channel.simple_oauth_client_registration'

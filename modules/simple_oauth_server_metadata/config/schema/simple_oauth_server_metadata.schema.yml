@@ -44,3 +44,15 @@ simple_oauth_server_metadata.settings:
       description: 'JWT signing algorithms supported beyond RS256'
       sequence:
         type: string
+    resource_documentation:
+      type: uri
+      label: 'Resource Documentation'
+      description: 'URL for human-readable documentation of the protected resource server'
+    resource_policy_uri:
+      type: uri
+      label: 'Resource Policy URI'
+      description: 'URL for the protected resource server policy document'
+    resource_tos_uri:
+      type: uri
+      label: 'Resource Terms of Service URI'
+      description: 'URL for the protected resource server terms of service'

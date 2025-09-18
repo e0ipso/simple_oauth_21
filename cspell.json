@@ -48,7 +48,10 @@
     "LINEIOS",
     "urlparse",
     "tlds",
-    "Pinterest"
+    "Pinterest",
+    "myapp",
+    "updatedb",
+    "SIMPLETEST"
   ],
   "ignorePaths": [
     "node_modules/**",

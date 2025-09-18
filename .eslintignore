@@ -1,8 +1,8 @@
-node_modules/**/*
-vendor/**/*
-coverage/**/*
-.git/*
-ci-artifacts/**/*
-playwright-report/**/*
-test-results/**/*
-.claude/agents
+/node_modules
+/vendor
+/coverage
+/.git
+/ci-artifacts
+/playwright-report
+/test-results
+/.claude/agents

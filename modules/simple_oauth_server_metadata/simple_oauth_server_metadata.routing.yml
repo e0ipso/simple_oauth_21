@@ -1,11 +1,11 @@
-simple_oauth_server_metadata.well_known:
-  path: '/.well-known/oauth-authorization-server'
+simple_oauth_server_metadata.resource_metadata:
+  path: '/.well-known/oauth-protected-resource'
   defaults:
-    _controller: '\Drupal\simple_oauth_server_metadata\Controller\ServerMetadataController::metadata'
-    _title: 'OAuth 2.0 Authorization Server Metadata'
+    _controller: '\Drupal\simple_oauth_server_metadata\Controller\ResourceMetadataController::metadata'
+    _title: 'OAuth 2.0 Protected Resource Metadata'
   methods: [GET]
   requirements:
-    # Public metadata endpoint - RFC 8414 requires this to be accessible.
+    # Public metadata endpoint - RFC 9728 requires this to be accessible.
     _access: 'TRUE'
   options:
     _format: 'json'

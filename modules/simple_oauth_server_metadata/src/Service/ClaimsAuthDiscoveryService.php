@@ -115,6 +115,30 @@ class ClaimsAuthDiscoveryService {
   }
 
   /**
+   * Checks if request URI parameter is supported.
+   *
+   * @return bool
+   *   TRUE if request URI parameter is supported, FALSE otherwise.
+   */
+  public function getRequestUriParameterSupported(): bool {
+    // Simple OAuth does not currently support request URI parameter.
+    // This feature allows clients to pass request parameters by reference.
+    return FALSE;
+  }
+
+  /**
+   * Checks if request URI registration is required.
+   *
+   * @return bool
+   *   TRUE if request URI registration is required, FALSE otherwise.
+   */
+  public function getRequireRequestUriRegistration(): bool {
+    // Since request URI parameter is not supported, registration is not
+    // required.
+    return FALSE;
+  }
+
+  /**
    * Checks if OpenID Connect is enabled.
    *
    * @return bool
