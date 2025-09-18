@@ -1,0 +1,10 @@
+name: Simple OAuth Client Registration
+type: module
+description: 'RFC 7591 Dynamic Client Registration for OAuth 2.0'
+core_version_requirement: ^10 || ^11
+package: Authentication
+dependencies:
+  - simple_oauth_21:simple_oauth_21
+  - simple_oauth:simple_oauth
+  - consumers:consumers
+  - serialization:serialization

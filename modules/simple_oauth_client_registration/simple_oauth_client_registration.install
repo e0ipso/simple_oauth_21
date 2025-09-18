@@ -1,0 +1,261 @@
+<?php
+
+/**
+ * @file
+ * Install/uninstall functions for Simple OAuth Client Registration module.
+ */
+
+use Drupal\Core\Url;
+use Drupal\Core\Field\BaseFieldDefinition;
+
+/**
+ * Implements hook_schema().
+ */
+function simple_oauth_client_registration_schema() {
+  $schema = [];
+
+  $schema['simple_oauth_client_registration_tokens'] = [
+    'description' => 'Stores registration access tokens for dynamic client registration.',
+    'fields' => [
+      'id' => [
+        'type' => 'serial',
+        'not null' => TRUE,
+        'description' => 'Primary key.',
+      ],
+      'client_id' => [
+        'type' => 'varchar',
+        'length' => 128,
+        'not null' => TRUE,
+        'description' => 'The client identifier.',
+      ],
+      'token_hash' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'description' => 'Hash of the registration access token.',
+      ],
+      'created' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'description' => 'The timestamp when the token was created.',
+      ],
+      'expires' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'description' => 'The timestamp when the token expires.',
+      ],
+    ],
+    'primary key' => ['id'],
+    'unique keys' => [
+      'client_id' => ['client_id'],
+    ],
+    'indexes' => [
+      'expires' => ['expires'],
+    ],
+  ];
+
+  return $schema;
+}
+
+/**
+ * Implements hook_install().
+ */
+function simple_oauth_client_registration_install($is_syncing) {
+  if (!$is_syncing) {
+    // Configure the registration endpoint in server metadata if server metadata module is enabled.
+    if (\Drupal::moduleHandler()->moduleExists('simple_oauth_server_metadata')) {
+      $config = \Drupal::configFactory()->getEditable('simple_oauth_server_metadata.settings');
+      if (empty($config->get('registration_endpoint'))) {
+        try {
+          $registration_url = Url::fromRoute('simple_oauth_client_registration.register')->setAbsolute()->toString();
+          $config->set('registration_endpoint', $registration_url);
+          $config->save();
+        }
+        catch (\Exception $e) {
+          // If route doesn't exist, don't set it.
+        }
+      }
+    }
+
+    // Update the entity definition to include the new base fields.
+    $entity_type_manager = \Drupal::entityTypeManager();
+    $entity_type_manager->clearCachedDefinitions();
+
+    // Update the Consumer entity type definition.
+    $definition_update_manager = \Drupal::entityDefinitionUpdateManager();
+
+    // Install RFC 7591 client metadata fields.
+    $rfc_fields = [
+      'client_name' => [
+        'type' => 'string',
+        'label' => 'Client Name',
+        'description' => 'Human-readable name of the client to be presented to the end user.',
+        'max_length' => 255,
+      ],
+      'client_uri' => [
+        'type' => 'uri',
+        'label' => 'Client URI',
+        'description' => 'URL of the home page of the client.',
+      ],
+      'logo_uri' => [
+        'type' => 'uri',
+        'label' => 'Logo URI',
+        'description' => 'URL that references a logo for the client application.',
+      ],
+      'contacts' => [
+        'type' => 'text_long',
+        'label' => 'Contacts',
+        'description' => 'Array of email addresses of people responsible for this client.',
+        'cardinality' => -1,
+      ],
+      'tos_uri' => [
+        'type' => 'uri',
+        'label' => 'Terms of Service URI',
+        'description' => 'URL that the relying party client provides to the end user to read about the how the profile data will be used.',
+      ],
+      'policy_uri' => [
+        'type' => 'uri',
+        'label' => 'Policy URI',
+        'description' => 'URL that the relying party client provides to the end user to read about the relying party\'s terms of service.',
+      ],
+      'jwks_uri' => [
+        'type' => 'uri',
+        'label' => 'JWKS URI',
+        'description' => 'URL for the client\'s JSON Web Key Set document.',
+      ],
+      'software_id' => [
+        'type' => 'string',
+        'label' => 'Software ID',
+        'description' => 'A unique identifier string (UUID or other identifier) assigned by the client developer or software publisher.',
+        'max_length' => 255,
+      ],
+      'software_version' => [
+        'type' => 'string',
+        'label' => 'Software Version',
+        'description' => 'A version identifier string for the client software.',
+        'max_length' => 255,
+      ],
+    ];
+
+    foreach ($rfc_fields as $field_name => $field_config) {
+      try {
+        $existing_definition = $definition_update_manager->getFieldStorageDefinition($field_name, 'consumer');
+      }
+      catch (\Exception $e) {
+        $existing_definition = NULL;
+      }
+
+      if (!$existing_definition) {
+        $field_definition = BaseFieldDefinition::create($field_config['type'])
+          ->setLabel(t($field_config['label']))
+          ->setDescription(t($field_config['description']))
+          ->setRequired(FALSE);
+
+        // Set specific settings based on field type.
+        if (isset($field_config['max_length'])) {
+          $field_definition->setSetting('max_length', $field_config['max_length']);
+        }
+
+        if (isset($field_config['cardinality'])) {
+          $field_definition->setCardinality($field_config['cardinality']);
+        }
+
+        // Set display options.
+        $weight = 20 + array_search($field_name, array_keys($rfc_fields));
+
+        if ($field_config['type'] === 'uri') {
+          $field_definition
+            ->setDisplayOptions('form', [
+              'type' => 'uri',
+              'weight' => $weight,
+              'settings' => ['size' => 60],
+            ])
+            ->setDisplayOptions('view', [
+              'type' => 'uri_link',
+              'label' => 'above',
+              'weight' => $weight,
+            ]);
+        }
+        elseif ($field_config['type'] === 'text_long') {
+          $field_definition
+            ->setDisplayOptions('form', [
+              'type' => 'text_textarea',
+              'weight' => $weight,
+              'settings' => ['rows' => 3],
+            ])
+            ->setDisplayOptions('view', [
+              'type' => 'text_default',
+              'label' => 'above',
+              'weight' => $weight,
+            ]);
+        }
+        else {
+          $field_definition
+            ->setDisplayOptions('form', [
+              'type' => 'string_textfield',
+              'weight' => $weight,
+              'settings' => ['size' => 60],
+            ])
+            ->setDisplayOptions('view', [
+              'type' => 'string',
+              'label' => 'above',
+              'weight' => $weight,
+            ]);
+        }
+
+        $field_definition
+          ->setDisplayConfigurable('form', TRUE)
+          ->setDisplayConfigurable('view', TRUE);
+
+        try {
+          $definition_update_manager->installFieldStorageDefinition($field_name, 'consumer', 'simple_oauth_client_registration', $field_definition);
+        }
+        catch (\Exception $e) {
+          // Log the error but don't fail the install.
+          \Drupal::logger('simple_oauth_client_registration')->error('Failed to install field @field: @error', [
+            '@field' => $field_name,
+            '@error' => $e->getMessage(),
+          ]);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function simple_oauth_client_registration_uninstall($is_syncing) {
+  if (!$is_syncing) {
+    // Clear the registration endpoint from server metadata if it points to our endpoint.
+    if (\Drupal::moduleHandler()->moduleExists('simple_oauth_server_metadata')) {
+      $config = \Drupal::configFactory()->getEditable('simple_oauth_server_metadata.settings');
+      $registration_endpoint = $config->get('registration_endpoint');
+      if (!empty($registration_endpoint) && strpos($registration_endpoint, '/oauth/register') !== FALSE) {
+        $config->set('registration_endpoint', '');
+        $config->save();
+      }
+    }
+
+    $definition_update_manager = \Drupal::entityDefinitionUpdateManager();
+
+    // Remove all RFC 7591 client metadata fields.
+    $rfc_field_names = [
+      'client_name',
+      'client_uri',
+      'logo_uri',
+      'contacts',
+      'tos_uri',
+      'policy_uri',
+      'jwks_uri',
+      'software_id',
+      'software_version',
+    ];
+
+    foreach ($rfc_field_names as $field_name) {
+      if ($field_storage_definition = $definition_update_manager->getFieldStorageDefinition($field_name, 'consumer')) {
+        $definition_update_manager->uninstallFieldStorageDefinition($field_storage_definition);
+      }
+    }
+  }
+}

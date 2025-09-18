@@ -1,0 +1,315 @@
+<?php
+
+/**
+ * @file
+ * Contains simple_oauth_client_registration.module.
+ *
+ * Implements RFC 7591 Dynamic Client Registration for OAuth 2.0 clients.
+ */
+
+use Drupal\Core\Entity\EntityTypeInterface;
+use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\Url;
+
+/**
+ * Implements hook_help().
+ */
+function simple_oauth_client_registration_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.simple_oauth_client_registration':
+      return _simple_oauth_client_registration_help_overview();
+
+    case 'entity.consumer.collection':
+      return _simple_oauth_client_registration_help_consumers();
+
+    case 'entity.consumer.add_form':
+    case 'entity.consumer.edit_form':
+      return _simple_oauth_client_registration_help_consumer_form();
+  }
+}
+
+/**
+ * Provides overview help for the module.
+ */
+function _simple_oauth_client_registration_help_overview() {
+  $output = '<h2>' . t('About Simple OAuth Client Registration') . '</h2>';
+  $output .= '<p>' . t('The Simple OAuth Client Registration module implements RFC 7591 "OAuth 2.0 Dynamic Client Registration Protocol", providing automated client onboarding capabilities for OAuth 2.0 authorization servers.') . '</p>';
+
+  $output .= '<h3>' . t('Key Features') . '</h3>';
+  $output .= '<ul>';
+  $output .= '<li>' . t('<strong>RFC 7591 Compliance:</strong> Full implementation of Dynamic Client Registration specification') . '</li>';
+  $output .= '<li>' . t('<strong>Automated Onboarding:</strong> Clients can register themselves without manual administrator intervention') . '</li>';
+  $output .= '<li>' . t('<strong>Client Metadata:</strong> Support for comprehensive client metadata including branding and contact information') . '</li>';
+  $output .= '<li>' . t('<strong>Full CRUD Operations:</strong> Create, read, update, and delete client registrations via API') . '</li>';
+  $output .= '<li>' . t('<strong>Security Controls:</strong> Configurable access controls and validation rules') . '</li>';
+  $output .= '<li>' . t('<strong>Standards Integration:</strong> Works seamlessly with other OAuth RFC implementations') . '</li>';
+  $output .= '</ul>';
+
+  $output .= '<h3>' . t('Available Endpoints') . '</h3>';
+  $output .= '<p>' . t('The module provides these RFC 7591 compliant endpoints:') . '</p>';
+  $output .= '<ul>';
+  $output .= '<li>' . t('<strong>/oauth/register:</strong> POST endpoint for new client registration') . '</li>';
+  $output .= '<li>' . t('<strong>/oauth/register/{client_id}:</strong> GET endpoint to retrieve client configuration') . '</li>';
+  $output .= '<li>' . t('<strong>/oauth/register/{client_id}:</strong> PUT endpoint to update client configuration') . '</li>';
+  $output .= '<li>' . t('<strong>/oauth/register/{client_id}:</strong> DELETE endpoint to remove client registration') . '</li>';
+  $output .= '</ul>';
+
+  $output .= '<h3>' . t('Module Relationships') . '</h3>';
+  $output .= '<p>' . t('This module works alongside other Simple OAuth modules:') . '</p>';
+  $output .= '<ul>';
+  $output .= '<li>' . t('<strong>Simple OAuth:</strong> Provides core OAuth 2.0 functionality and consumer entities') . '</li>';
+  $output .= '<li>' . t('<strong>Simple OAuth Server Metadata:</strong> Advertises client registration capabilities in server metadata') . '</li>';
+  $output .= '<li>' . t('<strong>Simple OAuth Native Apps:</strong> Enhanced validation for dynamically registered native applications') . '</li>';
+  $output .= '</ul>';
+
+  $output .= '<h3>' . t('Getting Started') . '</h3>';
+  $output .= '<p>' . t('To configure dynamic client registration:') . '</p>';
+  $output .= '<ol>';
+  $output .= '<li>' . t('Ensure the Simple OAuth module is installed and configured') . '</li>';
+  $output .= '<li>' . t('Configure permissions for client registration access') . '</li>';
+  $output .= '<li>' . t('Test the registration endpoint at /oauth/register') . '</li>';
+  $output .= '<li>' . t('Review registered clients in the <a href="@consumers">OAuth consumers</a> management interface', [
+    '@consumers' => Url::fromRoute('entity.consumer.collection')->toString(),
+  ]) . '</li>';
+  $output .= '</ol>';
+
+  return $output;
+}
+
+/**
+ * Provides help for the consumers collection page.
+ */
+function _simple_oauth_client_registration_help_consumers() {
+  $output = '<h3>' . t('Managing Dynamically Registered Clients') . '</h3>';
+  $output .= '<p>' . t('This page displays OAuth consumers including those created through dynamic client registration. Dynamically registered clients appear alongside manually created consumers.') . '</p>';
+
+  $output .= '<h4>' . t('Client Registration Sources') . '</h4>';
+  $output .= '<p>' . t('Clients can be created through multiple methods:') . '</p>';
+  $output .= '<ul>';
+  $output .= '<li>' . t('<strong>Manual Creation:</strong> Administrators create clients through this interface') . '</li>';
+  $output .= '<li>' . t('<strong>Dynamic Registration:</strong> Clients self-register via the /oauth/register endpoint') . '</li>';
+  $output .= '<li>' . t('<strong>Administrative API:</strong> Programmatic creation through Drupal APIs') . '</li>';
+  $output .= '</ul>';
+
+  $output .= '<h4>' . t('Enhanced Client Metadata') . '</h4>';
+  $output .= '<p>' . t('Dynamically registered clients may include additional metadata fields:') . '</p>';
+  $output .= '<ul>';
+  $output .= '<li>' . t('<strong>Client Name:</strong> Human-readable application name') . '</li>';
+  $output .= '<li>' . t('<strong>Client URI:</strong> Application homepage URL') . '</li>';
+  $output .= '<li>' . t('<strong>Logo URI:</strong> Application logo for user consent screens') . '</li>';
+  $output .= '<li>' . t('<strong>Contacts:</strong> Developer contact information') . '</li>';
+  $output .= '<li>' . t('<strong>Terms of Service:</strong> Application terms of service URL') . '</li>';
+  $output .= '<li>' . t('<strong>Privacy Policy:</strong> Application privacy policy URL') . '</li>';
+  $output .= '</ul>';
+
+  return $output;
+}
+
+/**
+ * Provides help for consumer forms.
+ */
+function _simple_oauth_client_registration_help_consumer_form() {
+  $output = '<h3>' . t('Client Registration Metadata') . '</h3>';
+  $output .= '<p>' . t('This form includes RFC 7591 client metadata fields that enhance the OAuth client registration with additional information about the application.') . '</p>';
+
+  $output .= '<h4>' . t('Required vs Optional Fields') . '</h4>';
+  $output .= '<p>' . t('Most client metadata fields are optional but recommended:') . '</p>';
+  $output .= '<ul>';
+  $output .= '<li>' . t('<strong>Client Name:</strong> Displayed to users during authorization') . '</li>';
+  $output .= '<li>' . t('<strong>Client URI:</strong> Allows users to learn more about the application') . '</li>';
+  $output .= '<li>' . t('<strong>Logo URI:</strong> Improves user experience on consent screens') . '</li>';
+  $output .= '<li>' . t('<strong>Contacts:</strong> Required for some enterprise environments') . '</li>';
+  $output .= '</ul>';
+
+  $output .= '<h4>' . t('URI Field Validation') . '</h4>';
+  $output .= '<p>' . t('URI fields must be valid HTTP or HTTPS URLs. These URIs should:') . '</p>';
+  $output .= '<ul>';
+  $output .= '<li>' . t('Use HTTPS when possible for security') . '</li>';
+  $output .= '<li>' . t('Point to resources that will remain accessible') . '</li>';
+  $output .= '<li>' . t('Be appropriate for display to end users') . '</li>';
+  $output .= '</ul>';
+
+  $output .= '<h4>' . t('Software Identification') . '</h4>';
+  $output .= '<p>' . t('Software ID and version fields help identify the client software:') . '</p>';
+  $output .= '<ul>';
+  $output .= '<li>' . t('<strong>Software ID:</strong> Unique identifier for the client software (UUID recommended)') . '</li>';
+  $output .= '<li>' . t('<strong>Software Version:</strong> Version string for tracking client updates') . '</li>';
+  $output .= '</ul>';
+
+  return $output;
+}
+
+/**
+ * Implements hook_entity_base_field_info().
+ */
+function simple_oauth_client_registration_entity_base_field_info(EntityTypeInterface $entity_type) {
+  $fields = [];
+
+  if ($entity_type->id() === 'consumer') {
+    // client_uri - Client information URI.
+    $fields['client_uri'] = BaseFieldDefinition::create('uri')
+      ->setLabel(t('Client URI'))
+      ->setDescription(t('URL of the home page of the client.'))
+      ->setRequired(FALSE)
+      ->setDisplayOptions('form', [
+        'type' => 'uri',
+        'weight' => 21,
+        'settings' => ['size' => 60],
+      ])
+      ->setDisplayOptions('view', [
+        'type' => 'uri_link',
+        'label' => 'above',
+        'weight' => 21,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+
+    // logo_uri - Client logo URI.
+    $fields['logo_uri'] = BaseFieldDefinition::create('uri')
+      ->setLabel(t('Logo URI (Alternative)'))
+      ->setDescription(t('URL that references an external logo for the client application. Note: When both logo fields are filled, the uploaded logo file above takes priority in API responses.'))
+      ->setRequired(FALSE)
+      ->setDisplayOptions('form', [
+        'type' => 'uri',
+        'weight' => -2,
+        'settings' => ['size' => 60],
+      ])
+      ->setDisplayOptions('view', [
+        'type' => 'uri_link',
+        'label' => 'above',
+        'weight' => -2,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+
+    // Contacts - Contact information.
+    $fields['contacts'] = BaseFieldDefinition::create('text_long')
+      ->setLabel(t('Contacts'))
+      ->setDescription(t('Array of email addresses of people responsible for this client.'))
+      ->setRequired(FALSE)
+      ->setCardinality(-1)
+      ->setDisplayOptions('form', [
+        'type' => 'text_textarea',
+        'weight' => 23,
+        'settings' => ['rows' => 3],
+      ])
+      ->setDisplayOptions('view', [
+        'type' => 'text_default',
+        'label' => 'above',
+        'weight' => 23,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+
+    // tos_uri - Terms of service URI.
+    $fields['tos_uri'] = BaseFieldDefinition::create('uri')
+      ->setLabel(t('Terms of Service URI'))
+      ->setDescription(t('URL that the relying party client provides to the end user to read about the how the profile data will be used.'))
+      ->setRequired(FALSE)
+      ->setDisplayOptions('form', [
+        'type' => 'uri',
+        'weight' => 24,
+        'settings' => ['size' => 60],
+      ])
+      ->setDisplayOptions('view', [
+        'type' => 'uri_link',
+        'label' => 'above',
+        'weight' => 24,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+
+    // policy_uri - Privacy policy URI.
+    $fields['policy_uri'] = BaseFieldDefinition::create('uri')
+      ->setLabel(t('Policy URI'))
+      ->setDescription(t('URL that the relying party client provides to the end user to read about the relying party\'s terms of service.'))
+      ->setRequired(FALSE)
+      ->setDisplayOptions('form', [
+        'type' => 'uri',
+        'weight' => 25,
+        'settings' => ['size' => 60],
+      ])
+      ->setDisplayOptions('view', [
+        'type' => 'uri_link',
+        'label' => 'above',
+        'weight' => 25,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+
+    // jwks_uri - JSON Web Key Set URI.
+    $fields['jwks_uri'] = BaseFieldDefinition::create('uri')
+      ->setLabel(t('JWKS URI'))
+      ->setDescription(t('URL for the client\'s JSON Web Key Set document.'))
+      ->setRequired(FALSE)
+      ->setDisplayOptions('form', [
+        'type' => 'uri',
+        'weight' => 26,
+        'settings' => ['size' => 60],
+      ])
+      ->setDisplayOptions('view', [
+        'type' => 'uri_link',
+        'label' => 'above',
+        'weight' => 26,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+
+    // software_id - Software identifier.
+    $fields['software_id'] = BaseFieldDefinition::create('string')
+      ->setLabel(t('Software ID'))
+      ->setDescription(t('A unique identifier string (UUID or other identifier) assigned by the client developer or software publisher.'))
+      ->setRequired(FALSE)
+      ->setSetting('max_length', 255)
+      ->setDisplayOptions('form', [
+        'type' => 'string_textfield',
+        'weight' => 27,
+        'settings' => ['size' => 60],
+      ])
+      ->setDisplayOptions('view', [
+        'type' => 'string',
+        'label' => 'above',
+        'weight' => 27,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+
+    // software_version - Software version.
+    $fields['software_version'] = BaseFieldDefinition::create('string')
+      ->setLabel(t('Software Version'))
+      ->setDescription(t('A version identifier string for the client software.'))
+      ->setRequired(FALSE)
+      ->setSetting('max_length', 255)
+      ->setDisplayOptions('form', [
+        'type' => 'string_textfield',
+        'weight' => 28,
+        'settings' => ['size' => 60],
+      ])
+      ->setDisplayOptions('view', [
+        'type' => 'string',
+        'label' => 'above',
+        'weight' => 28,
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+  }
+
+  return $fields;
+}
+
+/**
+ * Implements hook_form_BASE_FORM_ID_alter().
+ */
+function simple_oauth_client_registration_form_consumer_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // Enhance the image field description to explain the difference with logo_uri.
+  if (isset($form['image'])) {
+    $form['image']['widget'][0]['#description'] = t('Upload a logo file for this client. This logo will be prioritized in API responses over the "Logo URI" field below.');
+  }
+
+  // Ensure logo_uri appears right after image field.
+  if (isset($form['logo_uri'])) {
+    $form['logo_uri']['#weight'] = $form['image']['#weight'] + 0.1;
+  }
+}

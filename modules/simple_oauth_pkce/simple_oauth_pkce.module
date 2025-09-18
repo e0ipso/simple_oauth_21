@@ -28,7 +28,7 @@ function simple_oauth_pkce_help($route_name, RouteMatchInterface $route_match) {
 
       $output .= '<h3>' . t('Configuration') . '</h3>';
       $output .= '<p>' . t('Configure PKCE settings at <a href=":url">Administration » Configuration » People » Simple OAuth » PKCE Settings</a>.', [
-        ':url' => \Drupal::url('simple_oauth_pkce.settings'),
+        ':url' => \Drupal::urlGenerator()->generateFromRoute('simple_oauth_pkce.settings'),
       ]) . '</p>';
 
       $output .= '<h3>' . t('Security Benefits') . '</h3>';
