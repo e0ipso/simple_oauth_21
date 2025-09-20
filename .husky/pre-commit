@@ -53,11 +53,11 @@ if [ -f "phpstan.neon" ]; then
     # Use project-level PHPStan if available, fall back to local
     if [ -f "../../../../vendor/bin/phpstan" ]; then
         run_check "PHPStan Static Analysis" \
-            "$PHP_CMD ../../../../vendor/bin/phpstan analyse" \
+            "$PHP_CMD ../../../../vendor/bin/phpstan --no-progress analyse" \
             ""
     elif [ -f "vendor/bin/phpstan" ]; then
         run_check "PHPStan Static Analysis" \
-            "$PHP_CMD vendor/bin/phpstan analyse" \
+            "$PHP_CMD vendor/bin/phpstan --no-progress analyse" \
             ""
     fi
 fi

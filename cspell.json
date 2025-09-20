@@ -51,7 +51,9 @@
     "Pinterest",
     "myapp",
     "updatedb",
-    "SIMPLETEST"
+    "SIMPLETEST",
+    "Denormalizer",
+    "serializability"
   ],
   "ignorePaths": [
     "node_modules/**",

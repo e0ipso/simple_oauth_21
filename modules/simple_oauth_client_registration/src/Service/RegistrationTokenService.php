@@ -11,7 +11,8 @@ use Psr\Log\LoggerInterface;
 /**
  * Service for managing registration access tokens.
  *
- * Handles generation, validation, and storage of RFC 7591 registration access tokens.
+ * Handles generation, validation, and storage of RFC 7591 registration access
+ * tokens.
  */
 final class RegistrationTokenService {
 
