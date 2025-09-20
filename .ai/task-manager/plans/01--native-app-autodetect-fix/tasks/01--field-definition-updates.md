@@ -6,8 +6,9 @@ type: 'implementation'
 priority: 'high'
 estimated_effort: '2 hours'
 dependencies: []
-status: 'pending'
+status: "in-progress"
 created: 2025-01-15
+status: "in-progress"
 ---
 
 # Task: Field Definition Updates
