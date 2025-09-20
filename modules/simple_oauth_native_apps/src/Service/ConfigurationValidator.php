@@ -14,25 +14,17 @@ class ConfigurationValidator {
   use StringTranslationTrait;
 
   /**
-   * The logger factory.
-   *
-   * @var \Drupal\Core\Logger\LoggerChannelFactoryInterface
-   */
-  protected LoggerChannelFactoryInterface $loggerFactory;
-
-  /**
    * Constructs a new ConfigurationValidator.
    *
-   * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
+   * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $loggerFactory
    *   The logger factory.
    * @param \Drupal\Core\StringTranslation\TranslationInterface $string_translation
    *   The string translation service.
    */
   public function __construct(
-    LoggerChannelFactoryInterface $logger_factory,
+    private readonly LoggerChannelFactoryInterface $loggerFactory,
     TranslationInterface $string_translation,
   ) {
-    $this->loggerFactory = $logger_factory;
     $this->stringTranslation = $string_translation;
   }
 

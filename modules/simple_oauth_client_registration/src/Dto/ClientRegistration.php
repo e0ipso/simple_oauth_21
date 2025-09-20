@@ -58,27 +58,27 @@ final class ClientRegistration {
    *   Timestamp when client_secret expires (only in responses).
    */
   public function __construct(
-    private readonly ?string $clientName = NULL,
-    private readonly array $redirectUris = [],
-    private readonly array $grantTypes = [],
-    private readonly array $responseTypes = [],
-    private readonly ?string $tokenEndpointAuthMethod = NULL,
-    private readonly ?string $scope = NULL,
-    private readonly ?string $clientUri = NULL,
-    private readonly ?string $logoUri = NULL,
-    private readonly array $contacts = [],
-    private readonly ?string $tosUri = NULL,
-    private readonly ?string $policyUri = NULL,
-    private readonly ?string $jwksUri = NULL,
-    private readonly ?string $softwareId = NULL,
-    private readonly ?string $softwareVersion = NULL,
-    private readonly ?string $applicationType = NULL,
-    private readonly ?string $clientId = NULL,
-    private readonly ?string $clientSecret = NULL,
-    private readonly ?string $registrationAccessToken = NULL,
-    private readonly ?string $registrationClientUri = NULL,
-    private readonly ?int $clientIdIssuedAt = NULL,
-    private readonly ?int $clientSecretExpiresAt = NULL,
+    public readonly ?string $clientName = NULL,
+    public readonly array $redirectUris = [],
+    public readonly array $grantTypes = [],
+    public readonly array $responseTypes = [],
+    public readonly ?string $tokenEndpointAuthMethod = NULL,
+    public readonly ?string $scope = NULL,
+    public readonly ?string $clientUri = NULL,
+    public readonly ?string $logoUri = NULL,
+    public readonly array $contacts = [],
+    public readonly ?string $tosUri = NULL,
+    public readonly ?string $policyUri = NULL,
+    public readonly ?string $jwksUri = NULL,
+    public readonly ?string $softwareId = NULL,
+    public readonly ?string $softwareVersion = NULL,
+    public readonly ?string $applicationType = NULL,
+    public readonly ?string $clientId = NULL,
+    public readonly ?string $clientSecret = NULL,
+    public readonly ?string $registrationAccessToken = NULL,
+    public readonly ?string $registrationClientUri = NULL,
+    public readonly ?int $clientIdIssuedAt = NULL,
+    public readonly ?int $clientSecretExpiresAt = NULL,
   ) {}
 
   /**
@@ -191,213 +191,6 @@ final class ClientRegistration {
     }
 
     return $data;
-  }
-
-  /**
-   * Getters for all properties.
-   */
-  public function getClientName(): ?string {
-    return $this->clientName;
-  }
-
-  /**
-   * Gets the redirect URIs.
-   *
-   * @return array
-   *   The redirect URIs.
-   */
-  public function getRedirectUris(): array {
-    return $this->redirectUris;
-  }
-
-  /**
-   * Gets the grant types.
-   *
-   * @return array
-   *   The grant types.
-   */
-  public function getGrantTypes(): array {
-    return $this->grantTypes;
-  }
-
-  /**
-   * Gets the response types.
-   *
-   * @return array
-   *   The response types.
-   */
-  public function getResponseTypes(): array {
-    return $this->responseTypes;
-  }
-
-  /**
-   * Gets the token endpoint authentication method.
-   *
-   * @return string|null
-   *   The authentication method or NULL.
-   */
-  public function getTokenEndpointAuthMethod(): ?string {
-    return $this->tokenEndpointAuthMethod;
-  }
-
-  /**
-   * Gets the scope.
-   *
-   * @return string|null
-   *   The scope or NULL.
-   */
-  public function getScope(): ?string {
-    return $this->scope;
-  }
-
-  /**
-   * Gets the client URI.
-   *
-   * @return string|null
-   *   The client URI or NULL.
-   */
-  public function getClientUri(): ?string {
-    return $this->clientUri;
-  }
-
-  /**
-   * Gets the logo URI.
-   *
-   * @return string|null
-   *   The logo URI or NULL.
-   */
-  public function getLogoUri(): ?string {
-    return $this->logoUri;
-  }
-
-  /**
-   * Gets the contacts.
-   *
-   * @return array
-   *   The contacts.
-   */
-  public function getContacts(): array {
-    return $this->contacts;
-  }
-
-  /**
-   * Gets the terms of service URI.
-   *
-   * @return string|null
-   *   The terms of service URI or NULL.
-   */
-  public function getTosUri(): ?string {
-    return $this->tosUri;
-  }
-
-  /**
-   * Gets the policy URI.
-   *
-   * @return string|null
-   *   The policy URI or NULL.
-   */
-  public function getPolicyUri(): ?string {
-    return $this->policyUri;
-  }
-
-  /**
-   * Gets the JWKS URI.
-   *
-   * @return string|null
-   *   The JWKS URI or NULL.
-   */
-  public function getJwksUri(): ?string {
-    return $this->jwksUri;
-  }
-
-  /**
-   * Gets the software ID.
-   *
-   * @return string|null
-   *   The software ID or NULL.
-   */
-  public function getSoftwareId(): ?string {
-    return $this->softwareId;
-  }
-
-  /**
-   * Gets the software version.
-   *
-   * @return string|null
-   *   The software version or NULL.
-   */
-  public function getSoftwareVersion(): ?string {
-    return $this->softwareVersion;
-  }
-
-  /**
-   * Gets the application type.
-   *
-   * @return string|null
-   *   The application type or NULL.
-   */
-  public function getApplicationType(): ?string {
-    return $this->applicationType;
-  }
-
-  /**
-   * Gets the client ID.
-   *
-   * @return string|null
-   *   The client ID or NULL.
-   */
-  public function getClientId(): ?string {
-    return $this->clientId;
-  }
-
-  /**
-   * Gets the client secret.
-   *
-   * @return string|null
-   *   The client secret or NULL.
-   */
-  public function getClientSecret(): ?string {
-    return $this->clientSecret;
-  }
-
-  /**
-   * Gets the registration access token.
-   *
-   * @return string|null
-   *   The registration access token or NULL.
-   */
-  public function getRegistrationAccessToken(): ?string {
-    return $this->registrationAccessToken;
-  }
-
-  /**
-   * Gets the registration client URI.
-   *
-   * @return string|null
-   *   The registration client URI or NULL.
-   */
-  public function getRegistrationClientUri(): ?string {
-    return $this->registrationClientUri;
-  }
-
-  /**
-   * Gets the client ID issued at timestamp.
-   *
-   * @return int|null
-   *   The timestamp when client ID was issued or NULL.
-   */
-  public function getClientIdIssuedAt(): ?int {
-    return $this->clientIdIssuedAt;
-  }
-
-  /**
-   * Gets the client secret expiration timestamp.
-   *
-   * @return int|null
-   *   The timestamp when client secret expires or NULL.
-   */
-  public function getClientSecretExpiresAt(): ?int {
-    return $this->clientSecretExpiresAt;
   }
 
   /**

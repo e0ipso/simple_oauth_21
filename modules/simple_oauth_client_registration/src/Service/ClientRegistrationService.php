@@ -61,10 +61,10 @@ final class ClientRegistrationService {
     // Map RFC 7591 fields to Consumer entity fields using Consumer::create.
     $values = [
       'client_id' => $client_id,
-      'label' => $clientData->getClientName() ?? 'Dynamically Registered Client',
+      'label' => $clientData->clientName ?? 'Dynamically Registered Client',
       'description' => 'Client registered via RFC 7591 Dynamic Client Registration',
-      'grant_types' => $clientData->getGrantTypes() ?: ['authorization_code'],
-      'redirect' => $clientData->getRedirectUris(),
+      'grant_types' => $clientData->grantTypes ?: ['authorization_code'],
+      'redirect' => $clientData->redirectUris,
       'confidential' => $is_confidential,
       'roles' => ['authenticated'],
       'is_default' => FALSE,
@@ -73,13 +73,13 @@ final class ClientRegistrationService {
       'access_token_expiration' => 300,
       'refresh_token_expiration' => 1209600,
       // RFC 7591 metadata fields.
-      'client_uri' => $clientData->getClientUri() ?? '',
-      'logo_uri' => $clientData->getLogoUri() ?? '',
-      'tos_uri' => $clientData->getTosUri() ?? '',
-      'policy_uri' => $clientData->getPolicyUri() ?? '',
-      'jwks_uri' => $clientData->getJwksUri() ?? '',
-      'software_id' => $clientData->getSoftwareId() ?? '',
-      'software_version' => $clientData->getSoftwareVersion() ?? '',
+      'client_uri' => $clientData->clientUri ?? '',
+      'logo_uri' => $clientData->logoUri ?? '',
+      'tos_uri' => $clientData->tosUri ?? '',
+      'policy_uri' => $clientData->policyUri ?? '',
+      'jwks_uri' => $clientData->jwksUri ?? '',
+      'software_id' => $clientData->softwareId ?? '',
+      'software_version' => $clientData->softwareVersion ?? '',
     ];
 
     // Generate client secret for confidential clients.
@@ -92,7 +92,7 @@ final class ClientRegistrationService {
     }
 
     // Handle contacts field (multiple cardinality)
-    $contacts = $clientData->getContacts();
+    $contacts = $clientData->contacts;
     if (!empty($contacts)) {
       $values['contacts'] = [];
       foreach ($contacts as $contact) {
@@ -197,41 +197,41 @@ final class ClientRegistrationService {
     $consumer = $this->loadConsumer($client_id);
 
     // Handle client_name specially - it maps to the label field.
-    if ($metadata->getClientName() !== NULL) {
-      $consumer->set('label', $metadata->getClientName());
+    if ($metadata->clientName !== NULL) {
+      $consumer->set('label', $metadata->clientName);
     }
 
     // Update RFC 7591 fields.
-    if ($metadata->getClientUri() !== NULL) {
-      $consumer->set('client_uri', $metadata->getClientUri());
+    if ($metadata->clientUri !== NULL) {
+      $consumer->set('client_uri', $metadata->clientUri);
     }
-    if ($metadata->getLogoUri() !== NULL) {
-      $consumer->set('logo_uri', $metadata->getLogoUri());
+    if ($metadata->logoUri !== NULL) {
+      $consumer->set('logo_uri', $metadata->logoUri);
     }
-    if ($metadata->getTosUri() !== NULL) {
-      $consumer->set('tos_uri', $metadata->getTosUri());
+    if ($metadata->tosUri !== NULL) {
+      $consumer->set('tos_uri', $metadata->tosUri);
     }
-    if ($metadata->getPolicyUri() !== NULL) {
-      $consumer->set('policy_uri', $metadata->getPolicyUri());
+    if ($metadata->policyUri !== NULL) {
+      $consumer->set('policy_uri', $metadata->policyUri);
     }
-    if ($metadata->getJwksUri() !== NULL) {
-      $consumer->set('jwks_uri', $metadata->getJwksUri());
+    if ($metadata->jwksUri !== NULL) {
+      $consumer->set('jwks_uri', $metadata->jwksUri);
     }
-    if ($metadata->getSoftwareId() !== NULL) {
-      $consumer->set('software_id', $metadata->getSoftwareId());
+    if ($metadata->softwareId !== NULL) {
+      $consumer->set('software_id', $metadata->softwareId);
     }
-    if ($metadata->getSoftwareVersion() !== NULL) {
-      $consumer->set('software_version', $metadata->getSoftwareVersion());
+    if ($metadata->softwareVersion !== NULL) {
+      $consumer->set('software_version', $metadata->softwareVersion);
     }
 
     // Update contacts if provided.
-    $contacts = $metadata->getContacts();
+    $contacts = $metadata->contacts;
     if (!empty($contacts)) {
       $consumer->set('contacts', $contacts);
     }
 
     // Update redirect URIs if provided.
-    $redirectUris = $metadata->getRedirectUris();
+    $redirectUris = $metadata->redirectUris;
     if (!empty($redirectUris)) {
       $consumer->set('redirect', $redirectUris);
     }

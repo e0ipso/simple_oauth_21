@@ -13,13 +13,6 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 class UserAgentAnalyzer {
 
   /**
-   * The configuration factory.
-   *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
-   */
-  protected ConfigFactoryInterface $configFactory;
-
-  /**
    * Compiled regular expressions for efficient pattern matching.
    *
    * @var array
@@ -149,11 +142,12 @@ class UserAgentAnalyzer {
   /**
    * Constructs a UserAgentAnalyzer service.
    *
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The configuration factory.
    */
-  public function __construct(ConfigFactoryInterface $config_factory) {
-    $this->configFactory = $config_factory;
+  public function __construct(
+    private readonly ConfigFactoryInterface $configFactory,
+  ) {
     $this->compilePatterns();
   }
 

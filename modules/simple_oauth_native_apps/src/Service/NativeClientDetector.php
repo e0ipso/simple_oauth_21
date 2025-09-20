@@ -17,25 +17,11 @@ use Psr\Log\LoggerInterface;
 class NativeClientDetector {
 
   /**
-   * The configuration factory.
-   *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
-   */
-  protected ConfigFactoryInterface $configFactory;
-
-  /**
    * The logger instance.
    *
    * @var \Psr\Log\LoggerInterface
    */
   protected LoggerInterface $logger;
-
-  /**
-   * The entity type manager.
-   *
-   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
-   */
-  protected EntityTypeManagerInterface $entityTypeManager;
 
   /**
    * Cache for detection results.
@@ -85,21 +71,19 @@ class NativeClientDetector {
   /**
    * Constructs a NativeClientDetector object.
    *
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The configuration factory.
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
    *   The logger channel factory.
-   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
    *   The entity type manager.
    */
   public function __construct(
-    ConfigFactoryInterface $config_factory,
+    private readonly ConfigFactoryInterface $configFactory,
     LoggerChannelFactoryInterface $logger_factory,
-    EntityTypeManagerInterface $entity_type_manager,
+    private readonly EntityTypeManagerInterface $entityTypeManager,
   ) {
-    $this->configFactory = $config_factory;
     $this->logger = $logger_factory->get('simple_oauth_native_apps');
-    $this->entityTypeManager = $entity_type_manager;
   }
 
   /**

@@ -21,155 +21,50 @@ use Symfony\Component\HttpFoundation\RequestStack;
 class ServerMetadataService {
 
   /**
-   * The cache backend.
-   *
-   * @var \Drupal\Core\Cache\CacheBackendInterface
-   */
-  protected $cache;
-
-  /**
-   * The configuration factory.
-   *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
-   */
-  protected $configFactory;
-
-  /**
-   * The endpoint discovery service.
-   *
-   * @var \Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService
-   */
-  protected $endpointDiscovery;
-
-  /**
-   * The grant type discovery service.
-   *
-   * @var \Drupal\simple_oauth_server_metadata\Service\GrantTypeDiscoveryService
-   */
-  protected $grantTypeDiscovery;
-
-  /**
-   * The scope discovery service.
-   *
-   * @var \Drupal\simple_oauth_server_metadata\Service\ScopeDiscoveryService
-   */
-  protected $scopeDiscovery;
-
-  /**
-   * The claims and auth discovery service.
-   *
-   * @var \Drupal\simple_oauth_server_metadata\Service\ClaimsAuthDiscoveryService
-   */
-  protected $claimsAuthDiscovery;
-
-  /**
-   * The route provider service.
-   *
-   * @var \Drupal\Core\Routing\RouteProviderInterface
-   */
-  protected $routeProvider;
-
-  /**
-   * The kernel service.
-   *
-   * @var \Drupal\Core\DrupalKernelInterface
-   */
-  protected $kernel;
-
-  /**
-   * The request stack service.
-   *
-   * @var \Symfony\Component\HttpFoundation\RequestStack
-   */
-  protected $requestStack;
-
-  /**
-   * The logger factory.
-   *
-   * @var \Drupal\Core\Logger\LoggerChannelFactoryInterface
-   */
-  protected $loggerFactory;
-
-  /**
-   * The module handler.
-   *
-   * @var \Drupal\Core\Extension\ModuleHandlerInterface
-   */
-  protected $moduleHandler;
-
-  /**
-   * The router builder.
-   *
-   * @var \Drupal\Core\Routing\RouteBuilderInterface
-   */
-  protected $routerBuilder;
-
-  /**
-   * The module extension list.
-   *
-   * @var \Drupal\Core\Extension\ModuleExtensionList
-   */
-  protected $moduleExtensionList;
-
-  /**
    * Constructs a ServerMetadataService object.
    *
    * @param \Drupal\Core\Cache\CacheBackendInterface $cache
    *   The cache backend.
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The configuration factory.
-   * @param \Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService $endpoint_discovery
+   * @param \Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService $endpointDiscovery
    *   The endpoint discovery service.
-   * @param \Drupal\simple_oauth_server_metadata\Service\GrantTypeDiscoveryService $grant_type_discovery
+   * @param \Drupal\simple_oauth_server_metadata\Service\GrantTypeDiscoveryService $grantTypeDiscovery
    *   The grant type discovery service.
-   * @param \Drupal\simple_oauth_server_metadata\Service\ScopeDiscoveryService $scope_discovery
+   * @param \Drupal\simple_oauth_server_metadata\Service\ScopeDiscoveryService $scopeDiscovery
    *   The scope discovery service.
-   * @param \Drupal\simple_oauth_server_metadata\Service\ClaimsAuthDiscoveryService $claims_auth_discovery
+   * @param \Drupal\simple_oauth_server_metadata\Service\ClaimsAuthDiscoveryService $claimsAuthDiscovery
    *   The claims and auth discovery service.
-   * @param \Drupal\Core\Routing\RouteProviderInterface $route_provider
+   * @param \Drupal\Core\Routing\RouteProviderInterface $routeProvider
    *   The route provider service.
    * @param \Drupal\Core\DrupalKernelInterface $kernel
    *   The kernel service.
-   * @param \Symfony\Component\HttpFoundation\RequestStack $request_stack
+   * @param \Symfony\Component\HttpFoundation\RequestStack $requestStack
    *   The request stack service.
-   * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
+   * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $loggerFactory
    *   The logger factory.
-   * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
+   * @param \Drupal\Core\Extension\ModuleHandlerInterface $moduleHandler
    *   The module handler.
-   * @param \Drupal\Core\Routing\RouteBuilderInterface $router_builder
+   * @param \Drupal\Core\Routing\RouteBuilderInterface $routerBuilder
    *   The router builder.
-   * @param \Drupal\Core\Extension\ModuleExtensionList $module_extension_list
+   * @param \Drupal\Core\Extension\ModuleExtensionList $moduleExtensionList
    *   The module extension list.
    */
   public function __construct(
-    CacheBackendInterface $cache,
-    ConfigFactoryInterface $config_factory,
-    EndpointDiscoveryService $endpoint_discovery,
-    GrantTypeDiscoveryService $grant_type_discovery,
-    ScopeDiscoveryService $scope_discovery,
-    ClaimsAuthDiscoveryService $claims_auth_discovery,
-    RouteProviderInterface $route_provider,
-    DrupalKernelInterface $kernel,
-    RequestStack $request_stack,
-    LoggerChannelFactoryInterface $logger_factory,
-    ModuleHandlerInterface $module_handler,
-    RouteBuilderInterface $router_builder,
-    ModuleExtensionList $module_extension_list,
-  ) {
-    $this->cache = $cache;
-    $this->configFactory = $config_factory;
-    $this->endpointDiscovery = $endpoint_discovery;
-    $this->grantTypeDiscovery = $grant_type_discovery;
-    $this->scopeDiscovery = $scope_discovery;
-    $this->claimsAuthDiscovery = $claims_auth_discovery;
-    $this->routeProvider = $route_provider;
-    $this->kernel = $kernel;
-    $this->requestStack = $request_stack;
-    $this->loggerFactory = $logger_factory;
-    $this->moduleHandler = $module_handler;
-    $this->routerBuilder = $router_builder;
-    $this->moduleExtensionList = $module_extension_list;
-  }
+    private readonly CacheBackendInterface $cache,
+    private readonly ConfigFactoryInterface $configFactory,
+    private readonly EndpointDiscoveryService $endpointDiscovery,
+    private readonly GrantTypeDiscoveryService $grantTypeDiscovery,
+    private readonly ScopeDiscoveryService $scopeDiscovery,
+    private readonly ClaimsAuthDiscoveryService $claimsAuthDiscovery,
+    private readonly RouteProviderInterface $routeProvider,
+    private readonly DrupalKernelInterface $kernel,
+    private readonly RequestStack $requestStack,
+    private readonly LoggerChannelFactoryInterface $loggerFactory,
+    private readonly ModuleHandlerInterface $moduleHandler,
+    private readonly RouteBuilderInterface $routerBuilder,
+    private readonly ModuleExtensionList $moduleExtensionList,
+  ) {}
 
   /**
    * Gets the complete server metadata per RFC 8414 with caching.

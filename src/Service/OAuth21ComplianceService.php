@@ -24,26 +24,6 @@ use Psr\Log\LoggerInterface;
 final class OAuth21ComplianceService {
 
   /**
-   * The module handler service.
-   */
-  private ModuleHandlerInterface $moduleHandler;
-
-  /**
-   * The configuration factory service.
-   */
-  private ConfigFactoryInterface $configFactory;
-
-  /**
-   * The extension list module service.
-   */
-  private ModuleExtensionList $extensionListModule;
-
-  /**
-   * The logger service.
-   */
-  private LoggerInterface $logger;
-
-  /**
    * Mapping of submodule names to their potential installation paths.
    */
   private const SUBMODULE_MAPPING = [
@@ -67,26 +47,21 @@ final class OAuth21ComplianceService {
   /**
    * Constructs an OAuth21ComplianceService object.
    *
-   * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
+   * @param \Drupal\Core\Extension\ModuleHandlerInterface $moduleHandler
    *   The module handler service.
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The configuration factory service.
-   * @param \Drupal\Core\Extension\ModuleExtensionList $extension_list_module
+   * @param \Drupal\Core\Extension\ModuleExtensionList $extensionListModule
    *   The extension list module service.
    * @param \Psr\Log\LoggerInterface $logger
    *   The logger service.
    */
   public function __construct(
-    ModuleHandlerInterface $module_handler,
-    ConfigFactoryInterface $config_factory,
-    ModuleExtensionList $extension_list_module,
-    LoggerInterface $logger,
-  ) {
-    $this->moduleHandler = $module_handler;
-    $this->configFactory = $config_factory;
-    $this->extensionListModule = $extension_list_module;
-    $this->logger = $logger;
-  }
+    private readonly ModuleHandlerInterface $moduleHandler,
+    private readonly ConfigFactoryInterface $configFactory,
+    private readonly ModuleExtensionList $extensionListModule,
+    private readonly LoggerInterface $logger,
+  ) {}
 
   /**
    * Gets comprehensive OAuth 2.1 compliance status.
