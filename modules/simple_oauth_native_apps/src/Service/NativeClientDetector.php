@@ -180,12 +180,14 @@ class NativeClientDetector {
     // Check manual override first.
     if ($client->hasField('native_app_enhanced_pkce')) {
       $override = $client->get('native_app_enhanced_pkce')->value;
-      if ($override === '1') {
+      // Treat empty or 'auto-detect' as automatic detection.
+      if ($override === 'native') {
         return TRUE;
       }
-      elseif ($override === '0') {
+      elseif ($override === 'web') {
         return FALSE;
       }
+      // If empty or 'auto-detect', fall through to automatic detection.
     }
 
     // Default: require enhanced PKCE for detected native clients.
@@ -220,12 +222,14 @@ class NativeClientDetector {
     // Check manual override.
     if ($client->hasField('native_app_override')) {
       $override = $client->get('native_app_override')->value;
-      if ($override === '1') {
+      // Only add reason if explicitly set (not empty or 'auto-detect')
+      if ($override === 'native') {
         $reasons[] = 'Manual override: marked as native';
       }
-      elseif ($override === '0') {
+      elseif ($override === 'web') {
         $reasons[] = 'Manual override: marked as web';
       }
+      // If empty or 'auto-detect', no manual override reason.
     }
 
     // Analyze redirect URIs.
@@ -284,19 +288,20 @@ class NativeClientDetector {
     // Check manual override first (100% weight if set)
     if ($client->hasField('native_app_override')) {
       $override = $client->get('native_app_override')->value;
-      if ($override === '1') {
+      // Only apply override if explicitly set to 'native' or 'web'.
+      if ($override === 'native') {
         $score = 1.0;
       }
-      elseif ($override === '0') {
+      elseif ($override === 'web') {
         $score = 0.0;
       }
       else {
-        // No override, proceed with algorithmic detection.
+        // Empty, 'auto-detect', or any other value: use algorithmic detection.
         $score = $this->calculateAlgorithmicScore($client);
       }
     }
     else {
-      // No override field or value, use algorithmic detection.
+      // No override field, use algorithmic detection.
       $score = $this->calculateAlgorithmicScore($client);
     }
 

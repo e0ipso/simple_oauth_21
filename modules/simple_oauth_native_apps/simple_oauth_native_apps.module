@@ -160,13 +160,13 @@ function simple_oauth_native_apps_entity_base_field_info(EntityTypeInterface $en
     $fields['native_app_override'] = BaseFieldDefinition::create('list_string')
       ->setLabel(t('Native App Override'))
       ->setDescription(t('Manual override for native client detection. Automatic detection analyzes redirect URIs (custom schemes like "myapp://" and loopback addresses like "http://127.0.0.1" indicate native apps). Choose automatic detection for standard behavior, or force a specific client type when needed.'))
-      ->setRequired(FALSE)
+      ->setRequired(TRUE)
       ->setSetting('allowed_values', [
-        '' => '- Automatic detection -',
-        '0' => 'Force as Web Client',
-        '1' => 'Force as Native App',
+        'auto-detect' => '- Automatic detection -',
+        'web' => 'Force as Web Client',
+        'native' => 'Force as Native App',
       ])
-      ->setDefaultValue('')
+      ->setDefaultValue('auto-detect')
       ->setDisplayOptions('form', [
         'type' => 'options_select',
         'weight' => 10,
@@ -184,13 +184,13 @@ function simple_oauth_native_apps_entity_base_field_info(EntityTypeInterface $en
     $fields['native_app_enhanced_pkce'] = BaseFieldDefinition::create('list_string')
       ->setLabel(t('Enhanced PKCE'))
       ->setDescription(t('Override enhanced PKCE requirements for this client. Automatic determination enables enhanced PKCE for detected native clients based on redirect URI patterns.'))
-      ->setRequired(FALSE)
+      ->setRequired(TRUE)
       ->setSetting('allowed_values', [
-        '' => '- Automatic determination -',
-        '0' => 'Disable Enhanced PKCE',
-        '1' => 'Require Enhanced PKCE',
+        'auto-detect' => '- Automatic determination -',
+        'web' => 'Disable Enhanced PKCE',
+        'native' => 'Require Enhanced PKCE',
       ])
-      ->setDefaultValue('')
+      ->setDefaultValue('auto-detect')
       ->setDisplayOptions('form', [
         'type' => 'options_select',
         'weight' => 11,
