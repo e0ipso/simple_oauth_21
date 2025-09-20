@@ -104,7 +104,8 @@ class ConsumerNativeAppsFormAlter {
     $global_config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
     // Get current consumer-specific settings if they exist.
-    $consumer_config = $this->getConsumerNativeAppsSettings($consumer->id());
+    $consumer_id = $consumer->id();
+    $consumer_config = $consumer_id ? $this->getConsumerNativeAppsSettings($consumer_id) : [];
 
     $form['native_apps'] = [
       '#type' => 'details',
@@ -222,10 +223,10 @@ class ConsumerNativeAppsFormAlter {
     ];
 
     // Add custom validation.
-    $form['#validate'][] = [$this, 'validateConsumerNativeAppsSettings'];
+    $form['#validate'][] = 'simple_oauth_native_apps_validate_consumer_settings';
 
     // Add custom submit handler.
-    $form['actions']['submit']['#submit'][] = [$this, 'submitConsumerNativeAppsSettings'];
+    $form['actions']['submit']['#submit'][] = 'simple_oauth_native_apps_submit_consumer_settings';
   }
 
   /**
@@ -282,8 +283,11 @@ class ConsumerNativeAppsFormAlter {
     $consumer = $form_state->getFormObject()->getEntity();
     $values = $form_state->getValue('native_apps', []);
 
-    // Save consumer-specific settings.
-    $this->saveConsumerNativeAppsSettings($consumer->id(), $values);
+    // Save consumer-specific settings only if the consumer has an ID.
+    $consumer_id = $consumer->id();
+    if ($consumer_id) {
+      $this->saveConsumerNativeAppsSettings($consumer_id, $values);
+    }
   }
 
   /**

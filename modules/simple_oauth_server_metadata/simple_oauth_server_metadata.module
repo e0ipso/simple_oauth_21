@@ -74,7 +74,8 @@ function simple_oauth_server_metadata_config_save($config) {
  * Implements hook_routing_route_alter().
  */
 function simple_oauth_server_metadata_routing_route_alter($collection) {
-  // Invalidate metadata cache when routes are rebuilt (affects endpoint detection).
+  // Invalidate metadata cache when routes are rebuilt (affects endpoint
+  // detection).
   $route_names = [
     'simple_oauth_client_registration.register',
     'entity.consumer.add_form',

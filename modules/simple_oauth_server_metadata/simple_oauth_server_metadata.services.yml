@@ -28,6 +28,10 @@ services:
       - '@router.route_provider'
       - '@kernel'
       - '@request_stack'
+      - '@logger.factory'
+      - '@module_handler'
+      - '@router.builder'
+      - '@extension.list.module'
   simple_oauth_server_metadata.resource_metadata:
     class: Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService
     arguments:

@@ -5,7 +5,6 @@ namespace Drupal\Tests\simple_oauth_21\Functional;
 use Drupal\Core\Cache\Cache;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\Component\Serialization\Json;
-use Drupal\Core\Cache\CacheBackendInterface;
 use GuzzleHttp\RequestOptions;
 use GuzzleHttp\Client;
 
@@ -62,15 +61,18 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     $test_metadata = $metadata_service->getServerMetadata();
 
     // Verify auto-detection mechanism works - this is the core fix.
-    $this->assertArrayHasKey('registration_endpoint', $test_metadata, 'Auto-detection should provide registration endpoint in test environments');
+    $this->assertArrayHasKey('registration_endpoint', $test_metadata,
+      'Auto-detection should provide registration endpoint in test environments');
     $this->assertStringContainsString('/oauth/register', $test_metadata['registration_endpoint'], 'Auto-detected endpoint should be correct');
 
     // Now configure the endpoint explicitly for HTTP endpoint testing
-    // This avoids the test environment HTTP cache issues while proving auto-detection works.
+    // This avoids the test environment HTTP cache issues while proving
+    // auto-detection works.
     $config->set('registration_endpoint', $test_metadata['registration_endpoint']);
     $config->save();
 
-    // Clear caches again and warm the metadata cache for consistent test performance.
+    // Clear caches again and warm the metadata cache for consistent test
+    // performance.
     $this->clearAllTestCaches();
     $this->warmMetadataCache();
 
@@ -80,8 +82,11 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
 
   /**
    * Test RFC 7591 client registration workflow.
+   *
+   * @return array<string, mixed>
+   *   The client registration response data.
    */
-  public function testClientRegistrationWorkflow() {
+  public function testClientRegistrationWorkflow(): array {
     // Prepare valid RFC 7591 client registration request.
     $client_metadata = [
       'client_name' => 'Test OAuth Client',
@@ -145,21 +150,13 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     ];
 
     foreach ($cache_backends as $cache_service) {
-      if ($this->container->has($cache_service)) {
-        $cache_backend = $this->container->get($cache_service);
-        if ($cache_backend instanceof CacheBackendInterface) {
-          $cache_backend->deleteAll();
-        }
-      }
+      $cache_backend = $this->container->get($cache_service);
+      $cache_backend->deleteAll();
     }
 
     // Clear server metadata service cache specifically.
-    if ($this->container->has('simple_oauth_server_metadata.server_metadata')) {
-      $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
-      if (method_exists($metadata_service, 'invalidateCache')) {
-        $metadata_service->invalidateCache();
-      }
-    }
+    $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
+    $metadata_service->invalidateCache();
 
     // Invalidate cache tags that are specific to OAuth server metadata.
     Cache::invalidateTags([
@@ -179,20 +176,9 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
    * could cause timing-related test failures.
    */
   protected function warmMetadataCache(): void {
-    if ($this->container->has('simple_oauth_server_metadata.server_metadata')) {
-      $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
-      if (method_exists($metadata_service, 'refreshCacheForTesting')) {
-        // Use test-specific cache refresh method for better reliability.
-        $metadata_service->refreshCacheForTesting();
-      }
-      elseif (method_exists($metadata_service, 'warmCache')) {
-        $metadata_service->warmCache();
-      }
-      else {
-        // Fallback: generate metadata to warm cache.
-        $metadata_service->getServerMetadata();
-      }
-    }
+    $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
+    // Use test-specific cache refresh method for better reliability.
+    $metadata_service->refreshCacheForTesting();
   }
 
   /**
@@ -204,20 +190,12 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
    */
   protected function ensureCacheIsolation(): void {
     // Clear HTTP response caches that might interfere with fresh requests.
-    if ($this->container->has('cache.page')) {
-      $this->container->get('cache.page')->deleteAll();
-    }
-    if ($this->container->has('cache.dynamic_page_cache')) {
-      $this->container->get('cache.dynamic_page_cache')->deleteAll();
-    }
+    $this->container->get('cache.page')->deleteAll();
+    $this->container->get('cache.dynamic_page_cache')->deleteAll();
 
     // Ensure metadata service cache is fresh.
-    if ($this->container->has('simple_oauth_server_metadata.server_metadata')) {
-      $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
-      if (method_exists($metadata_service, 'invalidateCache')) {
-        $metadata_service->invalidateCache();
-      }
-    }
+    $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
+    $metadata_service->invalidateCache();
 
     // Additional cache tag invalidation for HTTP responses.
     Cache::invalidateTags([
@@ -230,7 +208,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   /**
    * Test client management operations using registration access token.
    */
-  public function testClientManagementOperations() {
+  public function testClientManagementOperations(): void {
     // First register a client.
     $registration_data = $this->testClientRegistrationWorkflow();
     $client_id = $registration_data['client_id'];
@@ -273,7 +251,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   /**
    * Test registration error conditions.
    */
-  public function testRegistrationErrorConditions() {
+  public function testRegistrationErrorConditions(): void {
     // Test empty request body.
     $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
       RequestOptions::HEADERS => [
@@ -324,7 +302,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   /**
    * Test metadata endpoints functionality.
    */
-  public function testMetadataEndpoints() {
+  public function testMetadataEndpoints(): void {
     // Ensure cache isolation for HTTP-based metadata endpoint testing.
     $this->ensureCacheIsolation();
 
@@ -377,7 +355,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   /**
    * Test registration access token authentication.
    */
-  public function testRegistrationTokenAuthentication() {
+  public function testRegistrationTokenAuthentication(): void {
     // Register a client first.
     $registration_data = $this->testClientRegistrationWorkflow();
     $client_id = $registration_data['client_id'];
@@ -421,7 +399,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
    * - Cache isolation between test operations
    * - Consistent behavior across multiple requests.
    */
-  public function testCacheIsolationAndConsistency() {
+  public function testCacheIsolationAndConsistency(): void {
     // Get initial metadata service.
     $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
 
@@ -456,12 +434,10 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
       'Issuer consistent between HTTP requests');
 
     // Test service-level cache refresh.
-    if (method_exists($metadata_service, 'refreshCacheForTesting')) {
-      $metadata_service->refreshCacheForTesting();
-      $refreshed_metadata = $metadata_service->getServerMetadata();
-      $this->assertEquals($initial_metadata['registration_endpoint'], $refreshed_metadata['registration_endpoint'],
-        'Metadata consistency maintained after test cache refresh');
-    }
+    $metadata_service->refreshCacheForTesting();
+    $refreshed_metadata = $metadata_service->getServerMetadata();
+    $this->assertEquals($initial_metadata['registration_endpoint'], $refreshed_metadata['registration_endpoint'],
+      'Metadata consistency maintained after test cache refresh');
 
     // Final verification: ensure changes don't leak between operations.
     $final_metadata = $metadata_service->getServerMetadata();

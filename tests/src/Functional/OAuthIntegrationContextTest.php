@@ -2,10 +2,10 @@
 
 namespace Drupal\Tests\simple_oauth_21\Functional;
 
+use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
 use Drupal\Core\Cache\Cache;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\Component\Serialization\Json;
-use Drupal\Core\Cache\CacheBackendInterface;
 use GuzzleHttp\RequestOptions;
 use GuzzleHttp\Client;
 use Drupal\consumers\Entity\Consumer;
@@ -97,11 +97,11 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
 
     // Test client registration service directly.
     $registration_service = $this->container->get('simple_oauth_client_registration.service.registration');
-    $api_client_metadata = [
-      'client_name' => 'API Context Test Client',
-      'redirect_uris' => ['https://api.example.com/callback'],
-      'grant_types' => ['authorization_code', 'refresh_token'],
-    ];
+    $api_client_metadata = new ClientRegistration(
+      clientName: 'API Context Test Client',
+      redirectUris: ['https://api.example.com/callback'],
+      grantTypes: ['authorization_code', 'refresh_token']
+    );
     $api_client_data = $registration_service->registerClient($api_client_metadata);
     $this->assertArrayHasKey('client_id', $api_client_data, 'Client ID should be generated in API context');
     $this->assertArrayHasKey('client_secret', $api_client_data, 'Client secret should be generated in API context');
@@ -109,7 +109,7 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
 
     // Test client retrieval.
     $retrieved_metadata = $registration_service->getClientMetadata($api_client_data['client_id']);
-    $this->assertEquals($api_client_metadata['client_name'], $retrieved_metadata['client_name'], 'Client metadata should be retrievable in API context');
+    $this->assertEquals($api_client_metadata->getClientName(), $retrieved_metadata['client_name'], 'Client metadata should be retrievable in API context');
 
     // === Cache Behavior Across Contexts ===
     // Test cache generation and consistency
@@ -165,7 +165,11 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     // Test API context error handling.
     $exception_thrown = FALSE;
     try {
-      $registration_service->registerClient($invalid_metadata);
+      $invalid_dto = new ClientRegistration(
+        clientName: 'Invalid Client',
+        redirectUris: ['not-a-url']
+      );
+      $registration_service->registerClient($invalid_dto);
     }
     catch (\Exception $e) {
       $exception_thrown = TRUE;
@@ -203,10 +207,10 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     // Test concurrent client registrations.
     $client_results = [];
     for ($i = 0; $i < 3; $i++) {
-      $concurrent_metadata = [
-        'client_name' => "Concurrent Test Client $i",
-        'redirect_uris' => ["https://example$i.com/callback"],
-      ];
+      $concurrent_metadata = new ClientRegistration(
+        clientName: "Concurrent Test Client $i",
+        redirectUris: ["https://example$i.com/callback"]
+      );
       $client_results[] = $registration_service->registerClient($concurrent_metadata);
     }
     // All clients should have unique IDs.
@@ -279,10 +283,10 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
 
     // Test that new dynamic registration still works.
     $registration_service = $this->container->get('simple_oauth_client_registration.service.registration');
-    $new_client_metadata = [
-      'client_name' => 'New Dynamic Client',
-      'redirect_uris' => ['https://new.example.com/callback'],
-    ];
+    $new_client_metadata = new ClientRegistration(
+      clientName: 'New Dynamic Client',
+      redirectUris: ['https://new.example.com/callback']
+    );
     $new_client_data = $registration_service->registerClient($new_client_metadata);
     $this->assertArrayHasKey('client_id', $new_client_data, 'New client registration should work alongside existing clients');
     $this->assertNotEquals('existing-client-id', $new_client_data['client_id'], 'New client should have different ID from existing client');
@@ -311,20 +315,12 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     ];
 
     foreach ($cache_backends as $cache_service) {
-      if ($this->container->has($cache_service)) {
-        $cache_backend = $this->container->get($cache_service);
-        if ($cache_backend instanceof CacheBackendInterface) {
-          $cache_backend->deleteAll();
-        }
-      }
+      $cache_backend = $this->container->get($cache_service);
+      $cache_backend->deleteAll();
     }
 
-    if ($this->container->has('simple_oauth_server_metadata.server_metadata')) {
-      $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
-      if (method_exists($metadata_service, 'invalidateCache')) {
-        $metadata_service->invalidateCache();
-      }
-    }
+    $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
+    $metadata_service->invalidateCache();
 
     Cache::invalidateTags([
       'simple_oauth_server_metadata',

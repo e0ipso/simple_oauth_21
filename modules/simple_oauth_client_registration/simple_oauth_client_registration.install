@@ -62,7 +62,8 @@ function simple_oauth_client_registration_schema() {
  */
 function simple_oauth_client_registration_install($is_syncing) {
   if (!$is_syncing) {
-    // Configure the registration endpoint in server metadata if server metadata module is enabled.
+    // Configure the registration endpoint in server metadata if server
+    // metadata module is enabled.
     if (\Drupal::moduleHandler()->moduleExists('simple_oauth_server_metadata')) {
       $config = \Drupal::configFactory()->getEditable('simple_oauth_server_metadata.settings');
       if (empty($config->get('registration_endpoint'))) {
@@ -88,51 +89,51 @@ function simple_oauth_client_registration_install($is_syncing) {
     $rfc_fields = [
       'client_name' => [
         'type' => 'string',
-        'label' => 'Client Name',
-        'description' => 'Human-readable name of the client to be presented to the end user.',
+        'label' => t('Client Name'),
+        'description' => t('Human-readable name of the client to be presented to the end user.'),
         'max_length' => 255,
       ],
       'client_uri' => [
         'type' => 'uri',
-        'label' => 'Client URI',
-        'description' => 'URL of the home page of the client.',
+        'label' => t('Client URI'),
+        'description' => t('URL of the home page of the client.'),
       ],
       'logo_uri' => [
         'type' => 'uri',
-        'label' => 'Logo URI',
-        'description' => 'URL that references a logo for the client application.',
+        'label' => t('Logo URI'),
+        'description' => t('URL that references a logo for the client application.'),
       ],
       'contacts' => [
-        'type' => 'text_long',
-        'label' => 'Contacts',
-        'description' => 'Array of email addresses of people responsible for this client.',
+        'type' => 'email',
+        'label' => t('Contact Email'),
+        'description' => t('Email addresses of people responsible for this client.'),
         'cardinality' => -1,
       ],
       'tos_uri' => [
         'type' => 'uri',
-        'label' => 'Terms of Service URI',
-        'description' => 'URL that the relying party client provides to the end user to read about the how the profile data will be used.',
+        'label' => t('Terms of Service URI'),
+        'description' => t('URL that the relying party client provides to the end user to read about the how the profile data will be used.'),
       ],
       'policy_uri' => [
         'type' => 'uri',
-        'label' => 'Policy URI',
-        'description' => 'URL that the relying party client provides to the end user to read about the relying party\'s terms of service.',
+        'label' => t('Policy URI'),
+        'description' => t("URL that the relying party client provides to the end user to read about the relying party's terms of service."),
       ],
       'jwks_uri' => [
         'type' => 'uri',
-        'label' => 'JWKS URI',
-        'description' => 'URL for the client\'s JSON Web Key Set document.',
+        'label' => t('JWKS URI'),
+        'description' => t("URL for the client's JSON Web Key Set document."),
       ],
       'software_id' => [
         'type' => 'string',
-        'label' => 'Software ID',
-        'description' => 'A unique identifier string (UUID or other identifier) assigned by the client developer or software publisher.',
+        'label' => t('Software ID'),
+        'description' => t('A unique identifier string (UUID or other identifier) assigned by the client developer or software publisher.'),
         'max_length' => 255,
       ],
       'software_version' => [
         'type' => 'string',
-        'label' => 'Software Version',
-        'description' => 'A version identifier string for the client software.',
+        'label' => t('Software Version'),
+        'description' => t('A version identifier string for the client software.'),
         'max_length' => 255,
       ],
     ];
@@ -147,8 +148,8 @@ function simple_oauth_client_registration_install($is_syncing) {
 
       if (!$existing_definition) {
         $field_definition = BaseFieldDefinition::create($field_config['type'])
-          ->setLabel(t($field_config['label']))
-          ->setDescription(t($field_config['description']))
+          ->setLabel($field_config['label'])
+          ->setDescription($field_config['description'])
           ->setRequired(FALSE);
 
         // Set specific settings based on field type.
@@ -185,6 +186,19 @@ function simple_oauth_client_registration_install($is_syncing) {
             ])
             ->setDisplayOptions('view', [
               'type' => 'text_default',
+              'label' => 'above',
+              'weight' => $weight,
+            ]);
+        }
+        elseif ($field_config['type'] === 'email') {
+          $field_definition
+            ->setDisplayOptions('form', [
+              'type' => 'email_default',
+              'weight' => $weight,
+              'settings' => ['size' => 60, 'placeholder' => 'admin@example.com'],
+            ])
+            ->setDisplayOptions('view', [
+              'type' => 'basic_string',
               'label' => 'above',
               'weight' => $weight,
             ]);
@@ -227,7 +241,8 @@ function simple_oauth_client_registration_install($is_syncing) {
  */
 function simple_oauth_client_registration_uninstall($is_syncing) {
   if (!$is_syncing) {
-    // Clear the registration endpoint from server metadata if it points to our endpoint.
+    // Clear the registration endpoint from server metadata if it points to
+    // our endpoint.
     if (\Drupal::moduleHandler()->moduleExists('simple_oauth_server_metadata')) {
       $config = \Drupal::configFactory()->getEditable('simple_oauth_server_metadata.settings');
       $registration_endpoint = $config->get('registration_endpoint');

@@ -9,6 +9,10 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Routing\RouteProviderInterface;
 use Drupal\Core\DrupalKernelInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
+use Drupal\Core\Extension\ModuleExtensionList;
+use Drupal\Core\Routing\RouteBuilderInterface;
+use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
@@ -80,6 +84,34 @@ class ServerMetadataService {
   protected $requestStack;
 
   /**
+   * The logger factory.
+   *
+   * @var \Drupal\Core\Logger\LoggerChannelFactoryInterface
+   */
+  protected $loggerFactory;
+
+  /**
+   * The module handler.
+   *
+   * @var \Drupal\Core\Extension\ModuleHandlerInterface
+   */
+  protected $moduleHandler;
+
+  /**
+   * The router builder.
+   *
+   * @var \Drupal\Core\Routing\RouteBuilderInterface
+   */
+  protected $routerBuilder;
+
+  /**
+   * The module extension list.
+   *
+   * @var \Drupal\Core\Extension\ModuleExtensionList
+   */
+  protected $moduleExtensionList;
+
+  /**
    * Constructs a ServerMetadataService object.
    *
    * @param \Drupal\Core\Cache\CacheBackendInterface $cache
@@ -100,6 +132,14 @@ class ServerMetadataService {
    *   The kernel service.
    * @param \Symfony\Component\HttpFoundation\RequestStack $request_stack
    *   The request stack service.
+   * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
+   *   The logger factory.
+   * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
+   *   The module handler.
+   * @param \Drupal\Core\Routing\RouteBuilderInterface $router_builder
+   *   The router builder.
+   * @param \Drupal\Core\Extension\ModuleExtensionList $module_extension_list
+   *   The module extension list.
    */
   public function __construct(
     CacheBackendInterface $cache,
@@ -111,6 +151,10 @@ class ServerMetadataService {
     RouteProviderInterface $route_provider,
     DrupalKernelInterface $kernel,
     RequestStack $request_stack,
+    LoggerChannelFactoryInterface $logger_factory,
+    ModuleHandlerInterface $module_handler,
+    RouteBuilderInterface $router_builder,
+    ModuleExtensionList $module_extension_list,
   ) {
     $this->cache = $cache;
     $this->configFactory = $config_factory;
@@ -121,6 +165,10 @@ class ServerMetadataService {
     $this->routeProvider = $route_provider;
     $this->kernel = $kernel;
     $this->requestStack = $request_stack;
+    $this->loggerFactory = $logger_factory;
+    $this->moduleHandler = $module_handler;
+    $this->routerBuilder = $router_builder;
+    $this->moduleExtensionList = $module_extension_list;
   }
 
   /**
@@ -307,78 +355,79 @@ class ServerMetadataService {
   protected function detectRegistrationEndpointWithMultipleStrategies(): ?string {
     $is_test = defined('DRUPAL_TEST_IN_CHILD_SITE') || $this->kernel->getEnvironment() === 'testing';
 
-    // In test environments, add an additional early strategy for better reliability.
+    // In test environments, add an additional early strategy for better
+    // reliability.
     if ($is_test) {
       // Test Strategy 0: Try forced route rebuild and check.
       $endpoint = $this->tryTestEnvironmentRouteDetection();
       if ($endpoint) {
-        \Drupal::logger('simple_oauth_server_metadata')->debug('Test Strategy 0 (forced route detection) succeeded: @endpoint', ['@endpoint' => $endpoint]);
+        $this->loggerFactory->get('simple_oauth_server_metadata')->debug('Test Strategy 0 (forced route detection) succeeded: @endpoint', ['@endpoint' => $endpoint]);
         return $endpoint;
       }
-      \Drupal::logger('simple_oauth_server_metadata')->debug('Test Strategy 0 (forced route detection) failed');
+      $this->loggerFactory->get('simple_oauth_server_metadata')->debug('Test Strategy 0 (forced route detection) failed');
     }
 
     // Strategy 1: Try URL generation first (works in most contexts)
     $endpoint = $this->tryUrlGeneration('simple_oauth_client_registration.register');
     if ($endpoint) {
       if ($is_test) {
-        \Drupal::logger('simple_oauth_server_metadata')->debug('Strategy 1 (URL generation) succeeded: @endpoint', ['@endpoint' => $endpoint]);
+        $this->loggerFactory->get('simple_oauth_server_metadata')->debug('Strategy 1 (URL generation) succeeded: @endpoint', ['@endpoint' => $endpoint]);
       }
       return $endpoint;
     }
     if ($is_test) {
-      \Drupal::logger('simple_oauth_server_metadata')->debug('Strategy 1 (URL generation) failed');
+      $this->loggerFactory->get('simple_oauth_server_metadata')->debug('Strategy 1 (URL generation) failed');
     }
 
     // Strategy 2: Try route provider lookup (works when routes are cached)
     $endpoint = $this->tryRouteProviderLookup('simple_oauth_client_registration.register');
     if ($endpoint) {
       if ($is_test) {
-        \Drupal::logger('simple_oauth_server_metadata')->debug('Strategy 2 (route provider) succeeded: @endpoint', ['@endpoint' => $endpoint]);
+        $this->loggerFactory->get('simple_oauth_server_metadata')->debug('Strategy 2 (route provider) succeeded: @endpoint', ['@endpoint' => $endpoint]);
       }
       return $endpoint;
     }
     if ($is_test) {
-      \Drupal::logger('simple_oauth_server_metadata')->debug('Strategy 2 (route provider) failed');
+      $this->loggerFactory->get('simple_oauth_server_metadata')->debug('Strategy 2 (route provider) failed');
     }
 
     // Strategy 3: Check if the module is installed and enabled.
     $endpoint = $this->tryModuleBasedDetection();
     if ($endpoint) {
       if ($is_test) {
-        \Drupal::logger('simple_oauth_server_metadata')->debug('Strategy 3 (module-based) succeeded: @endpoint', ['@endpoint' => $endpoint]);
+        $this->loggerFactory->get('simple_oauth_server_metadata')->debug('Strategy 3 (module-based) succeeded: @endpoint', ['@endpoint' => $endpoint]);
       }
       return $endpoint;
     }
     if ($is_test) {
-      \Drupal::logger('simple_oauth_server_metadata')->debug('Strategy 3 (module-based) failed');
+      $this->loggerFactory->get('simple_oauth_server_metadata')->debug('Strategy 3 (module-based) failed');
     }
 
     // Strategy 4: Fallback to consumer add form as registration endpoint.
     $endpoint = $this->tryUrlGeneration('entity.consumer.add_form');
     if ($endpoint) {
       if ($is_test) {
-        \Drupal::logger('simple_oauth_server_metadata')->debug('Strategy 4a (consumer URL generation) succeeded: @endpoint', ['@endpoint' => $endpoint]);
+        $this->loggerFactory->get('simple_oauth_server_metadata')->debug('Strategy 4a (consumer URL generation) succeeded: @endpoint', ['@endpoint' => $endpoint]);
       }
       return $endpoint;
     }
     if ($is_test) {
-      \Drupal::logger('simple_oauth_server_metadata')->debug('Strategy 4a (consumer URL generation) failed');
+      $this->loggerFactory->get('simple_oauth_server_metadata')->debug('Strategy 4a (consumer URL generation) failed');
     }
 
     $endpoint = $this->tryRouteProviderLookup('entity.consumer.add_form');
     if ($endpoint) {
       if ($is_test) {
-        \Drupal::logger('simple_oauth_server_metadata')->debug('Strategy 4b (consumer route provider) succeeded: @endpoint', ['@endpoint' => $endpoint]);
+        $this->loggerFactory->get('simple_oauth_server_metadata')->debug('Strategy 4b (consumer route provider) succeeded: @endpoint', ['@endpoint' => $endpoint]);
       }
       return $endpoint;
     }
     if ($is_test) {
-      \Drupal::logger('simple_oauth_server_metadata')->debug('Strategy 4b (consumer route provider) failed');
+      $this->loggerFactory->get('simple_oauth_server_metadata')->debug('Strategy 4b (consumer route provider) failed');
     }
 
     if ($is_test) {
-      \Drupal::logger('simple_oauth_server_metadata')->debug('All registration endpoint detection strategies failed');
+      $this->loggerFactory->get('simple_oauth_server_metadata')->debug('All registration endpoint detection strategies failed');
     }
 
     return NULL;
@@ -392,16 +441,14 @@ class ServerMetadataService {
    */
   protected function tryTestEnvironmentRouteDetection(): ?string {
     // Check if the client registration module is enabled.
-    $module_handler = \Drupal::moduleHandler();
-    if (!$module_handler->moduleExists('simple_oauth_client_registration')) {
+    if (!$this->moduleHandler->moduleExists('simple_oauth_client_registration')) {
       return NULL;
     }
 
     try {
       // Force route rebuilding in test environments.
-      $router_builder = \Drupal::service('router.builder');
-      if (method_exists($router_builder, 'rebuild')) {
-        $router_builder->rebuild();
+      if (method_exists($this->routerBuilder, 'rebuild')) {
+        $this->routerBuilder->rebuild();
       }
 
       // Try URL generation after route rebuild.
@@ -413,7 +460,7 @@ class ServerMetadataService {
 
     try {
       // Alternative: Check routing files directly and construct URL.
-      $module_path = \Drupal::service('extension.list.module')->getPath('simple_oauth_client_registration');
+      $module_path = $this->moduleExtensionList->getPath('simple_oauth_client_registration');
       $routing_file = $module_path . '/simple_oauth_client_registration.routing.yml';
 
       if (file_exists($routing_file)) {
@@ -481,10 +528,9 @@ class ServerMetadataService {
    */
   protected function tryModuleBasedDetection(): ?string {
     // Check if the client registration module is enabled.
-    // In test environments, we can check module status even if routes aren't cached.
-    $module_handler = \Drupal::moduleHandler();
-
-    if ($module_handler->moduleExists('simple_oauth_client_registration')) {
+    // In test environments, we can check module status even if routes aren't
+    // cached.
+    if ($this->moduleHandler->moduleExists('simple_oauth_client_registration')) {
       // Method 1: Try EndpointDiscoveryService approach.
       try {
         $base_url = $this->endpointDiscovery->getIssuer();
@@ -507,12 +553,6 @@ class ServerMetadataService {
       // Since we know from simple_oauth_client_registration.routing.yml
       // that the path is '/oauth/register', we can construct it manually.
       try {
-        // Use global base URL if available.
-        global $base_url;
-        if (!empty($base_url)) {
-          return rtrim($base_url, '/') . '/oauth/register';
-        }
-
         // Try environment variables used in tests.
         $test_base_url = getenv('DRUPAL_TEST_BASE_URL') ?: getenv('SIMPLETEST_BASE_URL');
         if ($test_base_url) {
@@ -547,25 +587,16 @@ class ServerMetadataService {
       }
     }
 
-    // Fallback to global request stack.
-    try {
-      $request_stack = \Drupal::requestStack();
-      $current_request = $request_stack->getCurrentRequest();
-      if ($current_request) {
-        return $current_request->getSchemeAndHttpHost();
-      }
-    }
-    catch (\Exception $e) {
-      // Request stack not available.
-    }
-
+    // Note: We already tried the injected request stack above,
+    // so we don't need to try \Drupal::requestStack() again.
     // Fallback for CLI/test contexts where no request exists.
     global $base_url;
     if (!empty($base_url)) {
       return $base_url;
     }
 
-    // Try to get from DRUPAL_TEST_BASE_URL environment variable (used in tests).
+    // Try to get from DRUPAL_TEST_BASE_URL environment variable (used in
+    // tests).
     $test_base_url = getenv('DRUPAL_TEST_BASE_URL') ?: getenv('SIMPLETEST_BASE_URL');
     if ($test_base_url) {
       return rtrim($test_base_url, '/');
@@ -711,12 +742,14 @@ class ServerMetadataService {
   public function invalidateCache(): void {
     Cache::invalidateTags($this->getCacheTags());
 
-    // In test environments, also clear the cache backend directly for immediate effect.
+    // In test environments, also clear the cache backend directly for
+    // immediate effect.
     if ($this->isTestEnvironment()) {
       $cache_id = 'simple_oauth_server_metadata:metadata';
       $this->cache->delete($cache_id);
 
-      // Clear any static caches that might interfere with fresh metadata generation.
+      // Clear any static caches that might interfere with fresh metadata
+      // generation.
       $this->clearStaticCaches();
     }
   }

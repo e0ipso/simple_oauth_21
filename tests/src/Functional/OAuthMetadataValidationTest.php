@@ -5,7 +5,6 @@ namespace Drupal\Tests\simple_oauth_21\Functional;
 use Drupal\Core\Cache\Cache;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\Component\Serialization\Json;
-use Drupal\Core\Cache\CacheBackendInterface;
 use GuzzleHttp\RequestOptions;
 use GuzzleHttp\Client;
 
@@ -188,7 +187,7 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
       'software_version',
     ];
     foreach ($metadata_fields as $field) {
-      if (isset($client_metadata[$field])) {
+      if (array_key_exists($field, $client_metadata)) {
         $this->assertArrayHasKey($field, $client_data, "Client metadata field should be preserved: $field");
         $this->assertEquals($client_metadata[$field], $client_data[$field], "Client metadata field should match input: $field");
       }
@@ -322,21 +321,13 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
     ];
 
     foreach ($cache_backends as $cache_service) {
-      if ($this->container->has($cache_service)) {
-        $cache_backend = $this->container->get($cache_service);
-        if ($cache_backend instanceof CacheBackendInterface) {
-          $cache_backend->deleteAll();
-        }
-      }
+      $cache_backend = $this->container->get($cache_service);
+      $cache_backend->deleteAll();
     }
 
     // Clear server metadata service cache.
-    if ($this->container->has('simple_oauth_server_metadata.server_metadata')) {
-      $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
-      if (method_exists($metadata_service, 'invalidateCache')) {
-        $metadata_service->invalidateCache();
-      }
-    }
+    $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
+    $metadata_service->invalidateCache();
 
     // Invalidate relevant cache tags.
     Cache::invalidateTags([
@@ -352,18 +343,8 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
    * Warms the metadata cache for consistent performance.
    */
   protected function warmMetadataCache(): void {
-    if ($this->container->has('simple_oauth_server_metadata.server_metadata')) {
-      $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
-      if (method_exists($metadata_service, 'refreshCacheForTesting')) {
-        $metadata_service->refreshCacheForTesting();
-      }
-      elseif (method_exists($metadata_service, 'warmCache')) {
-        $metadata_service->warmCache();
-      }
-      else {
-        $metadata_service->getServerMetadata();
-      }
-    }
+    $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
+    $metadata_service->refreshCacheForTesting();
   }
 
 }
