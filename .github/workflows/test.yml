@@ -95,6 +95,14 @@ jobs:
             phpstan/phpstan-deprecation-rules\
             drupal/simple_oauth:^6
 
+          # Ensure PHPUnit is installed for Drupal 11
+          if [ "${{ matrix.drupal-core }}" = "11" ]; then
+            if [ ! -f "vendor/bin/phpunit" ]; then
+              echo "Installing PHPUnit for Drupal 11..."
+              composer require --dev phpunit/phpunit:^10 --no-interaction
+            fi
+          fi
+
           composer dump-autoload
 
       - name: Checkout module
@@ -183,9 +191,20 @@ jobs:
           TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Unit" -path "*/tests/src/Unit" -print)
           if [ -n "$TEST_DIRS" ]; then
             echo "Running unit tests in: $TEST_DIRS"
-            php vendor/bin/phpunit \
-              --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
-              $TEST_DIRS
+            # Debug: Check PHPUnit installation
+            echo "Checking PHPUnit installation..."
+            ls -la vendor/bin/ | grep -i phpunit || echo "PHPUnit not found in vendor/bin/"
+            if [ -f "vendor/bin/phpunit" ]; then
+              echo "PHPUnit found, running tests..."
+              php vendor/bin/phpunit \
+                --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
+                $TEST_DIRS
+            else
+              echo "Error: PHPUnit not found at vendor/bin/phpunit"
+              echo "Directory contents:"
+              ls -la vendor/bin/ | head -20
+              exit 1
+            fi
           else
             echo "No unit tests found"
           fi
