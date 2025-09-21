@@ -337,22 +337,12 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
     if (version_compare(\Drupal::VERSION, '11.0', '>=')) {
       $this->container->get('router.builder')->rebuild();
       $this->clearAllTestCaches();
-
-      // D11 workaround: Test endpoint directly instead of route discovery.
-      // Route discovery has issues in D11 test environments.
-      $response = $this->drupalGet('/.well-known/oauth-authorization-server', [], []);
-      if ($response !== FALSE) {
-        // Endpoint is accessible, route discovery issues don't matter.
-        return;
-      }
-
-      // If direct access failed, try standard route discovery as fallback.
     }
 
-    // Verify routes are actually available via route provider.
+    // Verify routes are actually available.
     $route_provider = $this->container->get('router.route_provider');
     $retry_count = 0;
-    $max_retries = 3;
+    $max_retries = 5;
 
     while ($retry_count < $max_retries) {
       try {
@@ -363,15 +353,7 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
       catch (\Exception $e) {
         $retry_count++;
         if ($retry_count >= $max_retries) {
-          // Final attempt: try direct endpoint access for D11.
-          if (version_compare(\Drupal::VERSION, '11.0', '>=')) {
-            $response = $this->drupalGet('/.well-known/oauth-authorization-server', [], []);
-            if ($response !== FALSE) {
-              // Endpoint works, route discovery failure is not critical.
-              return;
-            }
-          }
-          // Get debugging info for final failure.
+          // Get more debugging info.
           $all_routes = [];
           foreach ($route_provider->getAllRoutes() as $name => $route) {
             if (strpos($name, 'simple_oauth') === 0) {
@@ -383,7 +365,6 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
         // Force another rebuild and clear all relevant caches.
         $this->container->get('router.builder')->rebuild();
         $this->clearAllTestCaches();
-        usleep(150000);
       }
     }
   }
