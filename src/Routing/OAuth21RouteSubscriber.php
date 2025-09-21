@@ -55,11 +55,11 @@ class OAuth21RouteSubscriber extends RouteSubscriberBase {
       $route = new Route(
         '/.well-known/oauth-authorization-server',
         [
-          '_controller' => '\Drupal\simple_oauth\Controller\ServerMetadata::metadata',
+          '_controller' => 'Drupal\simple_oauth\Controller\ServerMetadata::metadata',
           '_title' => 'OAuth 2.1 Server Metadata',
         ],
         [
-          '_custom_access' => '\Drupal\simple_oauth_21\Access\OAuth21AccessChecker::access',
+          '_custom_access' => 'Drupal\simple_oauth_21\Access\OAuth21AccessChecker::access',
         ],
         [],
         '',
@@ -74,11 +74,11 @@ class OAuth21RouteSubscriber extends RouteSubscriberBase {
       $route = new Route(
         '/oauth/authorize',
         [
-          '_controller' => '\Drupal\simple_oauth\Controller\Oauth2AuthorizeController::authorize',
+          '_controller' => 'Drupal\simple_oauth\Controller\Oauth2AuthorizeController::authorize',
           '_title' => 'Grant Access to Client',
         ],
         [
-          '_custom_access' => '\Drupal\simple_oauth_21\Access\OAuth21AccessChecker::access',
+          '_custom_access' => 'Drupal\simple_oauth_21\Access\OAuth21AccessChecker::access',
         ],
         [
           'no_cache' => TRUE,
@@ -95,10 +95,10 @@ class OAuth21RouteSubscriber extends RouteSubscriberBase {
       $route = new Route(
         '/oauth/token',
         [
-          '_controller' => '\Drupal\simple_oauth\Controller\Oauth2Token::token',
+          '_controller' => 'Drupal\simple_oauth\Controller\Oauth2Token::token',
         ],
         [
-          '_custom_access' => '\Drupal\simple_oauth_21\Access\OAuth21AccessChecker::access',
+          '_custom_access' => 'Drupal\simple_oauth_21\Access\OAuth21AccessChecker::access',
         ],
         [],
         '',
