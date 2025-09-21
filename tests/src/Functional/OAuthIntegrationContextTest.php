@@ -109,7 +109,7 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
 
     // Test client retrieval.
     $retrieved_metadata = $registration_service->getClientMetadata($api_client_data['client_id']);
-    $this->assertEquals($api_client_metadata->getClientName(), $retrieved_metadata['client_name'], 'Client metadata should be retrievable in API context');
+    $this->assertEquals($api_client_metadata->clientName, $retrieved_metadata['client_name'], 'Client metadata should be retrievable in API context');
 
     // === Cache Behavior Across Contexts ===
     // Test cache generation and consistency
@@ -295,7 +295,7 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     $consumer_storage = $this->container->get('entity_type.manager')->getStorage('consumer');
     $existing_client = $consumer_storage->loadByProperties(['uuid' => 'existing-client-id']);
     $this->assertNotEmpty($existing_client, 'Existing client should still be accessible');
-    $new_client = $consumer_storage->loadByProperties(['uuid' => $new_client_data['client_id']]);
+    $new_client = $consumer_storage->loadByProperties(['client_id' => $new_client_data['client_id']]);
     $this->assertNotEmpty($new_client, 'New client should be accessible');
   }
 

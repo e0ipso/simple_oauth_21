@@ -50,8 +50,20 @@ final class ClientRegistrationService {
    *
    * @return \Drupal\consumers\Entity\ConsumerInterface
    *   The created Consumer entity.
+   *
+   * @throws \InvalidArgumentException
+   *   When client data contains invalid values.
    */
   public function createConsumer(ClientRegistration $clientData): ConsumerInterface {
+    // Validate redirect URIs.
+    if (!empty($clientData->redirectUris)) {
+      foreach ($clientData->redirectUris as $uri) {
+        if (!$this->isValidRedirectUri($uri)) {
+          throw new \InvalidArgumentException("Invalid redirect URI: $uri");
+        }
+      }
+    }
+
     // Generate unique client ID.
     $client_id = $this->generateClientId();
 
@@ -408,6 +420,53 @@ final class ClientRegistrationService {
 
     // Fallback to logo_uri field if no image uploaded.
     return $consumer->get('logo_uri')->value ?? '';
+  }
+
+  /**
+   * Validates a redirect URI.
+   *
+   * @param string $uri
+   *   The URI to validate.
+   *
+   * @return bool
+   *   TRUE if the URI is valid, FALSE otherwise.
+   */
+  private function isValidRedirectUri(string $uri): bool {
+    // Check if it's a valid URL or a custom URI scheme.
+    // Allow HTTP(S) URLs and custom URI schemes for native apps.
+    if (empty($uri)) {
+      return FALSE;
+    }
+
+    // Parse the URI.
+    $parsed = parse_url($uri);
+    if ($parsed === FALSE) {
+      return FALSE;
+    }
+
+    // Must have a scheme.
+    if (empty($parsed['scheme'])) {
+      return FALSE;
+    }
+
+    // HTTP(S) URIs must be properly formatted.
+    if (in_array($parsed['scheme'], ['http', 'https'])) {
+      // Must have a host.
+      if (empty($parsed['host'])) {
+        return FALSE;
+      }
+      // Basic validation passed.
+      return TRUE;
+    }
+
+    // Custom URI schemes (for native apps) are allowed.
+    // Must have scheme and at least a path or host.
+    if (!empty($parsed['scheme']) &&
+        (!empty($parsed['host']) || !empty($parsed['path']))) {
+      return TRUE;
+    }
+
+    return FALSE;
   }
 
 }
