@@ -74,6 +74,9 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
    * coverage.
    */
   public function testComprehensiveOauthIntegrationAcrossContexts() {
+    // Ensure routes are available before testing.
+    $this->ensureOAuthRoutesAvailable();
+
     // === Web Context OAuth Workflow ===
     // Test metadata endpoints are accessible via HTTP
     $this->drupalGet('/.well-known/oauth-authorization-server');
@@ -246,6 +249,7 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     $this->assertArrayHasKey('registration_endpoint', $metadata, 'Auto-detection should provide registration endpoint');
 
     // Verify HTTP endpoint reflects the same.
+    $this->ensureOAuthRoutesAvailable();
     $this->drupalGet('/.well-known/oauth-authorization-server');
     $this->assertSession()->statusCodeEquals(200);
     $http_metadata = Json::decode($this->getSession()->getPage()->getContent());
@@ -306,6 +310,40 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     $this->assertNotEmpty($existing_client, 'Existing client should still be accessible');
     $new_client = $consumer_storage->loadByProperties(['client_id' => $new_client_data['client_id']]);
     $this->assertNotEmpty($new_client, 'New client should be accessible');
+  }
+
+  /**
+   * Ensures OAuth routes are properly discovered and available.
+   */
+  protected function ensureOAuthRoutesAvailable(): void {
+    // Force route rebuild for D11+ environments.
+    if (version_compare(\Drupal::VERSION, '11.0', '>=')) {
+      $this->container->get('router.builder')->rebuild();
+    }
+
+    // Verify routes are actually available.
+    $route_provider = $this->container->get('router.route_provider');
+    $retry_count = 0;
+    $max_retries = 3;
+
+    while ($retry_count < $max_retries) {
+      try {
+        // Test that the route exists.
+        $route_provider->getRouteByName('simple_oauth.server_metadata');
+        break;
+      }
+      catch (\Exception $e) {
+        $retry_count++;
+        if ($retry_count >= $max_retries) {
+          $this->fail('OAuth routes not available after ' . $max_retries . ' rebuild attempts: ' . $e->getMessage());
+        }
+        // Force another rebuild and clear all relevant caches.
+        $this->container->get('router.builder')->rebuild();
+        $this->clearAllTestCaches();
+        // Give the system a moment to settle.
+        usleep(100000); // 100ms
+      }
+    }
   }
 
   /**

@@ -190,6 +190,40 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   }
 
   /**
+   * Ensures OAuth routes are properly discovered and available.
+   */
+  protected function ensureOAuthRoutesAvailable(): void {
+    // Force route rebuild for D11+ environments.
+    if (version_compare(\Drupal::VERSION, '11.0', '>=')) {
+      $this->container->get('router.builder')->rebuild();
+    }
+
+    // Verify routes are actually available.
+    $route_provider = $this->container->get('router.route_provider');
+    $retry_count = 0;
+    $max_retries = 3;
+
+    while ($retry_count < $max_retries) {
+      try {
+        // Test that the route exists.
+        $route_provider->getRouteByName('simple_oauth.server_metadata');
+        break;
+      }
+      catch (\Exception $e) {
+        $retry_count++;
+        if ($retry_count >= $max_retries) {
+          $this->fail('OAuth routes not available after ' . $max_retries . ' rebuild attempts: ' . $e->getMessage());
+        }
+        // Force another rebuild and clear all relevant caches.
+        $this->container->get('router.builder')->rebuild();
+        $this->clearAllTestCaches();
+        // Give the system a moment to settle.
+        usleep(100000); // 100ms
+      }
+    }
+  }
+
+  /**
    * Ensures cache isolation before critical test operations.
    *
    * This method can be called at the beginning of test methods that
@@ -311,6 +345,9 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
    * Test metadata endpoints functionality.
    */
   public function testMetadataEndpoints(): void {
+    // Ensure routes are available before testing.
+    $this->ensureOAuthRoutesAvailable();
+
     // Ensure cache isolation for HTTP-based metadata endpoint testing.
     $this->ensureCacheIsolation();
 
@@ -422,6 +459,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
       'Metadata consistency maintained after cache clearing');
 
     // Test HTTP endpoint consistency (verifies HTTP cache isolation)
+    $this->ensureOAuthRoutesAvailable();
     $this->ensureCacheIsolation();
 
     // Make first HTTP request to metadata endpoint.

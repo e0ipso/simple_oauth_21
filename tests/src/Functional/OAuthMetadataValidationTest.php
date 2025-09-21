@@ -76,6 +76,9 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
    * metadata consistency, performance, and PKCE integration.
    */
   public function testComprehensiveOauthRfcCompliance() {
+    // Ensure routes are available before testing.
+    $this->ensureOAuthRoutesAvailable();
+
     // === RFC 8414 Authorization Server Metadata Compliance ===
     $this->drupalGet('/.well-known/oauth-authorization-server');
     $this->assertSession()->statusCodeEquals(200);
@@ -312,6 +315,40 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
     $native_data = Json::decode($native_response->getBody()->getContents());
     $this->assertArrayNotHasKey('client_secret', $native_data, 'Native app should not receive client secret');
     $this->assertArrayHasKey('client_id', $native_data, 'Native app should receive client ID');
+  }
+
+  /**
+   * Ensures OAuth routes are properly discovered and available.
+   */
+  protected function ensureOAuthRoutesAvailable(): void {
+    // Force route rebuild for D11+ environments.
+    if (version_compare(\Drupal::VERSION, '11.0', '>=')) {
+      $this->container->get('router.builder')->rebuild();
+    }
+
+    // Verify routes are actually available.
+    $route_provider = $this->container->get('router.route_provider');
+    $retry_count = 0;
+    $max_retries = 3;
+
+    while ($retry_count < $max_retries) {
+      try {
+        // Test that the route exists.
+        $route_provider->getRouteByName('simple_oauth.server_metadata');
+        break;
+      }
+      catch (\Exception $e) {
+        $retry_count++;
+        if ($retry_count >= $max_retries) {
+          $this->fail('OAuth routes not available after ' . $max_retries . ' rebuild attempts: ' . $e->getMessage());
+        }
+        // Force another rebuild and clear all relevant caches.
+        $this->container->get('router.builder')->rebuild();
+        $this->clearAllTestCaches();
+        // Give the system a moment to settle.
+        usleep(100000); // 100ms
+      }
+    }
   }
 
   /**
