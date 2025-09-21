@@ -155,6 +155,16 @@ jobs:
           vendor/bin/drush cache:rebuild
           vendor/bin/drush pm:enable ${{ env.MODULE_NAME }} --yes
 
+          # For Drupal 11, explicitly enable all submodules needed for functional tests
+          if [ "${{ matrix.drupal-core }}" = "11" ]; then
+            echo "Explicitly enabling submodules for Drupal 11..."
+            vendor/bin/drush pm:enable simple_oauth_client_registration --yes
+            vendor/bin/drush pm:enable simple_oauth_server_metadata --yes
+            vendor/bin/drush pm:enable simple_oauth_pkce --yes
+            vendor/bin/drush pm:enable simple_oauth_native_apps --yes
+            vendor/bin/drush cache:rebuild
+          fi
+
       - name: Copy deprecation ignore file
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: cp web/core/.deprecation-ignore.txt .
