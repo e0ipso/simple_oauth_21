@@ -24,7 +24,7 @@ class OAuth21RouteSubscriber extends RouteSubscriberBase {
     }
 
     // Define missing routes that aren't being registered properly in D11.
-    $this->addMissingOAuthRoutes($collection);
+    $this->addMissingOauthRoutes($collection);
 
     // Fix routes that use '_access: TRUE' which doesn't work in D11 tests.
     $routes_to_fix = [
@@ -49,7 +49,7 @@ class OAuth21RouteSubscriber extends RouteSubscriberBase {
   /**
    * Add missing OAuth routes that aren't being registered in D11.
    */
-  protected function addMissingOAuthRoutes(RouteCollection $collection) {
+  protected function addMissingOauthRoutes(RouteCollection $collection) {
     // Add simple_oauth.server_metadata route if missing.
     if (!$collection->get('simple_oauth.server_metadata')) {
       $route = new Route(
