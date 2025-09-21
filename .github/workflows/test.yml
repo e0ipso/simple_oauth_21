@@ -88,11 +88,10 @@ jobs:
 
           # Install different packages for D10 vs D11
           if [ "${{ matrix.drupal-core }}" = "11" ]; then
-            # For Drupal 11, core-dev no longer includes PHPUnit, install separately
-            composer require --no-interaction --no-progress \
+            # For Drupal 11, core-dev no longer includes PHPUnit, install with compatible version
+            composer require --no-interaction --no-progress --with-all-dependencies \
               drupal/core-dev \
-              phpunit/phpunit:^10.5.6 \
-              symfony/phpunit-bridge \
+              phpunit/phpunit:^11.0 \
               drupal/coder \
               drush/drush \
               phpstan/phpstan \
