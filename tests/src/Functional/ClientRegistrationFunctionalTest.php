@@ -20,10 +20,13 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
    * {@inheritdoc}
    */
   protected static $modules = [
+    'system',
+    'user',
     'serialization',
     'options',
     'consumers',
     'simple_oauth',
+    'simple_oauth_test',
     'simple_oauth_21',
     'simple_oauth_client_registration',
     'simple_oauth_server_metadata',

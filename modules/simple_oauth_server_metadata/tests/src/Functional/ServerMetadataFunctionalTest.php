@@ -23,6 +23,7 @@ class ServerMetadataFunctionalTest extends BrowserTestBase {
     'options',
     'consumers',
     'simple_oauth',
+    'simple_oauth_test',
     'simple_oauth_21',
     'simple_oauth_server_metadata',
   ];
