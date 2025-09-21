@@ -192,7 +192,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   /**
    * Ensures OAuth routes are properly discovered and available.
    */
-  protected function ensureOAuthRoutesAvailable(): void {
+  protected function ensureOauthRoutesAvailable(): void {
     // Force route rebuild for D11+ environments.
     if (version_compare(\Drupal::VERSION, '11.0', '>=')) {
       $this->container->get('router.builder')->rebuild();
@@ -218,7 +218,8 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
         $this->container->get('router.builder')->rebuild();
         $this->clearAllTestCaches();
         // Give the system a moment to settle.
-        usleep(100000); // 100ms
+        // 100ms.
+        usleep(100000);
       }
     }
   }
@@ -346,7 +347,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
    */
   public function testMetadataEndpoints(): void {
     // Ensure routes are available before testing.
-    $this->ensureOAuthRoutesAvailable();
+    $this->ensureOauthRoutesAvailable();
 
     // Ensure cache isolation for HTTP-based metadata endpoint testing.
     $this->ensureCacheIsolation();
@@ -459,7 +460,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
       'Metadata consistency maintained after cache clearing');
 
     // Test HTTP endpoint consistency (verifies HTTP cache isolation)
-    $this->ensureOAuthRoutesAvailable();
+    $this->ensureOauthRoutesAvailable();
     $this->ensureCacheIsolation();
 
     // Make first HTTP request to metadata endpoint.

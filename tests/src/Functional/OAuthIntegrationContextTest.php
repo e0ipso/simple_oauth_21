@@ -75,7 +75,7 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
    */
   public function testComprehensiveOauthIntegrationAcrossContexts() {
     // Ensure routes are available before testing.
-    $this->ensureOAuthRoutesAvailable();
+    $this->ensureOauthRoutesAvailable();
 
     // === Web Context OAuth Workflow ===
     // Test metadata endpoints are accessible via HTTP
@@ -249,7 +249,7 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     $this->assertArrayHasKey('registration_endpoint', $metadata, 'Auto-detection should provide registration endpoint');
 
     // Verify HTTP endpoint reflects the same.
-    $this->ensureOAuthRoutesAvailable();
+    $this->ensureOauthRoutesAvailable();
     $this->drupalGet('/.well-known/oauth-authorization-server');
     $this->assertSession()->statusCodeEquals(200);
     $http_metadata = Json::decode($this->getSession()->getPage()->getContent());
@@ -315,7 +315,7 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
   /**
    * Ensures OAuth routes are properly discovered and available.
    */
-  protected function ensureOAuthRoutesAvailable(): void {
+  protected function ensureOauthRoutesAvailable(): void {
     // Force route rebuild for D11+ environments.
     if (version_compare(\Drupal::VERSION, '11.0', '>=')) {
       $this->container->get('router.builder')->rebuild();
@@ -341,7 +341,8 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
         $this->container->get('router.builder')->rebuild();
         $this->clearAllTestCaches();
         // Give the system a moment to settle.
-        usleep(100000); // 100ms
+        // 100ms.
+        usleep(100000);
       }
     }
   }

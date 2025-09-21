@@ -77,7 +77,7 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
    */
   public function testComprehensiveOauthRfcCompliance() {
     // Ensure routes are available before testing.
-    $this->ensureOAuthRoutesAvailable();
+    $this->ensureOauthRoutesAvailable();
 
     // === RFC 8414 Authorization Server Metadata Compliance ===
     $this->drupalGet('/.well-known/oauth-authorization-server');
@@ -320,7 +320,7 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
   /**
    * Ensures OAuth routes are properly discovered and available.
    */
-  protected function ensureOAuthRoutesAvailable(): void {
+  protected function ensureOauthRoutesAvailable(): void {
     // Force route rebuild for D11+ environments.
     if (version_compare(\Drupal::VERSION, '11.0', '>=')) {
       $this->container->get('router.builder')->rebuild();
@@ -346,7 +346,8 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
         $this->container->get('router.builder')->rebuild();
         $this->clearAllTestCaches();
         // Give the system a moment to settle.
-        usleep(100000); // 100ms
+        // 100ms.
+        usleep(100000);
       }
     }
   }

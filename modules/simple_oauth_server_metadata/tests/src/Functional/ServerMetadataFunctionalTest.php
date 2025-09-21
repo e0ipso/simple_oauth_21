@@ -2,6 +2,7 @@
 
 namespace Drupal\Tests\simple_oauth_server_metadata\Functional;
 
+use Drupal\Core\Cache\Cache;
 use Drupal\Component\Serialization\Json;
 use Drupal\Tests\BrowserTestBase;
 
@@ -59,7 +60,7 @@ class ServerMetadataFunctionalTest extends BrowserTestBase {
    */
   public function testComprehensiveServerMetadataFunctionality(): void {
     // Ensure routes are available before testing.
-    $this->ensureOAuthRoutesAvailable();
+    $this->ensureOauthRoutesAvailable();
 
     // Test 1: Well-known endpoint accessibility without authentication.
     $this->drupalGet('/.well-known/oauth-authorization-server');
@@ -188,7 +189,7 @@ class ServerMetadataFunctionalTest extends BrowserTestBase {
   /**
    * Ensures OAuth routes are properly discovered and available.
    */
-  protected function ensureOAuthRoutesAvailable(): void {
+  protected function ensureOauthRoutesAvailable(): void {
     // Force route rebuild for D11+ environments.
     if (version_compare(\Drupal::VERSION, '11.0', '>=')) {
       $this->container->get('router.builder')->rebuild();
@@ -214,7 +215,8 @@ class ServerMetadataFunctionalTest extends BrowserTestBase {
         $this->container->get('router.builder')->rebuild();
         $this->clearAllTestCaches();
         // Give the system a moment to settle.
-        usleep(100000); // 100ms
+        // 100ms.
+        usleep(100000);
       }
     }
   }
@@ -244,7 +246,7 @@ class ServerMetadataFunctionalTest extends BrowserTestBase {
     $metadata_service->invalidateCache();
 
     // Invalidate cache tags that are specific to OAuth server metadata.
-    \Drupal\Core\Cache\Cache::invalidateTags([
+    Cache::invalidateTags([
       'simple_oauth_server_metadata',
       'config:simple_oauth.settings',
       'config:simple_oauth_server_metadata.settings',
