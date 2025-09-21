@@ -5,34 +5,3 @@ simple_oauth_21.dashboard:
     _title: 'Dashboard'
   requirements:
     _permission: 'administer simple_oauth entities'
-
-# D11 compatibility routes for OAuth endpoints
-# These override the core simple_oauth routes with compatible access patterns
-
-simple_oauth.server_metadata:
-  path: '/.well-known/oauth-authorization-server'
-  defaults:
-    _controller: Drupal\simple_oauth\Controller\ServerMetadata::metadata
-    _title: 'OAuth 2.1 Server Metadata'
-  methods: [GET]
-  requirements:
-    _user_is_logged_in: 'FALSE'
-
-oauth2_token.token:
-  path: '/oauth/token'
-  defaults:
-    _controller: 'Drupal\simple_oauth\Controller\Oauth2Token::token'
-  methods: [POST]
-  requirements:
-    _user_is_logged_in: 'FALSE'
-
-oauth2_token.authorize:
-  path: '/oauth/authorize'
-  defaults:
-    _controller: 'Drupal\simple_oauth\Controller\Oauth2AuthorizeController::authorize'
-    _title: 'Grant Access to Client'
-  methods: [GET, POST]
-  requirements:
-    _user_is_logged_in: 'FALSE'
-  options:
-    no_cache: TRUE
