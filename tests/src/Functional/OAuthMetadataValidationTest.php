@@ -321,6 +321,12 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
    * Ensures OAuth routes are properly discovered and available.
    */
   protected function ensureOauthRoutesAvailable(): void {
+    // First ensure the simple_oauth module is enabled.
+    $module_handler = $this->container->get('module_handler');
+    if (!$module_handler->moduleExists('simple_oauth')) {
+      $this->fail('simple_oauth module is not enabled - check test module dependencies');
+    }
+
     // Force route rebuild for D11+ environments.
     if (version_compare(\Drupal::VERSION, '11.0', '>=')) {
       $this->container->get('router.builder')->rebuild();
@@ -329,7 +335,7 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
     // Verify routes are actually available.
     $route_provider = $this->container->get('router.route_provider');
     $retry_count = 0;
-    $max_retries = 3;
+    $max_retries = 5;
 
     while ($retry_count < $max_retries) {
       try {
@@ -340,14 +346,20 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
       catch (\Exception $e) {
         $retry_count++;
         if ($retry_count >= $max_retries) {
-          $this->fail('OAuth routes not available after ' . $max_retries . ' rebuild attempts: ' . $e->getMessage());
+          // Get more debugging info.
+          $all_routes = [];
+          foreach ($route_provider->getAllRoutes() as $name => $route) {
+            if (strpos($name, 'simple_oauth') === 0) {
+              $all_routes[] = $name;
+            }
+          }
+          $this->fail('OAuth routes not available after ' . $max_retries . ' rebuild attempts. Error: ' . $e->getMessage() . '. Available simple_oauth routes: ' . implode(', ', $all_routes));
         }
         // Force another rebuild and clear all relevant caches.
         $this->container->get('router.builder')->rebuild();
         $this->clearAllTestCaches();
-        // Give the system a moment to settle.
-        // 100ms.
-        usleep(100000);
+        // Give the system more time to settle in D11.
+        usleep(200000);
       }
     }
   }
