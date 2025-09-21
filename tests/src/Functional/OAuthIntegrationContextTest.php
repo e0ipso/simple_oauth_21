@@ -26,6 +26,9 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
    * {@inheritdoc}
    */
   protected static $modules = [
+    'serialization',
+    'options',
+    'consumers',
     'simple_oauth',
     'simple_oauth_21',
     'simple_oauth_client_registration',
