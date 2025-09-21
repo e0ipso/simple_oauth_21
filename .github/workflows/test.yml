@@ -86,14 +86,30 @@ jobs:
 
           composer --no-interaction config minimum-stability dev
 
-          composer require --no-interaction --no-progress \
-            drupal/core-dev \
-            drupal/coder \
-            drush/drush \
-            phpstan/phpstan \
-            mglaman/phpstan-drupal \
-            phpstan/phpstan-deprecation-rules\
-            drupal/simple_oauth:^6
+          # Install different packages for D10 vs D11
+          if [ "${{ matrix.drupal-core }}" = "11" ]; then
+            # For Drupal 11, core-dev no longer includes PHPUnit, install separately
+            composer require --no-interaction --no-progress \
+              drupal/core-dev \
+              phpunit/phpunit:^10.5.6 \
+              symfony/phpunit-bridge \
+              drupal/coder \
+              drush/drush \
+              phpstan/phpstan \
+              mglaman/phpstan-drupal \
+              phpstan/phpstan-deprecation-rules\
+              drupal/simple_oauth:^6
+          else
+            # For Drupal 10, use existing approach
+            composer require --no-interaction --no-progress \
+              drupal/core-dev \
+              drupal/coder \
+              drush/drush \
+              phpstan/phpstan \
+              mglaman/phpstan-drupal \
+              phpstan/phpstan-deprecation-rules\
+              drupal/simple_oauth:^6
+          fi
 
 
           composer dump-autoload
@@ -184,31 +200,7 @@ jobs:
           TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Unit" -path "*/tests/src/Unit" -print)
           if [ -n "$TEST_DIRS" ]; then
             echo "Running unit tests in: $TEST_DIRS"
-            # Debug: Check PHPUnit installation
-            echo "Checking PHPUnit installation..."
-            ls -la vendor/bin/ | grep -i phpunit || echo "PHPUnit not found in vendor/bin/"
-
-            # Find PHPUnit executable
-            PHPUNIT=""
-            if [ -f "vendor/bin/phpunit" ]; then
-              PHPUNIT="php vendor/bin/phpunit"
-            elif [ -f "vendor/phpunit/phpunit/phpunit" ]; then
-              PHPUNIT="php vendor/phpunit/phpunit/phpunit"
-            elif [ -f "web/core/vendor/bin/phpunit" ]; then
-              PHPUNIT="php web/core/vendor/bin/phpunit"
-            elif command -v phpunit >/dev/null 2>&1; then
-              PHPUNIT="phpunit"
-            else
-              echo "PHPUnit not found, skipping unit tests for this environment"
-              echo "Directory contents:"
-              ls -la vendor/bin/ | head -20
-              echo "Available composer packages:"
-              composer show | grep -i phpunit || echo "No PHPUnit packages found"
-              exit 0
-            fi
-
-            echo "PHPUnit found at: $PHPUNIT"
-            $PHPUNIT \
+            php vendor/bin/phpunit \
               --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
               $TEST_DIRS
           else
