@@ -163,6 +163,12 @@ jobs:
             vendor/bin/drush pm:enable simple_oauth_pkce --yes
             vendor/bin/drush pm:enable simple_oauth_native_apps --yes
             vendor/bin/drush cache:rebuild
+            vendor/bin/drush router:rebuild
+
+            # Verify routes are available
+            echo "Checking if OAuth routes are available..."
+            vendor/bin/drush route:get simple_oauth.server_metadata || echo "simple_oauth.server_metadata route not found"
+            vendor/bin/drush route:get simple_oauth_client_registration.register || echo "simple_oauth_client_registration.register route not found"
           fi
 
       - name: Copy deprecation ignore file
