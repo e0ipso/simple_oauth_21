@@ -50,6 +50,11 @@ class OAuth21RouteSubscriber extends RouteSubscriberBase {
    * Add missing OAuth routes that aren't being registered in D11.
    */
   protected function addMissingOauthRoutes(RouteCollection $collection) {
+    // Only add routes if simple_oauth controllers are available.
+    if (!class_exists('Drupal\simple_oauth\Controller\ServerMetadata')) {
+      return;
+    }
+
     // Add simple_oauth.server_metadata route if missing.
     if (!$collection->get('simple_oauth.server_metadata')) {
       $route = new Route(
@@ -70,7 +75,7 @@ class OAuth21RouteSubscriber extends RouteSubscriberBase {
     }
 
     // Add oauth2_token.authorize route if missing.
-    if (!$collection->get('oauth2_token.authorize')) {
+    if (!$collection->get('oauth2_token.authorize') && class_exists('Drupal\simple_oauth\Controller\Oauth2AuthorizeController')) {
       $route = new Route(
         '/oauth/authorize',
         [
@@ -91,7 +96,7 @@ class OAuth21RouteSubscriber extends RouteSubscriberBase {
     }
 
     // Add oauth2_token.token route if missing.
-    if (!$collection->get('oauth2_token.token')) {
+    if (!$collection->get('oauth2_token.token') && class_exists('Drupal\simple_oauth\Controller\Oauth2Token')) {
       $route = new Route(
         '/oauth/token',
         [
