@@ -3,6 +3,7 @@ parameters:
   reportUnmatchedIgnoredErrors: false
   paths:
     - src/
+  excludePaths:
     - tests/
   ignoreErrors:
     - '#Trying to mock an undefined method .* on class .*ContextRepositoryInterface#'
