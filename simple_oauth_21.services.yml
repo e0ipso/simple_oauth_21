@@ -12,8 +12,3 @@ services:
         '@extension.list.module',
         '@logger.channel.simple_oauth_21',
       ]
-
-  simple_oauth_21.d11_route_subscriber:
-    class: Drupal\simple_oauth_21\Routing\SimpleOauthD11RouteSubscriber
-    tags:
-      - { name: event_subscriber }
