@@ -41,6 +41,14 @@ class ServerMetadataFunctionalTest extends BrowserTestBase {
   protected function setUp(): void {
     parent::setUp();
 
+    // Drupal 11 workaround: Ensure routes are properly registered
+    // The functional test environment needs explicit cache clearing
+    // @todo Investigate why D11 requires this additional cache clear
+    if (version_compare(\Drupal::VERSION, '11.0', '>=')) {
+      // Rebuild routes to ensure OAuth endpoints are available
+      $this->container->get('router.builder')->rebuild();
+    }
+
     $this->adminUser = $this->drupalCreateUser([
       'administer simple_oauth entities',
     ]);
