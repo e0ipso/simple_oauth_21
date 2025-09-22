@@ -255,11 +255,11 @@ The implementation will integrate with existing systems through:
 - ✔️ Task 002: Implement OpenIdConfigurationService for Metadata Generation
 - ✔️ Task 003: Update Configuration Form for OpenID Connect Discovery Settings
 
-### Phase 2: Testing and Validation
+### ✅ Phase 2: Testing and Validation
 
 **Parallel Tasks:**
 
-- Task 004: Write Functional Tests for OpenID Connect Discovery Endpoint (depends on: 001, 002)
+- ✔️ Task 004: Write Functional Tests for OpenID Connect Discovery Endpoint (depends on: 001, 002)
 
 ### Post-phase Actions
 
