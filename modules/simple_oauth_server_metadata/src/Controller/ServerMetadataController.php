@@ -5,6 +5,7 @@ namespace Drupal\simple_oauth_server_metadata\Controller;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\simple_oauth_server_metadata\Service\ServerMetadataService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
 use Drupal\Core\Cache\CacheableJsonResponse;
 

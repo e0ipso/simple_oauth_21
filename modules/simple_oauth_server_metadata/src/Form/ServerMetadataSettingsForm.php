@@ -2,6 +2,8 @@
 
 namespace Drupal\simple_oauth_server_metadata\Form;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
@@ -15,37 +17,33 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 class ServerMetadataSettingsForm extends ConfigFormBase {
 
   /**
-   * The server metadata service.
-   *
-   * @var \Drupal\simple_oauth_server_metadata\Service\ServerMetadataService
-   */
-  protected $serverMetadataService;
-
-  /**
-   * The resource metadata service.
-   *
-   * @var \Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService
-   */
-  protected $resourceMetadataService;
-
-  /**
    * Constructs a ServerMetadataSettingsForm object.
    *
-   * @param \Drupal\simple_oauth_server_metadata\Service\ServerMetadataService $server_metadata_service
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The configuration factory.
+   * @param \Drupal\Core\Config\TypedConfigManagerInterface $typed_config_manager
+   *   The typed configuration manager.
+   * @param \Drupal\simple_oauth_server_metadata\Service\ServerMetadataService $serverMetadataService
    *   The server metadata service.
-   * @param \Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService $resource_metadata_service
+   * @param \Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService $resourceMetadataService
    *   The resource metadata service.
    */
-  public function __construct(ServerMetadataService $server_metadata_service, ResourceMetadataService $resource_metadata_service) {
-    $this->serverMetadataService = $server_metadata_service;
-    $this->resourceMetadataService = $resource_metadata_service;
+  public function __construct(
+    ConfigFactoryInterface $config_factory,
+    TypedConfigManagerInterface $typed_config_manager,
+    private readonly ServerMetadataService $serverMetadataService,
+    private readonly ResourceMetadataService $resourceMetadataService,
+  ) {
+    parent::__construct($config_factory, $typed_config_manager);
   }
 
   /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container) {
-    return new static(
+    return new self(
+      $container->get('config.factory'),
+      $container->get('config.typed'),
       $container->get('simple_oauth_server_metadata.server_metadata'),
       $container->get('simple_oauth_server_metadata.resource_metadata')
     );

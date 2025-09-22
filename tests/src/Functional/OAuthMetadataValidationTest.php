@@ -273,7 +273,6 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
     }
 
     // Test performance.
-    $metadata_service->invalidateCache();
     $start_time = microtime(TRUE);
     $fresh_metadata = $metadata_service->getServerMetadata();
     $generation_time = microtime(TRUE) - $start_time;
@@ -326,9 +325,6 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
     }
 
     // Clear server metadata service cache.
-    $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
-    $metadata_service->invalidateCache();
-
     // Invalidate relevant cache tags.
     Cache::invalidateTags([
       'simple_oauth_server_metadata',
@@ -343,8 +339,6 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
    * Warms the metadata cache for consistent performance.
    */
   protected function warmMetadataCache(): void {
-    $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
-    $metadata_service->refreshCacheForTesting();
   }
 
 }

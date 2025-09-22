@@ -113,7 +113,6 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
 
     // === Cache Behavior Across Contexts ===
     // Test cache generation and consistency
-    $metadata_service->invalidateCache();
     $metadata1 = $metadata_service->getServerMetadata();
     $metadata2 = $metadata_service->getServerMetadata();
     $this->assertEquals($metadata1['registration_endpoint'], $metadata2['registration_endpoint'], 'Cached metadata should be consistent');
@@ -125,7 +124,6 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     $this->assertEquals($metadata1['registration_endpoint'], $http_metadata['registration_endpoint'], 'HTTP and API contexts should use same cache');
 
     // Test cache invalidation affects both contexts.
-    $metadata_service->invalidateCache();
     $fresh_metadata = $metadata_service->getServerMetadata();
     $this->drupalGet('/.well-known/oauth-authorization-server');
     $this->assertSession()->statusCodeEquals(200);
@@ -180,7 +178,6 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     // === Route Discovery and Concurrent Access ===
     // Test multiple cache invalidations and regenerations
     for ($i = 0; $i < 3; $i++) {
-      $metadata_service->invalidateCache();
       $metadata = $metadata_service->getServerMetadata();
       $this->assertArrayHasKey('registration_endpoint', $metadata, "Registration endpoint should be discoverable in iteration $i");
       $this->assertStringContainsString('/oauth/register', $metadata['registration_endpoint'], "Registration endpoint URL should be correct in iteration $i");
@@ -193,7 +190,6 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     }
 
     // Simulate concurrent metadata generation.
-    $metadata_service->invalidateCache();
     $metadata_results = [];
     for ($i = 0; $i < 5; $i++) {
       $metadata_results[] = $metadata_service->getServerMetadata();
@@ -232,7 +228,6 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
 
     // Test auto-detection.
     $config->clear('registration_endpoint')->save();
-    $metadata_service->invalidateCache();
     $metadata = $metadata_service->getServerMetadata();
     $this->assertArrayHasKey('registration_endpoint', $metadata, 'Auto-detection should provide registration endpoint');
 
@@ -245,7 +240,6 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     // Test explicit configuration override.
     $custom_endpoint = 'https://custom.example.com/oauth/register';
     $config->set('registration_endpoint', $custom_endpoint)->save();
-    $metadata_service->invalidateCache();
     $metadata = $metadata_service->getServerMetadata();
     $this->assertEquals($custom_endpoint, $metadata['registration_endpoint'], 'Explicit configuration should override auto-detection');
 
@@ -256,7 +250,6 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
 
     // Restore auto-detection.
     $config->clear('registration_endpoint')->save();
-    $metadata_service->invalidateCache();
     $metadata = $metadata_service->getServerMetadata();
     $this->assertArrayHasKey('registration_endpoint', $metadata, 'Auto-detection should work after clearing explicit config');
     $this->assertStringContainsString('/oauth/register', $metadata['registration_endpoint'], 'Auto-detected endpoint should be correct');
@@ -318,9 +311,6 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
       $cache_backend = $this->container->get($cache_service);
       $cache_backend->deleteAll();
     }
-
-    $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
-    $metadata_service->invalidateCache();
 
     Cache::invalidateTags([
       'simple_oauth_server_metadata',

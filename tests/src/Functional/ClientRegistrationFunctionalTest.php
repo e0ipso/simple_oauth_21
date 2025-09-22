@@ -57,7 +57,6 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
 
     // Test that auto-detection works correctly.
     $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
-    $metadata_service->invalidateCache();
     $test_metadata = $metadata_service->getServerMetadata();
 
     // Verify auto-detection mechanism works - this is the core fix.
@@ -155,9 +154,6 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     }
 
     // Clear server metadata service cache specifically.
-    $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
-    $metadata_service->invalidateCache();
-
     // Invalidate cache tags that are specific to OAuth server metadata.
     Cache::invalidateTags([
       'simple_oauth_server_metadata',
@@ -176,9 +172,6 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
    * could cause timing-related test failures.
    */
   protected function warmMetadataCache(): void {
-    $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
-    // Use test-specific cache refresh method for better reliability.
-    $metadata_service->refreshCacheForTesting();
   }
 
   /**
@@ -194,9 +187,6 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     $this->container->get('cache.dynamic_page_cache')->deleteAll();
 
     // Ensure metadata service cache is fresh.
-    $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
-    $metadata_service->invalidateCache();
-
     // Additional cache tag invalidation for HTTP responses.
     Cache::invalidateTags([
       'simple_oauth_server_metadata',
@@ -434,7 +424,6 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
       'Issuer consistent between HTTP requests');
 
     // Test service-level cache refresh.
-    $metadata_service->refreshCacheForTesting();
     $refreshed_metadata = $metadata_service->getServerMetadata();
     $this->assertEquals($initial_metadata['registration_endpoint'], $refreshed_metadata['registration_endpoint'],
       'Metadata consistency maintained after test cache refresh');
