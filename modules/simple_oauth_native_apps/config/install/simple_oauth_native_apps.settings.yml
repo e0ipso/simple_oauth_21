@@ -6,10 +6,10 @@ webview:
   patterns: []
 require_exact_redirect_match: true
 allow:
-  custom_uri_schemes: true
-  loopback_redirects: true
+  custom_uri_schemes: 'auto-detect'
+  loopback_redirects: 'auto-detect'
 native:
-  enhanced_pkce: true
+  enhanced_pkce: 'auto-detect'
   enforce: 'S256'
 log:
   pkce_validations: false

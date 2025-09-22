@@ -137,12 +137,13 @@ class ConsumerNativeAppsFormAlter {
       '#type' => 'select',
       '#title' => $this->t('Allow custom URI schemes override'),
       '#description' => $this->t('Override whether to allow custom URI schemes (e.g., myapp://callback) for this consumer. Leave empty to use global setting (@global).', [
-        '@global' => $global_config->get('allow_custom_uri_schemes') ? $this->t('Enabled') : $this->t('Disabled'),
+        '@global' => $this->getReadableValue($global_config->get('allow.custom_uri_schemes')),
       ]),
       '#options' => [
         '' => $this->t('- Use global setting -'),
-        '1' => $this->t('Allow custom URI schemes'),
-        '0' => $this->t('Disallow custom URI schemes'),
+        'auto-detect' => $this->t('Auto-detect - Based on client type detection'),
+        'native' => $this->t('Native - Allow custom URI schemes'),
+        'web' => $this->t('Web - Disallow custom URI schemes'),
       ],
       '#default_value' => $consumer_config['allow_custom_schemes_override'] ?? '',
     ];
@@ -152,12 +153,13 @@ class ConsumerNativeAppsFormAlter {
       '#type' => 'select',
       '#title' => $this->t('Allow loopback redirects override'),
       '#description' => $this->t('Override whether to allow loopback IP redirects for this consumer. Leave empty to use global setting (@global).', [
-        '@global' => $global_config->get('allow_loopback_redirects') ? $this->t('Enabled') : $this->t('Disabled'),
+        '@global' => $this->getReadableValue($global_config->get('allow.loopback_redirects')),
       ]),
       '#options' => [
         '' => $this->t('- Use global setting -'),
-        '1' => $this->t('Allow loopback redirects'),
-        '0' => $this->t('Disallow loopback redirects'),
+        'auto-detect' => $this->t('Auto-detect - Based on client type detection'),
+        'native' => $this->t('Native - Allow loopback redirects'),
+        'web' => $this->t('Web - Disallow loopback redirects'),
       ],
       '#default_value' => $consumer_config['allow_loopback_override'] ?? '',
     ];
@@ -167,12 +169,13 @@ class ConsumerNativeAppsFormAlter {
       '#type' => 'select',
       '#title' => $this->t('Enhanced PKCE override'),
       '#description' => $this->t('Override enhanced PKCE requirements for this consumer. Leave empty to use global setting (@global).', [
-        '@global' => $global_config->get('enhanced_pkce_for_native') ? $this->t('Enabled') : $this->t('Disabled'),
+        '@global' => $this->getReadableValue($global_config->get('native.enhanced_pkce')),
       ]),
       '#options' => [
         '' => $this->t('- Use global setting -'),
-        '1' => $this->t('Enable enhanced PKCE'),
-        '0' => $this->t('Use standard PKCE'),
+        'auto-detect' => $this->t('Auto-detect - Based on client type detection'),
+        'enhanced' => $this->t('Enhanced - Apply enhanced PKCE'),
+        'not-enhanced' => $this->t('Not Enhanced - Use standard PKCE'),
       ],
       '#default_value' => $consumer_config['enhanced_pkce_override'] ?? '',
     ];
@@ -249,15 +252,15 @@ class ConsumerNativeAppsFormAlter {
     }
 
     if ($values['allow_custom_schemes_override'] !== '') {
-      $form_config['allow_custom_uri_schemes'] = (bool) $values['allow_custom_schemes_override'];
+      $form_config['allow_custom_uri_schemes'] = $values['allow_custom_schemes_override'];
     }
 
     if ($values['allow_loopback_override'] !== '') {
-      $form_config['allow_loopback_redirects'] = (bool) $values['allow_loopback_override'];
+      $form_config['allow_loopback_redirects'] = $values['allow_loopback_override'];
     }
 
     if ($values['enhanced_pkce_override'] !== '') {
-      $form_config['enhanced_pkce_for_native'] = (bool) $values['enhanced_pkce_override'];
+      $form_config['enhanced_pkce_for_native'] = $values['enhanced_pkce_override'];
     }
 
     // Convert to validator structure and validate if we have any overrides.
@@ -351,6 +354,40 @@ class ConsumerNativeAppsFormAlter {
     ];
 
     return $labels[$setting] ?? $this->t('Unknown');
+  }
+
+  /**
+   * Gets a human-readable label for any setting value.
+   *
+   * @param mixed $value
+   *   The setting value.
+   *
+   * @return string
+   *   The human-readable label.
+   */
+  protected function getReadableValue($value): string {
+    if ($value === NULL || $value === '') {
+      return $this->t('Not configured');
+    }
+
+    // Handle boolean values (legacy support)
+    if (is_bool($value)) {
+      return $value ? $this->t('Enabled') : $this->t('Disabled');
+    }
+
+    // Handle string enum values.
+    $labels = [
+      'auto-detect' => $this->t('Auto-detect'),
+      'native' => $this->t('Native'),
+      'web' => $this->t('Web'),
+      'enhanced' => $this->t('Enhanced'),
+      'not-enhanced' => $this->t('Not Enhanced'),
+      'off' => $this->t('Off'),
+      'warn' => $this->t('Warn'),
+      'block' => $this->t('Block'),
+    ];
+
+    return $labels[$value] ?? $this->t('Unknown (@value)', ['@value' => $value]);
   }
 
   /**

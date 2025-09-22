@@ -196,17 +196,29 @@ class NativeAppsSettingsForm extends ConfigFormBase {
     ];
 
     $form['redirect_uri']['allow_custom_uri_schemes'] = [
-      '#type' => 'checkbox',
+      '#type' => 'radios',
       '#title' => $this->t('Allow custom URI schemes'),
       '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Custom URI schemes (e.g., myapp://callback) are the preferred redirect method for native applications. This provides better security than web-based redirects for mobile and desktop apps. (<a href="https://datatracker.ietf.org/doc/html/rfc8252#section-7.1" target="_blank">RFC 8252 Section 7.1</a>)'),
-      '#default_value' => $config->get('allow_custom_uri_schemes'),
+      '#options' => [
+        'auto-detect' => $this->t('Auto-detect - Based on client type detection'),
+        'native' => $this->t('Native - Allow custom URI schemes'),
+        'web' => $this->t('Web - Disallow custom URI schemes'),
+      ],
+      '#default_value' => $config->get('allow.custom_uri_schemes') ?? 'auto-detect',
+      '#required' => TRUE,
     ];
 
     $form['redirect_uri']['allow_loopback_redirects'] = [
-      '#type' => 'checkbox',
+      '#type' => 'radios',
       '#title' => $this->t('Allow loopback redirects'),
       '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Loopback redirects (e.g., http://127.0.0.1:8080/callback) are essential for command-line and desktop applications. RFC 8252 recommends this for native apps that cannot use custom URI schemes. (<a href="https://datatracker.ietf.org/doc/html/rfc8252#section-7.3" target="_blank">RFC 8252 Section 7.3</a>)'),
-      '#default_value' => $config->get('allow_loopback_redirects'),
+      '#options' => [
+        'auto-detect' => $this->t('Auto-detect - Based on client type detection'),
+        'native' => $this->t('Native - Allow loopback redirects'),
+        'web' => $this->t('Web - Disallow loopback redirects'),
+      ],
+      '#default_value' => $config->get('allow.loopback_redirects') ?? 'auto-detect',
+      '#required' => TRUE,
     ];
 
     // PKCE Settings.
@@ -228,10 +240,16 @@ class NativeAppsSettingsForm extends ConfigFormBase {
     ];
 
     $form['pkce']['enhanced_pkce_for_native'] = [
-      '#type' => 'checkbox',
+      '#type' => 'radios',
       '#title' => $this->t('Enhanced PKCE for native apps'),
       '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Enhanced PKCE enforces mandatory S256 challenge method and stricter validation for native applications. This goes beyond basic PKCE to meet OAuth 2.1 security requirements for native apps. (<a href="https://datatracker.ietf.org/doc/html/rfc8252#section-8.1" target="_blank">RFC 8252 Section 8.1</a>)'),
-      '#default_value' => $config->get('enhanced_pkce_for_native'),
+      '#options' => [
+        'auto-detect' => $this->t('Auto-detect - Based on client type detection'),
+        'enhanced' => $this->t('Enhanced - Apply enhanced PKCE for all clients'),
+        'not-enhanced' => $this->t('Not Enhanced - Use standard PKCE'),
+      ],
+      '#default_value' => $config->get('native.enhanced_pkce') ?? 'auto-detect',
+      '#required' => TRUE,
     ];
 
     // Add help text.
@@ -300,9 +318,9 @@ class NativeAppsSettingsForm extends ConfigFormBase {
         ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['webview_patterns'])))
         : [],
       'require_exact_redirect_match' => $values['redirect_uri']['require_exact_redirect_match'] ?? TRUE,
-      'allow_custom_uri_schemes' => $values['redirect_uri']['allow_custom_uri_schemes'] ?? TRUE,
-      'allow_loopback_redirects' => $values['redirect_uri']['allow_loopback_redirects'] ?? TRUE,
-      'enhanced_pkce_for_native' => $values['pkce']['enhanced_pkce_for_native'] ?? TRUE,
+      'allow_custom_uri_schemes' => $values['redirect_uri']['allow_custom_uri_schemes'] ?? 'auto-detect',
+      'allow_loopback_redirects' => $values['redirect_uri']['allow_loopback_redirects'] ?? 'auto-detect',
+      'enhanced_pkce_for_native' => $values['pkce']['enhanced_pkce_for_native'] ?? 'auto-detect',
     ];
   }
 
@@ -326,8 +344,11 @@ class NativeAppsSettingsForm extends ConfigFormBase {
     }
 
     // Information message for enhanced PKCE.
-    if ($values['pkce']['enhanced_pkce_for_native']) {
+    if ($values['pkce']['enhanced_pkce_for_native'] === 'enhanced') {
       $this->messenger->addMessage($this->t('Enhanced PKCE is enabled, providing additional security for native applications.'));
+    }
+    elseif ($values['pkce']['enhanced_pkce_for_native'] === 'auto-detect') {
+      $this->messenger->addMessage($this->t('Enhanced PKCE is set to auto-detect mode, which will apply enhanced PKCE based on client type detection.'));
     }
   }
 
@@ -358,11 +379,11 @@ class NativeAppsSettingsForm extends ConfigFormBase {
 
     // Save redirect URI settings.
     $config->set('require_exact_redirect_match', (bool) $values['redirect_uri']['require_exact_redirect_match']);
-    $config->set('allow_custom_uri_schemes', (bool) $values['redirect_uri']['allow_custom_uri_schemes']);
-    $config->set('allow_loopback_redirects', (bool) $values['redirect_uri']['allow_loopback_redirects']);
+    $config->set('allow.custom_uri_schemes', $values['redirect_uri']['allow_custom_uri_schemes']);
+    $config->set('allow.loopback_redirects', $values['redirect_uri']['allow_loopback_redirects']);
 
     // Save PKCE settings.
-    $config->set('enhanced_pkce_for_native', (bool) $values['pkce']['enhanced_pkce_for_native']);
+    $config->set('native.enhanced_pkce', $values['pkce']['enhanced_pkce_for_native']);
 
     $config->save();
 

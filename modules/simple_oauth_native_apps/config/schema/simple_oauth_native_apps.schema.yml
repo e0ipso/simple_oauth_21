@@ -42,22 +42,31 @@ simple_oauth_native_apps.settings:
       label: 'Allowed redirect types'
       mapping:
         custom_uri_schemes:
-          type: boolean
+          type: string
           label: 'Allow custom URI schemes'
           # cspell:ignore myapp
           description: 'Allow custom URI schemes for native app redirects (e.g., myapp://callback)'
+          constraints:
+            Choice:
+              choices: ['auto-detect', 'native', 'web']
         loopback_redirects:
-          type: boolean
+          type: string
           label: 'Allow loopback redirects'
           description: 'Allow loopback IP redirects for native applications (RFC 8252)'
+          constraints:
+            Choice:
+              choices: ['auto-detect', 'native', 'web']
     native:
       type: mapping
       label: 'Native app specific settings'
       mapping:
         enhanced_pkce:
-          type: boolean
+          type: string
           label: 'Enhanced PKCE for native apps'
           description: 'Apply enhanced PKCE requirements for native applications'
+          constraints:
+            Choice:
+              choices: ['auto-detect', 'enhanced', 'not-enhanced']
         enforce:
           type: string
           label: 'Enforce challenge method for native apps'
@@ -77,3 +86,36 @@ simple_oauth_native_apps.settings:
           type: boolean
           label: 'Log detection decisions'
           description: 'Log native app and WebView detection decisions'
+
+simple_oauth_native_apps.consumer.*:
+  type: config_object
+  label: 'Consumer-specific Native Apps Settings'
+  mapping:
+    webview_detection_override:
+      type: string
+      label: 'WebView detection policy override'
+      description: 'Override global WebView detection policy for this consumer'
+      constraints:
+        Choice:
+          choices: ['', 'off', 'warn', 'block']
+    allow_custom_schemes_override:
+      type: string
+      label: 'Allow custom URI schemes override'
+      description: 'Override global custom URI schemes setting for this consumer'
+      constraints:
+        Choice:
+          choices: ['', 'auto-detect', 'native', 'web']
+    allow_loopback_override:
+      type: string
+      label: 'Allow loopback redirects override'
+      description: 'Override global loopback redirects setting for this consumer'
+      constraints:
+        Choice:
+          choices: ['', 'auto-detect', 'native', 'web']
+    enhanced_pkce_override:
+      type: string
+      label: 'Enhanced PKCE override'
+      description: 'Override global enhanced PKCE setting for this consumer'
+      constraints:
+        Choice:
+          choices: ['', 'auto-detect', 'enhanced', 'not-enhanced']

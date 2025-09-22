@@ -156,26 +156,180 @@ class NativeClientDetector {
   public function requiresEnhancedPkce(Consumer $client): bool {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
-    // If enhanced PKCE is disabled globally, return FALSE.
-    if (!$config->get('native.enhanced_pkce')) {
+    // Get global setting: 'auto-detect', 'enhanced', or 'not-enhanced'.
+    $global_setting = $config->get('native.enhanced_pkce') ?? 'auto-detect';
+
+    // If globally disabled, return FALSE unless overridden.
+    if ($global_setting === 'not-enhanced') {
+      // Still check for consumer override.
+      $consumer_override = $this->getConsumerEnhancedPkceOverride($client);
+      if ($consumer_override === 'enhanced') {
+        return TRUE;
+      }
+      elseif ($consumer_override === 'auto-detect') {
+        return $this->isNativeClient($client);
+      }
       return FALSE;
     }
 
-    // Check manual override first.
-    if ($client->hasField('native_app_enhanced_pkce')) {
-      $override = $client->get('native_app_enhanced_pkce')->value;
-      // Treat empty or 'auto-detect' as automatic detection.
-      if ($override === 'native') {
-        return TRUE;
-      }
-      elseif ($override === 'web') {
+    // If globally enabled, return TRUE unless overridden.
+    if ($global_setting === 'enhanced') {
+      $consumer_override = $this->getConsumerEnhancedPkceOverride($client);
+      if ($consumer_override === 'not-enhanced') {
         return FALSE;
       }
-      // If empty or 'auto-detect', fall through to automatic detection.
+      elseif ($consumer_override === 'auto-detect') {
+        return $this->isNativeClient($client);
+      }
+      return TRUE;
     }
 
-    // Default: require enhanced PKCE for detected native clients.
+    // If global setting is 'auto-detect' or any other value.
+    $consumer_override = $this->getConsumerEnhancedPkceOverride($client);
+    if ($consumer_override === 'enhanced') {
+      return TRUE;
+    }
+    elseif ($consumer_override === 'not-enhanced') {
+      return FALSE;
+    }
+
+    // Default: auto-detect based on client type.
     return $this->isNativeClient($client);
+  }
+
+  /**
+   * Gets the consumer-specific enhanced PKCE override setting.
+   *
+   * @param \Drupal\consumers\Entity\Consumer $client
+   *   The consumer entity.
+   *
+   * @return string|null
+   *   The override value or NULL if not set.
+   */
+  protected function getConsumerEnhancedPkceOverride(Consumer $client): ?string {
+    $consumer_id = $client->id();
+    if (!$consumer_id) {
+      return NULL;
+    }
+
+    $consumer_config = $this->configFactory->get("simple_oauth_native_apps.consumer.$consumer_id");
+    return $consumer_config->get('enhanced_pkce_override') ?? NULL;
+  }
+
+  /**
+   * Resolves whether custom URI schemes are allowed for a consumer.
+   *
+   * @param object $config
+   *   The global config object.
+   * @param \Drupal\consumers\Entity\Consumer|null $client
+   *   The consumer entity (optional).
+   *
+   * @return bool
+   *   TRUE if custom URI schemes are allowed.
+   */
+  protected function resolveCustomUriSchemesAllowed($config, ?Consumer $client = NULL): bool {
+    $global_setting = $config->get('allow.custom_uri_schemes') ?? 'auto-detect';
+
+    // Check for consumer override if client provided.
+    if ($client) {
+      $consumer_override = $this->getConsumerCustomUriSchemesOverride($client);
+      if ($consumer_override) {
+        return $this->resolveBooleanFromEnum($consumer_override, $client);
+      }
+    }
+
+    // Use global setting.
+    return $this->resolveBooleanFromEnum($global_setting, $client);
+  }
+
+  /**
+   * Resolves whether loopback redirects are allowed for a consumer.
+   *
+   * @param object $config
+   *   The global config object.
+   * @param \Drupal\consumers\Entity\Consumer|null $client
+   *   The consumer entity (optional).
+   *
+   * @return bool
+   *   TRUE if loopback redirects are allowed.
+   */
+  protected function resolveLoopbackRedirectsAllowed($config, ?Consumer $client = NULL): bool {
+    $global_setting = $config->get('allow.loopback_redirects') ?? 'auto-detect';
+
+    // Check for consumer override if client provided.
+    if ($client) {
+      $consumer_override = $this->getConsumerLoopbackRedirectsOverride($client);
+      if ($consumer_override) {
+        return $this->resolveBooleanFromEnum($consumer_override, $client);
+      }
+    }
+
+    // Use global setting.
+    return $this->resolveBooleanFromEnum($global_setting, $client);
+  }
+
+  /**
+   * Gets the consumer-specific custom URI schemes override setting.
+   *
+   * @param \Drupal\consumers\Entity\Consumer $client
+   *   The consumer entity.
+   *
+   * @return string|null
+   *   The override value or NULL if not set.
+   */
+  protected function getConsumerCustomUriSchemesOverride(Consumer $client): ?string {
+    $consumer_id = $client->id();
+    if (!$consumer_id) {
+      return NULL;
+    }
+
+    $consumer_config = $this->configFactory->get("simple_oauth_native_apps.consumer.$consumer_id");
+    return $consumer_config->get('allow_custom_schemes_override') ?? NULL;
+  }
+
+  /**
+   * Gets the consumer-specific loopback redirects override setting.
+   *
+   * @param \Drupal\consumers\Entity\Consumer $client
+   *   The consumer entity.
+   *
+   * @return string|null
+   *   The override value or NULL if not set.
+   */
+  protected function getConsumerLoopbackRedirectsOverride(Consumer $client): ?string {
+    $consumer_id = $client->id();
+    if (!$consumer_id) {
+      return NULL;
+    }
+
+    $consumer_config = $this->configFactory->get("simple_oauth_native_apps.consumer.$consumer_id");
+    return $consumer_config->get('allow_loopback_override') ?? NULL;
+  }
+
+  /**
+   * Resolves a boolean value from an enum setting.
+   *
+   * @param string $enum_value
+   *   The enum value ('auto-detect', 'native', 'web').
+   * @param \Drupal\consumers\Entity\Consumer|null $client
+   *   The consumer entity (for auto-detect).
+   *
+   * @return bool
+   *   The resolved boolean value.
+   */
+  protected function resolveBooleanFromEnum(string $enum_value, ?Consumer $client = NULL): bool {
+    switch ($enum_value) {
+      case 'native':
+        return TRUE;
+
+      case 'web':
+        return FALSE;
+
+      case 'auto-detect':
+      default:
+        // Auto-detect based on client type.
+        return $client ? $this->isNativeClient($client) : TRUE;
+    }
   }
 
   /**
@@ -800,8 +954,8 @@ class NativeClientDetector {
       'mobile', 'desktop' => [
         'confidential' => FALSE,
         'pkce_required' => TRUE,
-        'custom_schemes_allowed' => $config->get('allow_custom_uri_schemes'),
-        'loopback_allowed' => $config->get('allow_loopback_redirects'),
+        'custom_schemes_allowed' => $this->resolveCustomUriSchemesAllowed($config, NULL),
+        'loopback_allowed' => $this->resolveLoopbackRedirectsAllowed($config, NULL),
         'enhanced_pkce' => $config->get('native.enhanced_pkce'),
         'description' => ucfirst($type) . ' native application',
       ],
