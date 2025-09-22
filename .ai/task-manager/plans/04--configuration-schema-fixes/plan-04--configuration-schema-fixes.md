@@ -120,3 +120,50 @@ The form handling in ConsumerNativeAppsFormAlter will be reviewed to ensure it o
 - Access to existing Drupal site with simple_oauth_native_apps module installed
 - Drupal console/drush for configuration management operations
 - Testing environment to verify schema changes don't break existing functionality
+
+## Task Dependencies
+
+```mermaid
+graph TD
+    001[Task 001: Add client_detection Schema Definition] --> 002[Task 002: Clean Up Invalid Consumer Configuration Data]
+    003[Task 003: Fix WebView Detection Policy Validation]
+    001 --> 004[Task 004: Test Configuration Schema Fixes]
+    002 --> 004
+    003 --> 004
+```
+
+## Execution Blueprint
+
+**Validation Gates:**
+
+- Reference: `@.ai/task-manager/config/hooks/POST_PHASE.md`
+
+### Phase 1: Schema and Validation Foundation
+
+**Parallel Tasks:**
+
+- Task 001: Add client_detection Schema Definition
+- Task 003: Fix WebView Detection Policy Validation
+
+### Phase 2: Data Cleanup
+
+**Parallel Tasks:**
+
+- Task 002: Clean Up Invalid Consumer Configuration Data (depends on: 001)
+
+### Phase 3: Integration Testing
+
+**Parallel Tasks:**
+
+- Task 004: Test Configuration Schema Fixes (depends on: 001, 002, 003)
+
+### Post-phase Actions
+
+After each phase completion, validate that all tasks in the phase have status "completed" and that validation gates pass before proceeding to the next phase.
+
+### Execution Summary
+
+- Total Phases: 3
+- Total Tasks: 4
+- Maximum Parallelism: 2 tasks (in Phase 1)
+- Critical Path Length: 3 phases
