@@ -87,7 +87,7 @@ jobs:
           composer --no-interaction config minimum-stability dev
 
           composer require --no-interaction --no-progress \
-            drupal/core-dev \
+            drupal/core-dev:^${{ matrix.drupal-core }} \
             drupal/coder \
             drush/drush \
             phpstan/phpstan \
