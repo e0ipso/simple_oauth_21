@@ -52,15 +52,15 @@ class OpenIdConfigurationController extends ControllerBase {
    */
   public function __invoke(): CacheableJsonResponse {
     // Log that controller is being invoked.
-    \Drupal::logger('simple_oauth_server_metadata')->debug('OpenIdConfigurationController invoked');
+    $this->getLogger('simple_oauth_server_metadata')->debug('OpenIdConfigurationController invoked');
 
     // Check if OpenID Connect is enabled in simple_oauth module.
     $simple_oauth_config = $this->configFactory->get('simple_oauth.settings');
     $is_disabled = $simple_oauth_config->get('disable_openid_connect');
-    \Drupal::logger('simple_oauth_server_metadata')->debug('OpenID Connect disabled: @disabled', ['@disabled' => $is_disabled ? 'true' : 'false']);
+    $this->getLogger('simple_oauth_server_metadata')->debug('OpenID Connect disabled: @disabled', ['@disabled' => $is_disabled ? 'true' : 'false']);
 
     if ($is_disabled) {
-      \Drupal::logger('simple_oauth_server_metadata')->debug('Throwing NotFoundHttpException because OpenID Connect is disabled');
+      $this->getLogger('simple_oauth_server_metadata')->debug('Throwing NotFoundHttpException because OpenID Connect is disabled');
       throw new NotFoundHttpException('OpenID Connect is not enabled');
     }
 
