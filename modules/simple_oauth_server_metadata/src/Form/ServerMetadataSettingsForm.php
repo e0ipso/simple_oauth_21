@@ -109,6 +109,38 @@ class ServerMetadataSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('introspection_endpoint'),
     ];
 
+    // OpenID Connect Discovery section.
+    $form['openid_discovery'] = [
+      '#type' => 'details',
+      '#title' => $this->t('OpenID Connect Discovery'),
+      '#description' => $this->t('Configuration for the OpenID Connect Discovery endpoint at /.well-known/openid-configuration. This endpoint is always available when the module is enabled.'),
+      '#open' => TRUE,
+    ];
+
+    $form['openid_discovery']['response_types_supported'] = [
+      '#type' => 'checkboxes',
+      '#title' => $this->t('Supported Response Types'),
+      '#description' => $this->t('🔒 <strong>OAuth 2.1 Required:</strong> Select the OAuth 2.0 response types that are supported by this authorization server. These values will be included in the OpenID Connect Discovery metadata. (<a href="https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata" target="_blank">OpenID Connect Discovery 1.0 Section 3</a>)'),
+      '#options' => [
+        'code' => $this->t('code'),
+        'token' => $this->t('token'),
+        'id_token' => $this->t('id_token'),
+        'code id_token' => $this->t('code id_token'),
+      ],
+      '#default_value' => $config->get('response_types_supported') ?: ['code', 'id_token', 'code id_token'],
+    ];
+
+    $form['openid_discovery']['response_modes_supported'] = [
+      '#type' => 'checkboxes',
+      '#title' => $this->t('Supported Response Modes'),
+      '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Select the OAuth 2.0 response modes that are supported by this authorization server. These values will be included in the OpenID Connect Discovery metadata. (<a href="https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata" target="_blank">OpenID Connect Discovery 1.0 Section 3</a>)'),
+      '#options' => [
+        'query' => $this->t('query'),
+        'fragment' => $this->t('fragment'),
+      ],
+      '#default_value' => $config->get('response_modes_supported') ?: ['query', 'fragment'],
+    ];
+
     // Policy URLs section.
     $form['policy'] = [
       '#type' => 'details',
@@ -262,6 +294,13 @@ class ServerMetadataSettingsForm extends ConfigFormBase {
       }
     }
 
+    // Validate OpenID Connect Discovery fields.
+    // Validate at least one response type is selected.
+    $response_types = array_filter($form_state->getValue('response_types_supported') ?: []);
+    if (empty($response_types)) {
+      $form_state->setErrorByName('response_types_supported', $this->t('At least one response type must be selected for OpenID Connect Discovery.'));
+    }
+
     parent::validateForm($form, $form_state);
   }
 
@@ -284,10 +323,19 @@ class ServerMetadataSettingsForm extends ConfigFormBase {
       'resource_documentation',
       'resource_policy_uri',
       'resource_tos_uri',
+      'response_types_supported',
+      'response_modes_supported',
     ];
 
     foreach ($fields as $field) {
       $value = $form_state->getValue($field);
+
+      // Handle checkbox arrays (response types and modes).
+      if (in_array($field, ['response_types_supported', 'response_modes_supported'])) {
+        // Filter out unchecked values (FALSE) and get only the checked ones.
+        $value = array_values(array_filter($value));
+      }
+
       // Don't save empty strings or empty arrays.
       if (empty($value)) {
         $config->clear($field);
