@@ -6,7 +6,7 @@ status: 'pending'
 created: '2025-09-22'
 skills: ['drupal-backend']
 complexity_score: 5.5
-complexity_notes: "Higher complexity due to debugging validation logic and form interaction uncertainty"
+complexity_notes: 'Higher complexity due to debugging validation logic and form interaction uncertainty'
 ---
 
 # Fix WebView Detection Policy Validation
@@ -94,4 +94,4 @@ Resolve WebView detection policy validation errors that incorrectly reject valid
    - Test empty/null values
    - Test invalid values to ensure they still trigger errors
    - Clear cache and retest: `drush cache:rebuild`
-</details>
+   </details>

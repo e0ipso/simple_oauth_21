@@ -6,7 +6,7 @@ status: 'pending'
 created: '2025-09-22'
 skills: ['drupal-backend']
 complexity_score: 3.3
-complexity_notes: "Low complexity - single file schema addition with minor decisions about structure"
+complexity_notes: 'Low complexity - single file schema addition with minor decisions about structure'
 ---
 
 # Add client_detection Schema Definition
@@ -64,6 +64,7 @@ Add the missing `client_detection` field schema definition to the `simple_oauth_
    - Based on form structure, likely needs to be a mapping for detection results and UI state
 
 4. **Example schema addition**:
+
    ```yaml
    client_detection:
      type: mapping
@@ -84,4 +85,4 @@ Add the missing `client_detection` field schema definition to the `simple_oauth_
    - Clear Drupal cache: `drush cache:rebuild`
    - Check configuration status: `drush config:status`
    - Verify no schema errors: Check admin/reports/status for configuration schema issues
-</details>
+   </details>

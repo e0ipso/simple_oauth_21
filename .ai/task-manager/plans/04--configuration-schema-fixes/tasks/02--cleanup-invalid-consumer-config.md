@@ -2,11 +2,11 @@
 id: 2
 group: 'data-cleanup'
 dependencies: [1]
-status: 'pending'
+status: 'in_progress'
 created: '2025-09-22'
 skills: ['drupal-backend']
 complexity_score: 4.4
-complexity_notes: "Moderate complexity - requires careful data analysis and Drupal config API usage"
+complexity_notes: 'Moderate complexity - requires careful data analysis and Drupal config API usage'
 ---
 
 # Clean Up Invalid Consumer Configuration Data
@@ -53,6 +53,7 @@ Remove invalid configuration data and ensure proper structure for all existing c
 <summary>Detailed Implementation Instructions</summary>
 
 1. **Backup existing configurations**:
+
    ```bash
    # Export all consumer configs for backup
    drush config:export --partial simple_oauth_native_apps.consumer.*
@@ -62,6 +63,7 @@ Remove invalid configuration data and ensure proper structure for all existing c
    ```
 
 2. **Identify all consumer configurations**:
+
    ```bash
    # List all consumer configs
    drush sql:query "SELECT name FROM config WHERE name LIKE 'simple_oauth_native_apps.consumer.%'"
@@ -73,6 +75,7 @@ Remove invalid configuration data and ensure proper structure for all existing c
    - Compare against schema definition to identify valid vs invalid fields
 
 4. **Clean up configurations using PHP/Drush**:
+
    ```php
    // Example cleanup script
    $config_factory = \Drupal::configFactory();
@@ -105,4 +108,4 @@ Remove invalid configuration data and ensure proper structure for all existing c
    - Configurations with only invalid fields
    - Configurations with mixed valid/invalid data
    - Ensure no functional data is lost during cleanup
-</details>
+   </details>
