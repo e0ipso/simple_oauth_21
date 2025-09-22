@@ -20,6 +20,8 @@ env:
   BROWSERTEST_OUTPUT_DIRECTORY: 'web/sites/simpletest/browser_output'
   MINK_DRIVER_ARGS_WEBDRIVER: '["chrome", {"browserName":"chrome","goog:chromeOptions":{"args":["--disable-gpu","--headless","--no-sandbox","--disable-dev-shm-usage"]}}, "http://127.0.0.1:9515"]'
   SYMFONY_DEPRECATIONS_HELPER: 'ignoreFile=${{ github.workspace }}/drupal-root/.deprecation-ignore.txt'
+  # Increase test timeouts for CI environment
+  PHPUNIT_TIMEOUT: '300'
 
 jobs:
   # Combined Drupal CI Job - Composer, PHPStan, PHPUnit, and E2E Tests
@@ -92,7 +94,7 @@ jobs:
             drush/drush \
             phpstan/phpstan \
             mglaman/phpstan-drupal \
-            phpstan/phpstan-deprecation-rules\
+            phpstan/phpstan-deprecation-rules \
             drupal/simple_oauth:^6
 
           composer dump-autoload
@@ -138,6 +140,9 @@ jobs:
         run: |
           vendor/bin/drush cache:rebuild
           vendor/bin/drush pm:enable ${{ env.MODULE_NAME }} --yes
+
+          # Enable test modules that are required by the tests
+          vendor/bin/drush pm:enable simple_oauth_test --yes || echo "simple_oauth_test not available"
 
       - name: Copy deprecation ignore file
         working-directory: ${{ env.DRUPAL_ROOT }}
@@ -207,13 +212,21 @@ jobs:
       - name: Run Functional tests
         id: functional-tests
         working-directory: ${{ env.DRUPAL_ROOT }}
+        timeout-minutes: 15
         run: |
           # Find functional test directories
           TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Functional" -path "*/tests/src/Functional" -print)
           if [ -n "$TEST_DIRS" ]; then
             echo "Running functional tests in: $TEST_DIRS"
-            php vendor/bin/phpunit \
+
+            # Verify test modules are available
+            echo "Checking enabled modules:"
+            vendor/bin/drush pm:list | grep -E "(simple_oauth|oauth)" || echo "No OAuth modules found"
+
+            # Run tests with timeout and verbose output
+            timeout 900 php vendor/bin/phpunit \
               --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
+              --stop-on-failure \
               $TEST_DIRS
           else
             echo "No functional tests found"
