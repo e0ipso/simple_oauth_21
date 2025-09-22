@@ -69,10 +69,17 @@ class OpenIdConfigurationFunctionalTest extends BrowserTestBase {
   public function testOpenIdConfigurationRouteExists(): void {
     $this->logDebug('Starting OpenID configuration route test');
 
-    // Log enabled modules for debugging
+    // Log enabled modules for debugging.
     $module_handler = $this->container->get('module_handler');
     $enabled_modules = [];
-    foreach (['simple_oauth', 'simple_oauth_21', 'simple_oauth_server_metadata', 'simple_oauth_client_registration', 'consumers'] as $module) {
+    $modules_to_check = [
+      'simple_oauth',
+      'simple_oauth_21',
+      'simple_oauth_server_metadata',
+      'simple_oauth_client_registration',
+      'consumers',
+    ];
+    foreach ($modules_to_check as $module) {
       if ($module_handler->moduleExists($module)) {
         $enabled_modules[] = $module;
       }
@@ -89,17 +96,18 @@ class OpenIdConfigurationFunctionalTest extends BrowserTestBase {
     $this->logDebug('Response status code: ' . $status_code);
 
     if ($status_code === 404) {
-      // Log additional debugging info if we get 404
+      // Log additional debugging info if we get 404.
       $this->logDebug('Got 404 - checking route registration');
       $route_provider = $this->container->get('router.route_provider');
       try {
         $route = $route_provider->getRouteByName('simple_oauth_server_metadata.openid_configuration');
         $this->logDebug('Route found in route provider: ' . $route->getPath());
-      } catch (\Exception $e) {
+      }
+      catch (\Exception $e) {
         $this->logDebug('Route not found in route provider: ' . $e->getMessage());
       }
 
-      // Check if routing.yml is loaded
+      // Check if routing.yml is loaded.
       $module_handler = $this->container->get('module_handler');
       $this->logDebug('Module simple_oauth_server_metadata enabled: ' . ($module_handler->moduleExists('simple_oauth_server_metadata') ? 'yes' : 'no'));
     }
