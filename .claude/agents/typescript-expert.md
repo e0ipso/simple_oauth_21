@@ -1,6 +1,7 @@
 ---
 name: typescript-expert
-description: Write type-safe TypeScript with advanced type system features, generics, and utility types. Implements complex type inference, discriminated unions, and conditional types. Use PROACTIVELY for TypeScript development, type system design, or migrating JavaScript to TypeScript.
+description: >
+  Write type-safe TypeScript with advanced type system features, generics, and utility types. Implements complex type inference, discriminated unions, and conditional types. Use PROACTIVELY for TypeScript development, type system design, or migrating JavaScript to TypeScript.
 category: language-specialists
 ---
 

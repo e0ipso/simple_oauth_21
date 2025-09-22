@@ -6,8 +6,6 @@ description: >
   setting up browser automation, creating test strategies, debugging test failures, or optimizing
   test coverage. The agent focuses on testing your project's custom code rather than framework
   functionality, and prioritizes maintainable tests that provide maximum coverage with minimal overhead.
-model: sonnet
-color: green
 type: quality-assurance
 ---
 
