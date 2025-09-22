@@ -12,41 +12,20 @@ use Drupal\simple_oauth\Oauth2ScopeProviderInterface;
 class ScopeDiscoveryService {
 
   /**
-   * The OAuth2 scope provider.
-   *
-   * @var \Drupal\simple_oauth\Oauth2ScopeProviderInterface
-   */
-  protected $scopeProvider;
-
-  /**
-   * The configuration factory.
-   *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
-   */
-  protected $configFactory;
-
-  /**
-   * The logger factory.
-   *
-   * @var \Drupal\Core\Logger\LoggerChannelFactoryInterface
-   */
-  protected $loggerFactory;
-
-  /**
    * Constructs a ScopeDiscoveryService object.
    *
-   * @param \Drupal\simple_oauth\Oauth2ScopeProviderInterface $scope_provider
+   * @param \Drupal\simple_oauth\Oauth2ScopeProviderInterface $scopeProvider
    *   The OAuth2 scope provider.
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The configuration factory.
-   * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
+   * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $loggerFactory
    *   The logger factory.
    */
-  public function __construct(Oauth2ScopeProviderInterface $scope_provider, ConfigFactoryInterface $config_factory, LoggerChannelFactoryInterface $logger_factory) {
-    $this->scopeProvider = $scope_provider;
-    $this->configFactory = $config_factory;
-    $this->loggerFactory = $logger_factory;
-  }
+  public function __construct(
+    private readonly Oauth2ScopeProviderInterface $scopeProvider,
+    private readonly ConfigFactoryInterface $configFactory,
+    private readonly LoggerChannelFactoryInterface $loggerFactory,
+  ) {}
 
   /**
    * Gets supported scopes.

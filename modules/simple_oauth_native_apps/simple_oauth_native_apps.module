@@ -18,20 +18,12 @@ use Drupal\Core\Url;
  * Implements hook_help().
  */
 function simple_oauth_native_apps_help($route_name, RouteMatchInterface $route_match) {
-  switch ($route_name) {
-    case 'help.page.simple_oauth_native_apps':
-      return _simple_oauth_native_apps_help_overview();
-
-    case 'simple_oauth_native_apps.settings':
-      return _simple_oauth_native_apps_help_settings();
-
-    case 'entity.consumer.collection':
-      return _simple_oauth_native_apps_help_consumers();
-
-    case 'entity.consumer.add_form':
-    case 'entity.consumer.edit_form':
-      return _simple_oauth_native_apps_help_consumer_form();
-  }
+  match ($route_name) {
+    'help.page.simple_oauth_native_apps' => _simple_oauth_native_apps_help_overview(),
+    'simple_oauth_native_apps.settings' => _simple_oauth_native_apps_help_settings(),
+    'entity.consumer.collection' => _simple_oauth_native_apps_help_consumers(),
+    'entity.consumer.add_form', 'entity.consumer.edit_form' => _simple_oauth_native_apps_help_consumer_form(),
+  };
 }
 
 /**

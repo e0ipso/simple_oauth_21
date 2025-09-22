@@ -11,21 +11,14 @@ use Symfony\Component\HttpFoundation\RequestStack;
 class EndpointDiscoveryService {
 
   /**
-   * The request stack.
-   *
-   * @var \Symfony\Component\HttpFoundation\RequestStack
-   */
-  protected $requestStack;
-
-  /**
    * Constructs an EndpointDiscoveryService object.
    *
-   * @param \Symfony\Component\HttpFoundation\RequestStack $request_stack
+   * @param \Symfony\Component\HttpFoundation\RequestStack $requestStack
    *   The request stack service.
    */
-  public function __construct(RequestStack $request_stack) {
-    $this->requestStack = $request_stack;
-  }
+  public function __construct(
+    private readonly RequestStack $requestStack,
+  ) {}
 
   /**
    * Gets the issuer identifier.

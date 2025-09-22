@@ -2,8 +2,8 @@
 
 namespace Drupal\simple_oauth_native_apps\Service;
 
-use Drupal\Core\Cache\Cache;
-use Drupal\Core\Cache\CacheBackendInterface;
+use Drupal\Core\Cache\CacheableDependencyInterface;
+use Drupal\Core\Cache\CacheableDependencyTrait;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Routing\UrlGeneratorInterface;
 
@@ -13,43 +13,26 @@ use Drupal\Core\Routing\UrlGeneratorInterface;
  * Implements RFC 8414 OAuth 2.0 Authorization Server Metadata with
  * RFC 8252 native app specific enhancements.
  */
-class MetadataProvider {
+class MetadataProvider implements CacheableDependencyInterface {
 
-  /**
-   * The config factory.
-   *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
-   */
-  protected $configFactory;
-
-  /**
-   * The URL generator.
-   *
-   * @var \Drupal\Core\Routing\UrlGeneratorInterface
-   */
-  protected $urlGenerator;
-
-  /**
-   * The cache backend.
-   *
-   * @var \Drupal\Core\Cache\CacheBackendInterface
-   */
-  protected $cache;
+  use CacheableDependencyTrait;
 
   /**
    * Constructs a new MetadataProvider.
    *
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The config factory.
-   * @param \Drupal\Core\Routing\UrlGeneratorInterface $url_generator
+   * @param \Drupal\Core\Routing\UrlGeneratorInterface $urlGenerator
    *   The URL generator.
-   * @param \Drupal\Core\Cache\CacheBackendInterface $cache
-   *   The cache backend.
    */
-  public function __construct(ConfigFactoryInterface $config_factory, UrlGeneratorInterface $url_generator, CacheBackendInterface $cache) {
-    $this->configFactory = $config_factory;
-    $this->urlGenerator = $url_generator;
-    $this->cache = $cache;
+  public function __construct(
+    private readonly ConfigFactoryInterface $configFactory,
+    private readonly UrlGeneratorInterface $urlGenerator,
+  ) {
+    $this->cacheTags = [
+      'config:simple_oauth_native_apps.settings',
+      'config:simple_oauth.settings',
+    ];
   }
 
   /**
@@ -59,28 +42,6 @@ class MetadataProvider {
    *   OAuth metadata array following RFC 8414 and RFC 8252.
    */
   public function getMetadata(): array {
-    $cid = 'simple_oauth_native_apps:metadata';
-
-    if ($cache = $this->cache->get($cid)) {
-      return $cache->data;
-    }
-
-    $metadata = $this->generateMetadata();
-    $this->cache->set($cid, $metadata, Cache::PERMANENT, [
-      'config:simple_oauth_native_apps.settings',
-      'config:simple_oauth.settings',
-    ]);
-
-    return $metadata;
-  }
-
-  /**
-   * Generates the complete OAuth metadata.
-   *
-   * @return array
-   *   Generated metadata array.
-   */
-  protected function generateMetadata(): array {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
     $metadata = [];
 
@@ -198,16 +159,6 @@ class MetadataProvider {
     if ($config->get('allow_custom_uri_schemes')) {
       $metadata['private_use_uri_schemes_allowed'] = TRUE;
     }
-  }
-
-  /**
-   * Clears the metadata cache.
-   */
-  public function clearMetadataCache(): void {
-    $this->cache->invalidateTags([
-      'config:simple_oauth_native_apps.settings',
-      'config:simple_oauth.settings',
-    ]);
   }
 
 }

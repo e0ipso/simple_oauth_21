@@ -17,17 +17,12 @@ use Drupal\Core\Url;
  * Implements hook_help().
  */
 function simple_oauth_client_registration_help($route_name, RouteMatchInterface $route_match) {
-  switch ($route_name) {
-    case 'help.page.simple_oauth_client_registration':
-      return _simple_oauth_client_registration_help_overview();
-
-    case 'entity.consumer.collection':
-      return _simple_oauth_client_registration_help_consumers();
-
-    case 'entity.consumer.add_form':
-    case 'entity.consumer.edit_form':
-      return _simple_oauth_client_registration_help_consumer_form();
-  }
+  return match ($route_name) {
+    'help.page.simple_oauth_client_registration' => _simple_oauth_client_registration_help_overview(),
+    'entity.consumer.collection' => _simple_oauth_client_registration_help_consumers(),
+    'entity.consumer.add_form', 'entity.consumer.edit_form' => _simple_oauth_client_registration_help_consumer_form(),
+    default => '',
+  };
 }
 
 /**

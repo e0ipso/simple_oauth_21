@@ -2,59 +2,43 @@
 
 namespace Drupal\simple_oauth_server_metadata\Service;
 
-use Drupal\Core\Cache\Cache;
-use Drupal\Core\Cache\CacheBackendInterface;
+use Drupal\Core\Cache\CacheableDependencyInterface;
+use Drupal\Core\Cache\CacheableDependencyTrait;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Url;
 
 /**
  * Service for generating RFC 9728 protected resource metadata.
  */
-class ResourceMetadataService {
+class ResourceMetadataService implements CacheableDependencyInterface {
 
-  /**
-   * The cache backend.
-   *
-   * @var \Drupal\Core\Cache\CacheBackendInterface
-   */
-  protected $cache;
-
-  /**
-   * The configuration factory.
-   *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
-   */
-  protected $configFactory;
-
-  /**
-   * The endpoint discovery service.
-   *
-   * @var \Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService
-   */
-  protected $endpointDiscovery;
+  use CacheableDependencyTrait;
 
   /**
    * Constructs a ResourceMetadataService object.
    *
-   * @param \Drupal\Core\Cache\CacheBackendInterface $cache
-   *   The cache backend.
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The configuration factory.
-   * @param \Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService $endpoint_discovery
+   * @param \Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService $endpointDiscovery
    *   The endpoint discovery service.
    */
   public function __construct(
-    CacheBackendInterface $cache,
-    ConfigFactoryInterface $config_factory,
-    EndpointDiscoveryService $endpoint_discovery,
+    private readonly ConfigFactoryInterface $configFactory,
+    private readonly EndpointDiscoveryService $endpointDiscovery,
   ) {
-    $this->cache = $cache;
-    $this->configFactory = $config_factory;
-    $this->endpointDiscovery = $endpoint_discovery;
+    $this->cacheTags = [
+      'config:simple_oauth.settings',
+      'config:simple_oauth_server_metadata.settings',
+    ];
+
+    $this->cacheContexts = [
+      'url.path',
+      'user.permissions',
+    ];
   }
 
   /**
-   * Gets the complete resource metadata per RFC 9728 with caching.
+   * Gets the complete resource metadata per RFC 9728.
    *
    * @param array $config_override
    *   Optional configuration override for preview purposes.
@@ -63,44 +47,6 @@ class ResourceMetadataService {
    *   The resource metadata array compliant with RFC 9728.
    */
   public function getResourceMetadata(array $config_override = []): array {
-    // Skip cache if using config override (for preview).
-    if (!empty($config_override)) {
-      return $this->generateMetadata($config_override);
-    }
-
-    $cache_id = 'simple_oauth_server_metadata:resource_metadata';
-    $cache_tags = $this->getCacheTags();
-
-    // Try to get from cache first.
-    $cached = $this->cache->get($cache_id);
-    if ($cached && $cached->valid) {
-      return $cached->data;
-    }
-
-    // Generate metadata if not cached.
-    $metadata = $this->generateMetadata();
-
-    // Cache for 1 hour with appropriate tags.
-    $this->cache->set(
-      $cache_id,
-      $metadata,
-      time() + 3600,
-      $cache_tags
-    );
-
-    return $metadata;
-  }
-
-  /**
-   * Generates metadata without caching (for internal use).
-   *
-   * @param array $config_override
-   *   Optional configuration override for preview purposes.
-   *
-   * @return array
-   *   The resource metadata array compliant with RFC 9728.
-   */
-  protected function generateMetadata(array $config_override = []): array {
     $metadata = [];
 
     // Add required fields per RFC 9728.
@@ -236,33 +182,6 @@ class ResourceMetadataService {
     }
 
     return TRUE;
-  }
-
-  /**
-   * Gets cache tags for metadata invalidation.
-   *
-   * @return array
-   *   Array of cache tags.
-   */
-  protected function getCacheTags(): array {
-    return [
-      'config:simple_oauth.settings',
-      'config:simple_oauth_server_metadata.settings',
-    ];
-  }
-
-  /**
-   * Invalidates the metadata cache.
-   */
-  public function invalidateCache(): void {
-    Cache::invalidateTags($this->getCacheTags());
-  }
-
-  /**
-   * Warms the cache by pre-generating metadata.
-   */
-  public function warmCache(): void {
-    $this->getResourceMetadata();
   }
 
 }

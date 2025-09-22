@@ -14,21 +14,14 @@ use Symfony\Component\Validator\ConstraintValidator;
 class ExactRedirectUriMatchValidator extends ConstraintValidator implements ContainerInjectionInterface {
 
   /**
-   * The redirect URI validator service.
-   *
-   * @var \Drupal\simple_oauth_native_apps\Service\RedirectUriValidator
-   */
-  protected $redirectUriValidator;
-
-  /**
    * Constructs a new ExactRedirectUriMatchValidator.
    *
-   * @param \Drupal\simple_oauth_native_apps\Service\RedirectUriValidator $redirect_uri_validator
+   * @param \Drupal\simple_oauth_native_apps\Service\RedirectUriValidator $redirectUriValidator
    *   The redirect URI validator service.
    */
-  public function __construct(RedirectUriValidator $redirect_uri_validator) {
-    $this->redirectUriValidator = $redirect_uri_validator;
-  }
+  public function __construct(
+    protected readonly RedirectUriValidator $redirectUriValidator,
+  ) {}
 
   /**
    * {@inheritdoc}

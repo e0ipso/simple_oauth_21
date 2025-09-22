@@ -10,21 +10,14 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 class ClaimsAuthDiscoveryService {
 
   /**
-   * The configuration factory.
-   *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
-   */
-  protected $configFactory;
-
-  /**
    * Constructs a ClaimsAuthDiscoveryService object.
    *
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The configuration factory.
    */
-  public function __construct(ConfigFactoryInterface $config_factory) {
-    $this->configFactory = $config_factory;
-  }
+  public function __construct(
+    private readonly ConfigFactoryInterface $configFactory,
+  ) {}
 
   /**
    * Gets supported claims.

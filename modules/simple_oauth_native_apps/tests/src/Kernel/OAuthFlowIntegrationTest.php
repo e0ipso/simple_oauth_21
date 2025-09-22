@@ -80,7 +80,7 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
     $subscriber = $this->container->get('simple_oauth_native_apps.authorization_request_subscriber');
 
     // Create OAuth authorization request.
-    $request = Request::create('/oauth/authorize', 'GET', [
+    $request = Request::create('/oauth/authorize', Request::METHOD_GET, [
       'response_type' => 'code',
       'client_id' => 'test_client',
       'redirect_uri' => 'myapp://callback',

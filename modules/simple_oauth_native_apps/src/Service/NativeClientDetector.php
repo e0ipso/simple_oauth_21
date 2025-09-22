@@ -788,39 +788,31 @@ class NativeClientDetector {
   protected function getTypeDetails(string $type): array {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
-    switch ($type) {
-      case 'terminal':
-        return [
-          'confidential' => FALSE,
-          'pkce_required' => TRUE,
-          'custom_schemes_allowed' => FALSE,
-          'loopback_required' => TRUE,
-          'enhanced_pkce' => $config->get('native.enhanced_pkce'),
-          'description' => 'Terminal/CLI application using loopback redirects',
-        ];
-
-      case 'mobile':
-      case 'desktop':
-        return [
-          'confidential' => FALSE,
-          'pkce_required' => TRUE,
-          'custom_schemes_allowed' => $config->get('allow_custom_uri_schemes'),
-          'loopback_allowed' => $config->get('allow_loopback_redirects'),
-          'enhanced_pkce' => $config->get('native.enhanced_pkce'),
-          'description' => ucfirst($type) . ' native application',
-        ];
-
-      case 'web':
-      default:
-        return [
-      // Can be either.
-          'confidential' => NULL,
-          'pkce_required' => FALSE,
-          'https_required' => TRUE,
-          'enhanced_pkce' => FALSE,
-          'description' => 'Web application',
-        ];
-    }
+    return match ($type) {
+      'terminal' => [
+        'confidential' => FALSE,
+        'pkce_required' => TRUE,
+        'custom_schemes_allowed' => FALSE,
+        'loopback_required' => TRUE,
+        'enhanced_pkce' => $config->get('native.enhanced_pkce'),
+        'description' => 'Terminal/CLI application using loopback redirects',
+      ],
+      'mobile', 'desktop' => [
+        'confidential' => FALSE,
+        'pkce_required' => TRUE,
+        'custom_schemes_allowed' => $config->get('allow_custom_uri_schemes'),
+        'loopback_allowed' => $config->get('allow_loopback_redirects'),
+        'enhanced_pkce' => $config->get('native.enhanced_pkce'),
+        'description' => ucfirst($type) . ' native application',
+      ],
+      default => [
+        'confidential' => NULL,
+        'pkce_required' => FALSE,
+        'https_required' => TRUE,
+        'enhanced_pkce' => FALSE,
+        'description' => 'Web application',
+      ],
+    };
   }
 
   /**

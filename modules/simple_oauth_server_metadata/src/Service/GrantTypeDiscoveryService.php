@@ -11,31 +11,17 @@ use Drupal\simple_oauth\Plugin\Oauth2GrantManager;
 class GrantTypeDiscoveryService {
 
   /**
-   * The OAuth2 Grant Manager.
-   *
-   * @var \Drupal\simple_oauth\Plugin\Oauth2GrantManager
-   */
-  protected $grantManager;
-
-  /**
-   * The configuration factory.
-   *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
-   */
-  protected $configFactory;
-
-  /**
    * Constructs a GrantTypeDiscoveryService object.
    *
-   * @param \Drupal\simple_oauth\Plugin\Oauth2GrantManager $grant_manager
+   * @param \Drupal\simple_oauth\Plugin\Oauth2GrantManager $grantManager
    *   The OAuth2 Grant Manager.
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The configuration factory.
    */
-  public function __construct(Oauth2GrantManager $grant_manager, ConfigFactoryInterface $config_factory) {
-    $this->grantManager = $grant_manager;
-    $this->configFactory = $config_factory;
-  }
+  public function __construct(
+    private readonly Oauth2GrantManager $grantManager,
+    private readonly ConfigFactoryInterface $configFactory,
+  ) {}
 
   /**
    * Gets supported grant types.

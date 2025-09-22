@@ -6,7 +6,7 @@ use Drupal\Core\Controller\ControllerBase;
 use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
 use Drupal\simple_oauth_client_registration\Service\ClientRegistrationService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\HttpFoundation\JsonResponse;
+use Drupal\Core\Cache\CacheableJsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Serializer\SerializerInterface;
@@ -17,31 +17,17 @@ use Symfony\Component\Serializer\SerializerInterface;
 class ClientRegistrationController extends ControllerBase {
 
   /**
-   * The client registration service.
-   *
-   * @var \Drupal\simple_oauth_client_registration\Service\ClientRegistrationService
-   */
-  protected $registrationService;
-
-  /**
-   * The serializer.
-   *
-   * @var \Symfony\Component\Serializer\SerializerInterface
-   */
-  protected $serializer;
-
-  /**
    * Constructs a ClientRegistrationController object.
    *
-   * @param \Drupal\simple_oauth_client_registration\Service\ClientRegistrationService $registration_service
+   * @param \Drupal\simple_oauth_client_registration\Service\ClientRegistrationService $registrationService
    *   The client registration service.
    * @param \Symfony\Component\Serializer\SerializerInterface $serializer
    *   The serializer.
    */
-  public function __construct(ClientRegistrationService $registration_service, SerializerInterface $serializer) {
-    $this->registrationService = $registration_service;
-    $this->serializer = $serializer;
-  }
+  public function __construct(
+    protected readonly ClientRegistrationService $registrationService,
+    protected readonly SerializerInterface $serializer,
+  ) {}
 
   /**
    * {@inheritdoc}
@@ -59,10 +45,10 @@ class ClientRegistrationController extends ControllerBase {
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The HTTP request object.
    *
-   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   The JSON response containing RFC 7591 client registration response.
    */
-  public function register(Request $request): JsonResponse {
+  public function register(Request $request): CacheableJsonResponse {
     try {
       // Parse JSON request body.
       $content = $request->getContent();
@@ -86,19 +72,16 @@ class ClientRegistrationController extends ControllerBase {
       $registration_response = $this->registrationService->registerClient($clientRegistration);
 
       // Create JSON response with proper headers.
-      $response = new JsonResponse($registration_response);
+      $response = new CacheableJsonResponse($registration_response);
 
       // Set appropriate caching headers (no caching for registration
       // responses).
       $response->setMaxAge(0);
       $response->setPrivate();
 
-      // Set additional headers for API compliance.
-      $response->headers->set('Content-Type', 'application/json; charset=utf-8');
-
       // Add CORS headers for cross-origin requests.
       $response->headers->set('Access-Control-Allow-Origin', '*');
-      $response->headers->set('Access-Control-Allow-Methods', 'POST');
+      $response->headers->set('Access-Control-Allow-Methods', Request::METHOD_POST);
 
       return $response;
     }
@@ -109,10 +92,9 @@ class ClientRegistrationController extends ControllerBase {
         'error_description' => $e->getMessage(),
       ];
 
-      $response = new JsonResponse($error_response, 400);
-      $response->headers->set('Content-Type', 'application/json; charset=utf-8');
+      $response = new CacheableJsonResponse($error_response, 400);
       $response->headers->set('Access-Control-Allow-Origin', '*');
-      $response->headers->set('Access-Control-Allow-Methods', 'POST');
+      $response->headers->set('Access-Control-Allow-Methods', Request::METHOD_POST);
 
       return $response;
     }
@@ -129,10 +111,9 @@ class ClientRegistrationController extends ControllerBase {
         'error_description' => 'The authorization server encountered an unexpected condition',
       ];
 
-      $response = new JsonResponse($error_response, 500);
-      $response->headers->set('Content-Type', 'application/json; charset=utf-8');
+      $response = new CacheableJsonResponse($error_response, 500);
       $response->headers->set('Access-Control-Allow-Origin', '*');
-      $response->headers->set('Access-Control-Allow-Methods', 'POST');
+      $response->headers->set('Access-Control-Allow-Methods', Request::METHOD_POST);
 
       return $response;
     }
@@ -146,26 +127,19 @@ class ClientRegistrationController extends ControllerBase {
    * @param string $client_id
    *   The client identifier.
    *
-   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   The JSON response containing client data or operation result.
    */
-  public function manage(Request $request, $client_id): JsonResponse {
+  public function manage(Request $request, $client_id): CacheableJsonResponse {
     try {
       $method = $request->getMethod();
 
-      switch ($method) {
-        case 'GET':
-          return $this->getClient($request, $client_id);
-
-        case 'PUT':
-          return $this->updateClient($request, $client_id);
-
-        case 'DELETE':
-          return $this->deleteClient($request, $client_id);
-
-        default:
-          throw new BadRequestHttpException('Method not allowed');
-      }
+      return match ($method) {
+        Request::METHOD_GET => $this->getClient($request, $client_id),
+        Request::METHOD_PUT => $this->updateClient($request, $client_id),
+        Request::METHOD_DELETE => $this->deleteClient($request, $client_id),
+        default => throw new BadRequestHttpException('Method not allowed'),
+      };
     }
     catch (BadRequestHttpException $e) {
       $error_response = [
@@ -173,8 +147,9 @@ class ClientRegistrationController extends ControllerBase {
         'error_description' => $e->getMessage(),
       ];
 
-      $response = new JsonResponse($error_response, 400);
-      $response->headers->set('Content-Type', 'application/json; charset=utf-8');
+      $response = new CacheableJsonResponse($error_response, 400);
+      $response->headers->set('Access-Control-Allow-Origin', '*');
+      $response->headers->set('Access-Control-Allow-Methods', Request::METHOD_POST);
 
       return $response;
     }
@@ -189,8 +164,9 @@ class ClientRegistrationController extends ControllerBase {
         'error_description' => 'The authorization server encountered an unexpected condition',
       ];
 
-      $response = new JsonResponse($error_response, 500);
-      $response->headers->set('Content-Type', 'application/json; charset=utf-8');
+      $response = new CacheableJsonResponse($error_response, 500);
+      $response->headers->set('Access-Control-Allow-Origin', '*');
+      $response->headers->set('Access-Control-Allow-Methods', Request::METHOD_POST);
 
       return $response;
     }
@@ -204,18 +180,19 @@ class ClientRegistrationController extends ControllerBase {
    * @param string $client_id
    *   The client identifier.
    *
-   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   The JSON response containing client metadata.
    */
-  protected function getClient(Request $request, $client_id): JsonResponse {
+  protected function getClient(Request $request, $client_id): CacheableJsonResponse {
     // Validate registration access token.
     $this->validateRegistrationToken($request, $client_id);
 
     // Get client metadata.
     $client_metadata = $this->registrationService->getClientMetadata($client_id);
 
-    $response = new JsonResponse($client_metadata);
-    $response->headers->set('Content-Type', 'application/json; charset=utf-8');
+    $response = new CacheableJsonResponse($client_metadata);
+    $response->headers->set('Access-Control-Allow-Origin', '*');
+    $response->headers->set('Access-Control-Allow-Methods', Request::METHOD_GET);
 
     return $response;
   }
@@ -228,10 +205,10 @@ class ClientRegistrationController extends ControllerBase {
    * @param string $client_id
    *   The client identifier.
    *
-   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   The JSON response containing updated client metadata.
    */
-  protected function updateClient(Request $request, $client_id): JsonResponse {
+  protected function updateClient(Request $request, $client_id): CacheableJsonResponse {
     // Validate registration access token.
     $this->validateRegistrationToken($request, $client_id);
 
@@ -256,8 +233,9 @@ class ClientRegistrationController extends ControllerBase {
     // Update client metadata using the DTO.
     $updated_metadata = $this->registrationService->updateClientMetadata($client_id, $clientRegistration);
 
-    $response = new JsonResponse($updated_metadata);
-    $response->headers->set('Content-Type', 'application/json; charset=utf-8');
+    $response = new CacheableJsonResponse($updated_metadata);
+    $response->headers->set('Access-Control-Allow-Origin', '*');
+    $response->headers->set('Access-Control-Allow-Methods', Request::METHOD_PUT);
 
     return $response;
   }
@@ -270,10 +248,10 @@ class ClientRegistrationController extends ControllerBase {
    * @param string $client_id
    *   The client identifier.
    *
-   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   The JSON response confirming deletion.
    */
-  protected function deleteClient(Request $request, $client_id): JsonResponse {
+  protected function deleteClient(Request $request, $client_id): CacheableJsonResponse {
     // Validate registration access token.
     $this->validateRegistrationToken($request, $client_id);
 
@@ -281,8 +259,9 @@ class ClientRegistrationController extends ControllerBase {
     $this->registrationService->deleteClient($client_id);
 
     // Return success response.
-    $response = new JsonResponse(NULL, 204);
-    $response->headers->set('Content-Type', 'application/json; charset=utf-8');
+    $response = new CacheableJsonResponse(NULL, 204);
+    $response->headers->set('Access-Control-Allow-Origin', '*');
+    $response->headers->set('Access-Control-Allow-Methods', Request::METHOD_DELETE);
 
     return $response;
   }

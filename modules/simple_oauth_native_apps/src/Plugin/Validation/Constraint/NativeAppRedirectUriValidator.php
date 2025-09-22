@@ -15,31 +15,17 @@ use Symfony\Component\Validator\ConstraintValidator;
 class NativeAppRedirectUriValidator extends ConstraintValidator implements ContainerInjectionInterface {
 
   /**
-   * The redirect URI validator service.
-   *
-   * @var \Drupal\simple_oauth_native_apps\Service\RedirectUriValidator
-   */
-  protected $redirectUriValidator;
-
-  /**
-   * The config factory.
-   *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
-   */
-  protected $configFactory;
-
-  /**
    * Constructs a new NativeAppRedirectUriValidator.
    *
-   * @param \Drupal\simple_oauth_native_apps\Service\RedirectUriValidator $redirect_uri_validator
+   * @param \Drupal\simple_oauth_native_apps\Service\RedirectUriValidator $redirectUriValidator
    *   The redirect URI validator service.
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The config factory.
    */
-  public function __construct(RedirectUriValidator $redirect_uri_validator, ConfigFactoryInterface $config_factory) {
-    $this->redirectUriValidator = $redirect_uri_validator;
-    $this->configFactory = $config_factory;
-  }
+  public function __construct(
+    protected readonly RedirectUriValidator $redirectUriValidator,
+    protected readonly ConfigFactoryInterface $configFactory,
+  ) {}
 
   /**
    * {@inheritdoc}
@@ -110,16 +96,10 @@ class NativeAppRedirectUriValidator extends ConstraintValidator implements Conta
     $scheme = strtolower($parsed['scheme']);
 
     // Handle different URI types.
-    switch ($scheme) {
-      case 'http':
-      case 'https':
-        $this->validateLoopbackUri($uri, $constraint);
-        break;
-
-      default:
-        $this->validateCustomSchemeUri($uri, $constraint);
-        break;
-    }
+    match ($scheme) {
+      'http', 'https' => $this->validateLoopbackUri($uri, $constraint),
+      default => $this->validateCustomSchemeUri($uri, $constraint),
+    };
   }
 
   /**

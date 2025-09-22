@@ -52,7 +52,6 @@ services:
     arguments:
       - '@config.factory'
       - '@url_generator'
-      - '@cache.default'
 
   simple_oauth_native_apps.authorization_request_subscriber:
     class: Drupal\simple_oauth_native_apps\EventSubscriber\AuthorizationRequestSubscriber

@@ -10,21 +10,14 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 class PkceSettingsService {
 
   /**
-   * The config factory.
-   *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
-   */
-  protected $configFactory;
-
-  /**
    * Constructs a new PkceSettingsService.
    *
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The config factory.
    */
-  public function __construct(ConfigFactoryInterface $config_factory) {
-    $this->configFactory = $config_factory;
-  }
+  public function __construct(
+    private readonly ConfigFactoryInterface $configFactory,
+  ) {}
 
   /**
    * Get the PKCE enforcement level.

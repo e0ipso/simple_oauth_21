@@ -5,7 +5,7 @@ namespace Drupal\simple_oauth_server_metadata\Controller;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\HttpFoundation\JsonResponse;
+use Drupal\Core\Cache\CacheableJsonResponse;
 use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
 
 /**
@@ -14,21 +14,14 @@ use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
 class ResourceMetadataController extends ControllerBase {
 
   /**
-   * The resource metadata service.
-   *
-   * @var \Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService
-   */
-  protected $resourceMetadataService;
-
-  /**
    * Constructs a ResourceMetadataController object.
    *
-   * @param \Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService $resource_metadata_service
+   * @param \Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService $resourceMetadataService
    *   The resource metadata service.
    */
-  public function __construct(ResourceMetadataService $resource_metadata_service) {
-    $this->resourceMetadataService = $resource_metadata_service;
-  }
+  public function __construct(
+    protected readonly ResourceMetadataService $resourceMetadataService,
+  ) {}
 
   /**
    * {@inheritdoc}
@@ -42,10 +35,10 @@ class ResourceMetadataController extends ControllerBase {
   /**
    * Serves the protected resource metadata.
    *
-   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   The JSON response containing RFC 9728 metadata.
    */
-  public function metadata(): JsonResponse {
+  public function __invoke(): CacheableJsonResponse {
     try {
       // Get metadata from service.
       $metadata = $this->resourceMetadataService->getResourceMetadata();
@@ -55,19 +48,15 @@ class ResourceMetadataController extends ControllerBase {
         throw new ServiceUnavailableHttpException(300, 'Resource metadata is incomplete or invalid');
       }
 
-      // Create JSON response with proper headers.
-      $response = new JsonResponse($metadata);
+      // Create cacheable JSON response with proper cache metadata.
+      $response = new CacheableJsonResponse($metadata);
 
-      // Set appropriate caching headers.
-      $response->setMaxAge(3600);
-      $response->setPublic();
-
-      // Set additional headers for API compliance.
-      $response->headers->set('Content-Type', 'application/json; charset=utf-8');
+      // Add cache metadata from service.
+      $response->addCacheableDependency($this->resourceMetadataService);
 
       // Add CORS headers for cross-origin requests.
       $response->headers->set('Access-Control-Allow-Origin', '*');
-      $response->headers->set('Access-Control-Allow-Methods', 'GET');
+      $response->headers->set('Access-Control-Allow-Methods', Request::METHOD_GET);
 
       return $response;
     }

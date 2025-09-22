@@ -11,20 +11,6 @@ use Psr\Log\LoggerInterface;
 class RedirectUriValidator {
 
   /**
-   * The config factory.
-   *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
-   */
-  protected $configFactory;
-
-  /**
-   * The logger.
-   *
-   * @var \Psr\Log\LoggerInterface
-   */
-  protected $logger;
-
-  /**
    * Regular expression for custom URI scheme validation.
    *
    * Following RFC 3986 and reverse domain notation patterns.
@@ -41,15 +27,15 @@ class RedirectUriValidator {
   /**
    * Constructs a new RedirectUriValidator.
    *
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The config factory.
    * @param \Psr\Log\LoggerInterface $logger
    *   The logger.
    */
-  public function __construct(ConfigFactoryInterface $config_factory, LoggerInterface $logger) {
-    $this->configFactory = $config_factory;
-    $this->logger = $logger;
-  }
+  public function __construct(
+    private readonly ConfigFactoryInterface $configFactory,
+    private readonly LoggerInterface $logger,
+  ) {}
 
   /**
    * Validates a redirect URI for native apps.
@@ -96,14 +82,10 @@ class RedirectUriValidator {
     }
 
     // Handle different URI types based on scheme.
-    switch ($scheme) {
-      case 'http':
-      case 'https':
-        return $this->validateLoopbackInterface($uri);
-
-      default:
-        return $this->validateCustomScheme($uri);
-    }
+    return match ($scheme) {
+      'http', 'https' => $this->validateLoopbackInterface($uri),
+      default => $this->validateCustomScheme($uri),
+    };
   }
 
   /**
