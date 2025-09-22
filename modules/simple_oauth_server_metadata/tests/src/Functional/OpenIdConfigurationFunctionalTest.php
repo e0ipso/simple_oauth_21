@@ -4,6 +4,7 @@ namespace Drupal\Tests\simple_oauth_server_metadata\Functional;
 
 use Drupal\Component\Serialization\Json;
 use Drupal\Tests\BrowserTestBase;
+use Drupal\simple_oauth_21\Trait\DebugLoggingTrait;
 
 /**
  * Tests OpenID Connect Discovery endpoint functionality and compliance.
@@ -20,6 +21,8 @@ use Drupal\Tests\BrowserTestBase;
  */
 class OpenIdConfigurationFunctionalTest extends BrowserTestBase {
 
+  use DebugLoggingTrait;
+
   /**
    * {@inheritdoc}
    */
@@ -29,6 +32,8 @@ class OpenIdConfigurationFunctionalTest extends BrowserTestBase {
     'simple_oauth',
     'simple_oauth_21',
     'simple_oauth_server_metadata',
+    'simple_oauth_client_registration',
+    'consumers',
   ];
 
   /**
@@ -62,12 +67,42 @@ class OpenIdConfigurationFunctionalTest extends BrowserTestBase {
    * Test that the OpenID Connect Discovery route exists and is accessible.
    */
   public function testOpenIdConfigurationRouteExists(): void {
+    $this->logDebug('Starting OpenID configuration route test');
+
+    // Log enabled modules for debugging
+    $module_handler = $this->container->get('module_handler');
+    $enabled_modules = [];
+    foreach (['simple_oauth', 'simple_oauth_21', 'simple_oauth_server_metadata', 'simple_oauth_client_registration', 'consumers'] as $module) {
+      if ($module_handler->moduleExists($module)) {
+        $enabled_modules[] = $module;
+      }
+    }
+    $this->logDebug('Enabled modules: ' . implode(', ', $enabled_modules));
+
     // Test that the route is defined and accessible.
     // We expect either a successful response or a service error,
     // but not a 404 which would indicate the route doesn't exist.
+    $this->logDebug('Attempting to access /.well-known/openid-configuration');
     $this->drupalGet('/.well-known/openid-configuration');
 
     $status_code = $this->getSession()->getStatusCode();
+    $this->logDebug('Response status code: ' . $status_code);
+
+    if ($status_code === 404) {
+      // Log additional debugging info if we get 404
+      $this->logDebug('Got 404 - checking route registration');
+      $route_provider = $this->container->get('router.route_provider');
+      try {
+        $route = $route_provider->getRouteByName('simple_oauth_server_metadata.openid_configuration');
+        $this->logDebug('Route found in route provider: ' . $route->getPath());
+      } catch (\Exception $e) {
+        $this->logDebug('Route not found in route provider: ' . $e->getMessage());
+      }
+
+      // Check if routing.yml is loaded
+      $module_handler = $this->container->get('module_handler');
+      $this->logDebug('Module simple_oauth_server_metadata enabled: ' . ($module_handler->moduleExists('simple_oauth_server_metadata') ? 'yes' : 'no'));
+    }
 
     // The route should exist (not 404) - it may return 200, 503, or another
     // error.
