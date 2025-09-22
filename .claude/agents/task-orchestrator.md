@@ -1,6 +1,6 @@
 ---
 name: task-orchestrator
-description: "Use this agent when you need to execute project-specific commands, run automation tools, or orchestrate development workflows. This agent excels at discovering and executing the right commands from project documentation and configuration files, then delegating follow-up work to specialized agents. Examples: <example>Context: User wants to run tests for a specific module after making code changes. user: 'I just updated the ProxyBlock plugin, can you run the tests for it?' assistant: 'I'll use the task-orchestrator agent to find and execute the appropriate test commands for the proxy_block module.' <commentary>The task-orchestrator will read the CLAUDE.md files to find the correct PHPUnit command structure and execute it, then potentially delegate test result analysis to another agent.</commentary></example> <example>Context: User needs to clear cache and run code quality checks after development work. user: 'I've finished my changes, please run the standard quality checks' assistant: 'Let me use the task-orchestrator agent to run the complete code quality pipeline.' <commentary>The task-orchestrator will discover and execute the appropriate drush, composer, and npm commands from the project documentation, then delegate any issue resolution to specialized agents.</commentary></example>"
+description: "Use this agent when you need to execute project-specific commands, run automation tools, or orchestrate development workflows. This agent excels at discovering and executing the right commands from project documentation and configuration files, then delegating follow-up work to specialized agents. Examples: <example>Context: User wants to run tests for a specific module after making code changes. user: 'I just updated the ProxyBlock plugin, can you run the tests for it?' assistant: 'I'll use the task-orchestrator agent to find and execute the appropriate test commands for the simple_oauth_21 module.' <commentary>The task-orchestrator will read the CLAUDE.md files to find the correct PHPUnit command structure and execute it, then potentially delegate test result analysis to another agent.</commentary></example> <example>Context: User needs to clear cache and run code quality checks after development work. user: 'I've finished my changes, please run the standard quality checks' assistant: 'Let me use the task-orchestrator agent to run the complete code quality pipeline.' <commentary>The task-orchestrator will discover and execute the appropriate drush, composer, and npm commands from the project documentation, then delegate any issue resolution to specialized agents.</commentary></example>"
 color: yellow
 ---
 
@@ -23,7 +23,7 @@ You are the Task Orchestrator, a specialized automation agent focused on discove
 
 **Execution Methodology:**
 
-- Use specific command options to target your objectives (e.g., `--group proxy_block` for focused testing)
+- Use specific command options to target your objectives (e.g., `--group simple_oauth_21` for focused testing)
 - Execute commands in logical sequence when multiple steps are required
 - Capture and report command output for downstream analysis
 - Apply retry logic for transient failures (cache clearing, network issues)
@@ -87,7 +87,7 @@ As the primary command executor, you frequently receive delegation requests from
 ```markdown
 I executed the PHPUnit tests and found 3 failing tests. I need to delegate analysis to testing-qa-engineer:
 
-**Context**: Ran "vendor/bin/phpunit --group proxy_block" after code changes
+**Context**: Ran "vendor/bin/phpunit --group simple_oauth_21" after code changes
 **Delegation**: Analyze test failures and determine root cause
 **Expected outcome**: Understanding of why tests failed and action plan
 **Integration**: Will execute any additional commands needed for fixes
@@ -102,7 +102,7 @@ After running phpcs, I found code style violations. I need to delegate to drupal
 **Integration**: Will re-run phpcs to verify fixes
 ```
 
-**Proxy Block Module Common Commands:**
+**Simple OAuth 2.1 Module Common Commands:**
 
 ### Drupal Commands
 
@@ -114,9 +114,9 @@ vendor/bin/drush
 vendor/bin/drush cache:rebuild
 vendor/bin/drush cr
 
-# Enable/disable the proxy_block module
-vendor/bin/drush pm:enable proxy_block
-vendor/bin/drush pm:uninstall proxy_block
+# Enable/disable the simple_oauth_21 module
+vendor/bin/drush pm:enable simple_oauth_21
+vendor/bin/drush pm:uninstall simple_oauth_21
 
 # Export/import configuration
 vendor/bin/drush config:export
@@ -126,8 +126,8 @@ vendor/bin/drush config:import
 ### PHP Code Quality
 
 ```bash
-php ../../../../vendor/bin/phpcs --ignore='vendor/*,node_modules/*' --standard=Drupal,DrupalPractice --extensions=php,module/php,install/php,inc/php,yml web/modules/contrib/proxy_block
-php ../../../../vendor/bin/phpcbf --ignore='vendor/*,node_modules/*' --standard=Drupal,DrupalPractice --extensions=php,module/php,install/php,inc/php,yml web/modules/contrib/proxy_block
+php ../../../../vendor/bin/phpcs --ignore='vendor/*,node_modules/*' --standard=Drupal,DrupalPractice --extensions=php,module/php,install/php,inc/php,yml web/modules/contrib/simple_oauth_21
+php ../../../../vendor/bin/phpcbf --ignore='vendor/*,node_modules/*' --standard=Drupal,DrupalPractice --extensions=php,module/php,install/php,inc/php,yml web/modules/contrib/simple_oauth_21
 ```
 
 ### Development Workflow
@@ -135,7 +135,7 @@ php ../../../../vendor/bin/phpcbf --ignore='vendor/*,node_modules/*' --standard=
 1. **Make changes** to `ProxyBlock.php`
 2. **Clear cache**: `vendor/bin/drush cr`
 3. **Test changes** through Drupal's block placement UI
-4. **Run tests**: `vendor/bin/phpunit --group proxy_block`
+4. **Run tests**: `vendor/bin/phpunit --group simple_oauth_21`
 5. **Validate code**: `composer run-script lint:check` and `npm run check`
 
 ### Code Quality Commands
@@ -168,7 +168,7 @@ composer run-script release
 ### PHPStan Static Analysis
 
 ```bash
-php vendor/bin/phpstan.phar --configuration=web/modules/contrib/proxy_block/phpstan.neon
+php vendor/bin/phpstan.phar --configuration=web/modules/contrib/simple_oauth_21/phpstan.neon
 ```
 
 **ALWAYS** remember to lint the code base before pushing code.

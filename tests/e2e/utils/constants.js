@@ -24,17 +24,17 @@ const TEST_DATA = {
   },
   content: {
     page: {
-      title: 'Test Page for Proxy Block',
-      body: 'This is a test page created for Proxy Block E2E testing.',
+      title: 'Test Page for Simple OAuth 2.1',
+      body: 'This is a test page created for Simple OAuth 2.1 E2E testing.',
     },
     article: {
-      title: 'Test Article for Proxy Block',
-      body: 'This is a test article created for Proxy Block E2E testing.',
+      title: 'Test Article for Simple OAuth 2.1',
+      body: 'This is a test article created for Simple OAuth 2.1 E2E testing.',
     },
   },
   blocks: {
     proxyBlock: {
-      title: 'Test Proxy Block',
+      title: 'Test Simple OAuth 2.1',
       region: 'content',
     },
     targetBlocks: [
@@ -65,7 +65,7 @@ const SELECTORS = {
     required: '.required, [required]',
   },
   blocks: {
-    proxyBlock: '[data-block-plugin-id*="proxy_block"]',
+    proxyBlock: '[data-block-plugin-id*="simple_oauth_21"]',
     blockContent: '.block-content',
     blockTitle: 'h2, .block-title',
   },
@@ -91,22 +91,22 @@ const ENVIRONMENT = {
 };
 
 /**
- * Proxy Block specific test data.
+ * Simple OAuth 2.1 specific test data.
  */
 const PROXY_BLOCK_DATA = {
   configurations: [
     {
-      name: 'Simple Proxy Block',
+      name: 'Simple Simple OAuth 2.1',
       targetBlock: 'system_powered_by_block',
       expectedContent: 'Powered by',
     },
     {
-      name: 'Branding Proxy Block',
+      name: 'Branding Simple OAuth 2.1',
       targetBlock: 'system_branding_block',
       expectedContent: 'Drupal',
     },
     {
-      name: 'Page Title Proxy Block',
+      name: 'Page Title Simple OAuth 2.1',
       targetBlock: 'page_title_block',
       expectedContent: '',
     },

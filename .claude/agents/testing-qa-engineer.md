@@ -105,27 +105,27 @@ I need to delegate this subtask to task-orchestrator:
 **Integration**: Proceed with browser test execution on clean cache
 ```
 
-**Proxy Block Module Testing Context:**
+**Simple OAuth 2.1 Module Testing Context:**
 
 ### Testing Commands
 
 #### PHPUnit Testing
 
 ```bash
-# Run all tests for the proxy_block module
-vendor/bin/phpunit --debug -c web/core/phpunit.xml.dist web/modules/contrib/proxy_block/tests
+# Run all tests for the simple_oauth_21 module
+vendor/bin/phpunit --debug -c web/core/phpunit.xml.dist web/modules/contrib/simple_oauth_21/tests
 
 # Run specific test groups
-vendor/bin/phpunit --debug -c web/core/phpunit.xml.dist --group proxy_block
+vendor/bin/phpunit --debug -c web/core/phpunit.xml.dist --group simple_oauth_21
 
 # Run specific test types
-vendor/bin/phpunit --debug -c web/core/phpunit.xml.dist web/modules/contrib/proxy_block/tests/src/Unit/
-vendor/bin/phpunit --debug -c web/core/phpunit.xml.dist web/modules/contrib/proxy_block/tests/src/Kernel/
-vendor/bin/phpunit --debug -c web/core/phpunit.xml.dist web/modules/contrib/proxy_block/tests/src/Functional/
-vendor/bin/phpunit --debug -c web/core/phpunit.xml.dist web/modules/contrib/proxy_block/tests/src/FunctionalJavascript/
+vendor/bin/phpunit --debug -c web/core/phpunit.xml.dist web/modules/contrib/simple_oauth_21/tests/src/Unit/
+vendor/bin/phpunit --debug -c web/core/phpunit.xml.dist web/modules/contrib/simple_oauth_21/tests/src/Kernel/
+vendor/bin/phpunit --debug -c web/core/phpunit.xml.dist web/modules/contrib/simple_oauth_21/tests/src/Functional/
+vendor/bin/phpunit --debug -c web/core/phpunit.xml.dist web/modules/contrib/simple_oauth_21/tests/src/FunctionalJavascript/
 
 # Run with testdox output for readable results
-vendor/bin/phpunit --debug -c web/core/phpunit.xml.dist --testdox web/modules/contrib/proxy_block/tests
+vendor/bin/phpunit --debug -c web/core/phpunit.xml.dist --testdox web/modules/contrib/simple_oauth_21/tests
 ```
 
 #### Important Testing Notes

@@ -1,6 +1,6 @@
 # End-to-End (E2E) Tests
 
-This directory contains Playwright-based end-to-end tests for the Proxy Block module, providing comprehensive browser-based testing of the module's functionality within a complete Drupal environment.
+This directory contains Playwright-based end-to-end tests for the Simple OAuth 2.1 module, providing comprehensive browser-based testing of the module's functionality within a complete Drupal environment.
 
 ## Test Architecture
 
@@ -17,7 +17,7 @@ tests/e2e/
 │   ├── block-placement.spec.js    # Block placement functionality
 │   ├── ci-basic.spec.js           # CI-compatible infrastructure tests
 │   ├── login-debug.spec.js        # Login debugging and troubleshooting
-│   ├── proxy-block-basic.spec.js  # Core proxy block functionality
+│   ├── proxy-block-basic.spec.js  # Core Simple OAuth 2.1 functionality
 │   ├── render.spec.js             # Block rendering validation
 │   └── simple.spec.js             # Infrastructure validation
 └── utils/                  # Helper utilities and test setup
@@ -49,7 +49,7 @@ tests/e2e/
 
 **Files**: `auth-simple.spec.js`, `auth.spec.js`, `login-debug.spec.js`
 
-**Purpose**: Provide authentication helpers for proxy block testing without validating Drupal core functionality.
+**Purpose**: Provide authentication helpers for Simple OAuth 2.1 testing without validating Drupal core functionality.
 
 - **Authentication Helpers**: Utilities for logging in/out for test setup
 - **Debug Utilities**: Troubleshoot authentication issues in different environments
@@ -60,23 +60,23 @@ tests/e2e/
 
 **Files**: `block-placement.spec.js`, `proxy-block-basic.spec.js`
 
-**Purpose**: Test the core proxy block functionality focusing on module-specific features.
+**Purpose**: Test the core Simple OAuth 2.1 functionality focusing on module-specific features.
 
-- **Configuration UI**: Validate proxy block configuration form and unique settings
+- **Configuration UI**: Validate Simple OAuth 2.1 configuration form and unique settings
 - **Target Block Selection**: Test dropdown functionality and AJAX updates specific to proxy blocks
-- **Context Mapping**: Verify context passing to target blocks (key proxy block functionality)
+- **Context Mapping**: Verify context passing to target blocks (key Simple OAuth 2.1 functionality)
 - **Proxy-Specific Logic**: Test edge cases and error handling unique to proxy blocks
 
-**Environment Requirements**: Drupal site with proxy_block module enabled and admin access.
+**Environment Requirements**: Drupal site with simple_oauth_21 module enabled and admin access.
 
 ### Rendering Tests
 
 **Files**: `render.spec.js`
 
-**Purpose**: Validate proxy block rendering functionality and target block integration.
+**Purpose**: Validate Simple OAuth 2.1 rendering functionality and target block integration.
 
-- **Frontend Display**: Test proxy block output renders target block content correctly
-- **Content Validation**: Verify target block content appears within proxy block wrapper
+- **Frontend Display**: Test Simple OAuth 2.1 output renders target block content correctly
+- **Content Validation**: Verify target block content appears within Simple OAuth 2.1 wrapper
 - **Edge Cases**: Test rendering with different target blocks, contexts, and configurations
 
 **Environment Requirements**: Complete Drupal site with content and proxy blocks configured.
@@ -111,10 +111,10 @@ The following utilities could be valuable additions to `@lullabot/playwright-dru
 - `console-helper.js`: Browser console error filtering and categorization
 - `drush-helper.js`: Drupal command-line utilities for test environments
 
-**Module-Specific Utilities** (keep in proxy_block):
+**Module-Specific Utilities** (keep in simple_oauth_21):
 
-- Block placement page objects and proxy block configuration helpers
-- Proxy block specific test constants and validation utilities
+- Block placement page objects and Simple OAuth 2.1 configuration helpers
+- Simple OAuth 2.1 specific test constants and validation utilities
 
 ## Running Tests
 
@@ -161,7 +161,7 @@ Tests automatically detect the environment and configure accordingly:
 
 **Authentication Failures**: Verify admin user exists and has correct credentials using `login-debug.spec.js`.
 
-**Module Not Found**: Ensure proxy_block module is enabled in the test environment.
+**Module Not Found**: Ensure simple_oauth_21 module is enabled in the test environment.
 
 **AJAX Interactions Fail**: Check console errors and use `ajax-helper.js` utilities instead of fixed timeouts.
 
@@ -222,4 +222,4 @@ The E2E tests are integrated into the module's CI/CD pipeline:
 - **Scheduled**: Complete test suite runs daily to catch environment drift
 - **Artifacts**: Test reports, screenshots, and videos are preserved for debugging
 
-This comprehensive E2E testing framework ensures the Proxy Block module works reliably across different Drupal environments and configurations.
+This comprehensive E2E testing framework ensures the Simple OAuth 2.1 module works reliably across different Drupal environments and configurations.

@@ -38,8 +38,8 @@ async function createUniqueAdminUser(testName = 'default') {
  * @return {Object} User credentials used
  */
 async function setupUniqueAdminUser(page, testName = 'default') {
-  // Enable proxy_block module first
-  await execDrushInTestSite('pm:enable proxy_block -y');
+  // Enable simple_oauth_21 module first
+  await execDrushInTestSite('pm:enable simple_oauth_21 -y');
 
   // Create unique user
   const user = await createUniqueAdminUser(testName);

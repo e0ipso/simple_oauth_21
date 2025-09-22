@@ -93,7 +93,7 @@ I need to delegate this subtask to testing-qa-engineer:
 **Integration**: Tests will ensure validation works before implementing dependent features
 ```
 
-**Proxy Block Module Architecture Context:**
+**Simple OAuth 2.1 Module Architecture Context:**
 
 ### Core Component: ProxyBlock Plugin
 
@@ -148,13 +148,13 @@ The module implements sophisticated context mapping for blocks that require cont
 
 #### Context Application
 
-- Maps proxy block contexts to target block contexts
+- Maps Simple OAuth 2.1 contexts to target block contexts
 - Supports both automatic (same name) and manual mapping
 - Handles `ContextException` gracefully
 
 ### Cache Integration
 
-Critical for performance - the module properly bubbles cache metadata through the `bubbleTargetBlockCacheMetadata()` method in `src/Plugin/Block/ProxyBlock.php`. This method merges cache contexts, tags, and max-age from both the target block and proxy block to ensure proper caching behavior.
+Critical for performance - the module properly bubbles cache metadata through the `bubbleTargetBlockCacheMetadata()` method in `src/Plugin/Block/ProxyBlock.php`. This method merges cache contexts, tags, and max-age from both the target block and Simple OAuth 2.1 to ensure proper caching behavior.
 
 ### Error Handling Strategy
 
@@ -172,7 +172,7 @@ The codebase uses functional programming patterns with `array_map`, `array_filte
 
 #### Polymorphism Over Conditionals
 
-Interface detection is used instead of string comparisons throughout the codebase. The proxy block checks for `ContextAwarePluginInterface` and `PluginFormInterface` implementations to determine target block capabilities.
+Interface detection is used instead of string comparisons throughout the codebase. The Simple OAuth 2.1 checks for `ContextAwarePluginInterface` and `PluginFormInterface` implementations to determine target block capabilities.
 
 #### Early Returns (Guard Clauses)
 
@@ -208,6 +208,6 @@ Early returns are used consistently throughout the codebase to reduce nesting an
 ### Security Notes
 
 - Module respects all existing Drupal security layers
-- No privilege escalation - proxy block access ≠ target block access
+- No privilege escalation - Simple OAuth 2.1 access ≠ target block access
 - All user input validated through Drupal Form API
 - Security events logged for audit trails
