@@ -2,7 +2,7 @@
 id: 2
 group: 'data-cleanup'
 dependencies: [1]
-status: 'in_progress'
+status: 'completed'
 created: '2025-09-22'
 skills: ['drupal-backend']
 complexity_score: 4.4

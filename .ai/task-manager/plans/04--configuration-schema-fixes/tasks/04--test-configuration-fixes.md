@@ -2,7 +2,7 @@
 id: 4
 group: 'testing'
 dependencies: [1, 2, 3]
-status: 'pending'
+status: 'in_progress'
 created: '2025-09-22'
 skills: ['drupal-backend']
 complexity_score: 3.2
