@@ -102,14 +102,57 @@ class OpenIdConfigurationFunctionalTest extends BrowserTestBase {
       try {
         $route = $route_provider->getRouteByName('simple_oauth_server_metadata.openid_configuration');
         $this->logDebug('Route found in route provider: ' . $route->getPath());
+        $this->logDebug('Route controller: ' . $route->getDefault('_controller'));
+        $this->logDebug('Route access: ' . $route->getRequirement('_access'));
       }
       catch (\Exception $e) {
         $this->logDebug('Route not found in route provider: ' . $e->getMessage());
       }
 
+      // Check if the service exists.
+      try {
+        $service = $this->container->get('simple_oauth_server_metadata.openid_configuration');
+        $this->logDebug('OpenID configuration service exists: ' . get_class($service));
+
+        // Try to call the service method directly.
+        try {
+          $config = $service->getOpenIdConfiguration();
+          $this->logDebug('Service call succeeded, config keys: ' . implode(', ', array_keys($config)));
+        }
+        catch (\Exception $service_e) {
+          $this->logDebug('Service call failed: ' . $service_e->getMessage());
+          $this->logDebug('Service exception type: ' . get_class($service_e));
+        }
+      }
+      catch (\Exception $e) {
+        $this->logDebug('OpenID configuration service NOT found: ' . $e->getMessage());
+      }
+
+      // Test if the working route also works.
+      $this->logDebug('Testing if oauth-authorization-server route works');
+      $this->drupalGet('/.well-known/oauth-authorization-server');
+      $working_status = $this->getSession()->getStatusCode();
+      $this->logDebug('OAuth authorization server route status: ' . $working_status);
+
       // Check if routing.yml is loaded.
       $module_handler = $this->container->get('module_handler');
       $this->logDebug('Module simple_oauth_server_metadata enabled: ' . ($module_handler->moduleExists('simple_oauth_server_metadata') ? 'yes' : 'no'));
+
+      // Check if OpenID Connect is disabled in simple_oauth.
+      $simple_oauth_config = $this->config('simple_oauth.settings');
+      $openid_disabled = $simple_oauth_config->get('disable_openid_connect');
+      $this->logDebug('OpenID Connect disabled in simple_oauth: ' . ($openid_disabled ? 'yes' : 'no'));
+
+      // Test controller creation directly.
+      try {
+        $controller = $this->container->get('simple_oauth_server_metadata.openid_configuration');
+        $response = $controller->getOpenIdConfiguration();
+        $this->logDebug('Direct controller call succeeded with ' . count($response) . ' keys');
+      }
+      catch (\Exception $controller_e) {
+        $this->logDebug('Direct controller call failed: ' . $controller_e->getMessage());
+        $this->logDebug('Controller exception type: ' . get_class($controller_e));
+      }
     }
 
     // The route should exist (not 404) - it may return 200, 503, or another
