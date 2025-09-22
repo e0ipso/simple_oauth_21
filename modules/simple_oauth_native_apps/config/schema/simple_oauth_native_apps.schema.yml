@@ -48,14 +48,14 @@ simple_oauth_native_apps.settings:
           description: 'Allow custom URI schemes for native app redirects (e.g., myapp://callback)'
           constraints:
             Choice:
-              choices: ['auto-detect', 'native', 'web']
+              choices: ['auto-detect', 'native', 'web', '1', '0']
         loopback_redirects:
           type: string
           label: 'Allow loopback redirects'
           description: 'Allow loopback IP redirects for native applications (RFC 8252)'
           constraints:
             Choice:
-              choices: ['auto-detect', 'native', 'web']
+              choices: ['auto-detect', 'native', 'web', '1', '0']
     native:
       type: mapping
       label: 'Native app specific settings'
@@ -74,6 +74,19 @@ simple_oauth_native_apps.settings:
           constraints:
             Choice:
               choices: ['off', 'S256', 'plain']
+    # Legacy fields for backward compatibility
+    enhanced_pkce_for_native:
+      type: boolean
+      label: 'Enhanced PKCE for native apps (legacy)'
+      description: 'Legacy boolean setting for enhanced PKCE'
+    allow_custom_uri_schemes:
+      type: boolean
+      label: 'Allow custom URI schemes (legacy)'
+      description: 'Legacy boolean setting for custom URI schemes'
+    allow_loopback_redirects:
+      type: boolean
+      label: 'Allow loopback redirects (legacy)'
+      description: 'Legacy boolean setting for loopback redirects'
     log:
       type: mapping
       label: 'Logging settings'
@@ -91,6 +104,10 @@ simple_oauth_native_apps.consumer.*:
   type: config_object
   label: 'Consumer-specific Native Apps Settings'
   mapping:
+    client_detection:
+      type: mapping
+      label: 'Client detection results'
+      description: 'Automatically detected client characteristics'
     webview_detection_override:
       type: string
       label: 'WebView detection policy override'
