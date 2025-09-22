@@ -1,7 +1,14 @@
 ---
 name: github-modes
 description: Comprehensive GitHub integration modes for workflow orchestration, PR management, and repository coordination with batch optimization
-tools: mcp__claude-flow__swarm_init, mcp__claude-flow__agent_spawn, mcp__claude-flow__task_orchestrate, Bash, TodoWrite, Read, Write
+tools:
+  - mcp__claude-flow__swarm_init
+  - mcp__claude-flow__agent_spawn
+  - mcp__claude-flow__task_orchestrate
+  - Bash
+  - TodoWrite
+  - Read
+  - Write
 color: purple
 type: development
 capabilities:
