@@ -17,7 +17,11 @@
     "phpstan/extension-installer": "^1.4"
   },
   "scripts": {
-    "lint:check": "php ./vendor/bin/phpcs --ignore=vendor/*,node_modules/* --standard=Drupal,DrupalPractice --extensions=php,module/php,install/php,inc/php,yml .",
+    "syntax:check": "find . -type f \\( -name '*.php' -o -name '*.module' -o -name '*.install' \\) ! -path './vendor/*' ! -path './node_modules/*' -exec php -l {} + | grep -v 'No syntax errors detected' || echo 'All PHP files have valid syntax'",
+    "lint:check": [
+      "@syntax:check",
+      "php ./vendor/bin/phpcs --ignore=vendor/*,node_modules/* --standard=Drupal,DrupalPractice --extensions=php,module/php,install/php,inc/php,yml ."
+    ],
     "lint:fix": "php ./vendor/bin/phpcbf --ignore=vendor/*,node_modules/* --standard=Drupal,DrupalPractice --extensions=php,module/php,install/php,inc/php,yml .",
     "release": "npm run semantic-release"
   },
