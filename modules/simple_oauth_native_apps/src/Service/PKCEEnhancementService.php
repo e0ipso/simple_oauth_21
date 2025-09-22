@@ -490,7 +490,7 @@ class PKCEEnhancementService {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
     return [
-      'enhanced_pkce_enabled' => $config->get('native.enhanced_pkce') ?? TRUE,
+      'enhanced_pkce_enabled' => (bool) ($config->get('native.enhanced_pkce') ?? TRUE),
       'enforce_method' => $config->get('native.enforce', 'off'),
       'minimum_entropy_bits' => self::MINIMUM_ENTROPY_BITS,
       'log_validations' => FALSE,
