@@ -63,10 +63,18 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     $this->clearAllTestCaches();
     $this->logDebug('Test caches cleared');
 
-    // Log enabled modules for debugging
+    // Log enabled modules for debugging.
     $module_handler = $this->container->get('module_handler');
     $enabled_oauth_modules = [];
-    foreach (['simple_oauth', 'simple_oauth_21', 'simple_oauth_client_registration', 'simple_oauth_server_metadata', 'simple_oauth_pkce', 'simple_oauth_native_apps'] as $module) {
+    $modules_to_check = [
+      'simple_oauth',
+      'simple_oauth_21',
+      'simple_oauth_client_registration',
+      'simple_oauth_server_metadata',
+      'simple_oauth_pkce',
+      'simple_oauth_native_apps',
+    ];
+    foreach ($modules_to_check as $module) {
       if ($module_handler->moduleExists($module)) {
         $enabled_oauth_modules[] = $module;
       }
