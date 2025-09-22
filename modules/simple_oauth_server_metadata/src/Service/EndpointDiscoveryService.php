@@ -72,19 +72,56 @@ class EndpointDiscoveryService {
   }
 
   /**
+   * Gets the registration endpoint URL if available.
+   *
+   * @return string|null
+   *   The registration endpoint URL, or NULL if not available.
+   */
+  public function getRegistrationEndpoint(): ?string {
+    try {
+      return Url::fromRoute('simple_oauth_client_registration.register')->setAbsolute()->toString();
+    }
+    catch (\Exception $e) {
+      // Route doesn't exist, return NULL.
+      return NULL;
+    }
+  }
+
+  /**
+   * Gets the OAuth server metadata endpoint URL.
+   *
+   * @return string
+   *   The OAuth server metadata endpoint URL.
+   */
+  public function getOauthServerMetadataEndpoint(): string {
+    return Url::fromRoute('simple_oauth.server_metadata')->setAbsolute()->toString();
+  }
+
+  /**
    * Gets all core endpoints.
    *
    * @return array
    *   An array of core OAuth 2.0 endpoints.
    */
   public function getCoreEndpoints(): array {
-    return [
+    $endpoints = [
       'issuer' => $this->getIssuer(),
       'authorization_endpoint' => $this->getAuthorizationEndpoint(),
       'token_endpoint' => $this->getTokenEndpoint(),
       'jwks_uri' => $this->getJwksUri(),
       'userinfo_endpoint' => $this->getUserInfoEndpoint(),
     ];
+
+    // Add optional endpoints when available.
+    $registration_endpoint = $this->getRegistrationEndpoint();
+    if ($registration_endpoint !== NULL) {
+      $endpoints['registration_endpoint'] = $registration_endpoint;
+    }
+
+    // Add OAuth server metadata endpoint.
+    $endpoints['oauth_authorization_server_metadata_endpoint'] = $this->getOauthServerMetadataEndpoint();
+
+    return $endpoints;
   }
 
 }

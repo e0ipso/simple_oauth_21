@@ -11,6 +11,19 @@ simple_oauth_server_metadata.resource_metadata:
     _format: 'json'
     no_cache: FALSE
 
+simple_oauth_server_metadata.openid_configuration:
+  path: '/.well-known/openid-configuration'
+  defaults:
+    _controller: '\Drupal\simple_oauth_server_metadata\Controller\OpenIdConfigurationController'
+    _title: 'OpenID Connect Discovery'
+  methods: [GET]
+  requirements:
+    # OpenID Connect Discovery endpoint must be publicly accessible for client discovery.
+    _access: 'TRUE'
+  options:
+    _format: 'json'
+    no_cache: FALSE
+
 simple_oauth_server_metadata.settings:
   path: '/admin/config/people/simple_oauth/oauth-21/server-metadata'
   defaults:

@@ -56,3 +56,15 @@ simple_oauth_server_metadata.settings:
       type: uri
       label: 'Resource Terms of Service URI'
       description: 'URL for the protected resource server terms of service'
+    response_types_supported:
+      type: sequence
+      label: 'Supported Response Types'
+      description: 'OAuth 2.0 response types supported by the authorization server'
+      sequence:
+        type: string
+    response_modes_supported:
+      type: sequence
+      label: 'Supported Response Modes'
+      description: 'OAuth 2.0 response modes supported by the authorization server'
+      sequence:
+        type: string
