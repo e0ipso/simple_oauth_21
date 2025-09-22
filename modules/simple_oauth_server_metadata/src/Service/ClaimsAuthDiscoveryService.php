@@ -120,6 +120,31 @@ class ClaimsAuthDiscoveryService {
   }
 
   /**
+   * Checks if request parameter is supported.
+   *
+   * @return bool
+   *   TRUE if request parameter is supported, FALSE otherwise.
+   */
+  public function getRequestParameterSupported(): bool {
+    // Request parameter support depends on the authorization endpoint's
+    // ability to handle request objects passed by value.
+    // For now, return FALSE as Simple OAuth doesn't explicitly support this.
+    return FALSE;
+  }
+
+  /**
+   * Checks if claims parameter is supported.
+   *
+   * @return bool
+   *   TRUE if claims parameter is supported, FALSE otherwise.
+   */
+  public function getClaimsParameterSupported(): bool {
+    // Claims parameter support is available when OpenID Connect is enabled
+    // and the authorization endpoint can process claims requests.
+    return $this->isOpenIdConnectEnabled();
+  }
+
+  /**
    * Checks if request URI registration is required.
    *
    * @return bool
@@ -129,6 +154,55 @@ class ClaimsAuthDiscoveryService {
     // Since request URI parameter is not supported, registration is not
     // required.
     return FALSE;
+  }
+
+  /**
+   * Gets supported claims locales.
+   *
+   * @return array|null
+   *   Array of supported claims locales, or NULL if not supported.
+   */
+  public function getClaimsLocalesSupported(): ?array {
+    // Claims locales support depends on internationalization capabilities.
+    // For now, return NULL as Simple OAuth doesn't explicitly support this.
+    return NULL;
+  }
+
+  /**
+   * Checks if authorization code flow is enabled.
+   *
+   * @return bool
+   *   TRUE if authorization code flow is enabled, FALSE otherwise.
+   */
+  public function getAuthorizationCodeFlowEnabled(): bool {
+    // Authorization code flow is the core OAuth 2.0 flow and should always
+    // be enabled in Simple OAuth.
+    return TRUE;
+  }
+
+  /**
+   * Checks if implicit flow is enabled.
+   *
+   * @return bool
+   *   TRUE if implicit flow is enabled, FALSE otherwise.
+   */
+  public function getImplicitFlowEnabled(): bool {
+    // Implicit flow support can be determined by checking if 'token' and
+    // 'id_token' response types are supported.
+    // For OAuth 2.1 compliance, implicit flow should be discouraged.
+    return TRUE;
+  }
+
+  /**
+   * Checks if scopes parameter is supported.
+   *
+   * @return bool
+   *   TRUE if scopes parameter is supported, FALSE otherwise.
+   */
+  public function getScopesParameterSupported(): bool {
+    // Scopes parameter is a fundamental part of OAuth 2.0 and should
+    // always be supported.
+    return TRUE;
   }
 
   /**

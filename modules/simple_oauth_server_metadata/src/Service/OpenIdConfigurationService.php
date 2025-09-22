@@ -71,7 +71,27 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
       'code_challenge_methods_supported' => $this->claimsAuthDiscoveryService->getCodeChallengeMethodsSupported(),
       'request_uri_parameter_supported' => $this->claimsAuthDiscoveryService->getRequestUriParameterSupported(),
       'require_request_uri_registration' => $this->claimsAuthDiscoveryService->getRequireRequestUriRegistration(),
+
+      // Enhanced capabilities and endpoints.
+      'request_parameter_supported' => $this->claimsAuthDiscoveryService->getRequestParameterSupported(),
+      'claims_parameter_supported' => $this->claimsAuthDiscoveryService->getClaimsParameterSupported(),
+      'scopes_parameter_supported' => $this->claimsAuthDiscoveryService->getScopesParameterSupported(),
+      'authorization_code_flow_enabled' => $this->claimsAuthDiscoveryService->getAuthorizationCodeFlowEnabled(),
+      'implicit_flow_enabled' => $this->claimsAuthDiscoveryService->getImplicitFlowEnabled(),
+      'oauth_authorization_server_metadata_endpoint' => $this->endpointDiscoveryService->getOauthServerMetadataEndpoint(),
     ];
+
+    // Add registration endpoint if available.
+    $registration_endpoint = $this->endpointDiscoveryService->getRegistrationEndpoint();
+    if ($registration_endpoint !== NULL) {
+      $metadata['registration_endpoint'] = $registration_endpoint;
+    }
+
+    // Add claims locales if supported.
+    $claims_locales = $this->claimsAuthDiscoveryService->getClaimsLocalesSupported();
+    if ($claims_locales !== NULL && !empty($claims_locales)) {
+      $metadata['claims_locales_supported'] = $claims_locales;
+    }
 
     // Add optional configured endpoints and URIs.
     $optional_fields = [
