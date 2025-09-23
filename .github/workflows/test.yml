@@ -144,6 +144,10 @@ jobs:
           # Enable test modules that are required by the tests
           vendor/bin/drush pm:enable simple_oauth_test --yes || echo "simple_oauth_test not available"
 
+          # Ensure OpenID Connect is enabled for functional tests
+          vendor/bin/drush config:set simple_oauth.settings disable_openid_connect false --yes
+          vendor/bin/drush cache:rebuild
+
       - name: Copy deprecation ignore file
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: cp web/core/.deprecation-ignore.txt .
