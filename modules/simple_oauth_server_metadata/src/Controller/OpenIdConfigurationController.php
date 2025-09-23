@@ -29,14 +29,14 @@ class OpenIdConfigurationController extends ControllerBase {
     ConfigFactoryInterface $configFactory,
   ) {
     $this->configFactory = $configFactory;
-    \Drupal::logger('simple_oauth_server_metadata')->debug('🏗️ OpenIdConfigurationController::__construct() completed');
+    // Constructor debugging will be handled in configuration() method
   }
 
   /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container) {
-    \Drupal::logger('simple_oauth_server_metadata')->debug('🏗️ OpenIdConfigurationController::create() called - instantiating controller');
+    // Static method debugging will be handled in configuration() method
     return new self(
       $container->get('simple_oauth_server_metadata.openid_configuration'),
       $container->get('config.factory')
@@ -54,7 +54,7 @@ class OpenIdConfigurationController extends ControllerBase {
    */
   public function configuration(): CacheableJsonResponse {
     // Log that controller is being invoked.
-    $this->getLogger('simple_oauth_server_metadata')->debug('🚀 OpenIdConfigurationController::configuration() STARTED - Controller method invoked');
+    $this->getLogger('simple_oauth_server_metadata')->debug('🚀 OpenIdConfigurationController::configuration() STARTED - Controller instantiated and method invoked');
 
     // Check if OpenID Connect is enabled in simple_oauth module.
     $simple_oauth_config = $this->configFactory->get('simple_oauth.settings');
