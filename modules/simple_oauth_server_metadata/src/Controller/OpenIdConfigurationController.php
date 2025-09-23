@@ -29,12 +29,14 @@ class OpenIdConfigurationController extends ControllerBase {
     ConfigFactoryInterface $configFactory,
   ) {
     $this->configFactory = $configFactory;
+    \Drupal::logger('simple_oauth_server_metadata')->debug('🏗️ OpenIdConfigurationController::__construct() completed');
   }
 
   /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container) {
+    \Drupal::logger('simple_oauth_server_metadata')->debug('🏗️ OpenIdConfigurationController::create() called - instantiating controller');
     return new self(
       $container->get('simple_oauth_server_metadata.openid_configuration'),
       $container->get('config.factory')
@@ -52,22 +54,27 @@ class OpenIdConfigurationController extends ControllerBase {
    */
   public function configuration(): CacheableJsonResponse {
     // Log that controller is being invoked.
-    $this->getLogger('simple_oauth_server_metadata')->debug('OpenIdConfigurationController invoked');
+    $this->getLogger('simple_oauth_server_metadata')->debug('🚀 OpenIdConfigurationController::configuration() STARTED - Controller method invoked');
 
     // Check if OpenID Connect is enabled in simple_oauth module.
     $simple_oauth_config = $this->configFactory->get('simple_oauth.settings');
     $is_disabled = $simple_oauth_config->get('disable_openid_connect');
-    $this->getLogger('simple_oauth_server_metadata')->debug('OpenID Connect disabled: @disabled', ['@disabled' => $is_disabled ? 'true' : 'false']);
+    $this->getLogger('simple_oauth_server_metadata')->debug('🔧 OpenID Connect disabled config value: @disabled', ['@disabled' => $is_disabled ? 'true' : 'false']);
 
     if ($is_disabled) {
-      $this->getLogger('simple_oauth_server_metadata')->debug('Throwing NotFoundHttpException because OpenID Connect is disabled');
+      $this->getLogger('simple_oauth_server_metadata')->debug('❌ OpenID Connect is disabled - throwing NotFoundHttpException');
       throw new NotFoundHttpException('OpenID Connect is not enabled');
     }
 
+    $this->getLogger('simple_oauth_server_metadata')->debug('✅ OpenID Connect is enabled - proceeding to get metadata');
+
     try {
+      $this->getLogger('simple_oauth_server_metadata')->debug('📊 Calling openIdConfigurationService->getOpenIdConfiguration()');
       // Get metadata from service.
       $metadata = $this->openIdConfigurationService->getOpenIdConfiguration();
+      $this->getLogger('simple_oauth_server_metadata')->debug('📊 Service call successful - got @count metadata fields', ['@count' => count($metadata)]);
 
+      $this->getLogger('simple_oauth_server_metadata')->debug('📝 Creating CacheableJsonResponse');
       // Create cacheable JSON response with proper cache metadata.
       $response = new CacheableJsonResponse($metadata);
 
@@ -78,15 +85,17 @@ class OpenIdConfigurationController extends ControllerBase {
       $response->headers->set('Access-Control-Allow-Origin', '*');
       $response->headers->set('Access-Control-Allow-Methods', Request::METHOD_GET);
 
+      $this->getLogger('simple_oauth_server_metadata')->debug('✅ OpenIdConfigurationController::configuration() SUCCESS - returning response with status @status', ['@status' => $response->getStatusCode()]);
       return $response;
     }
     catch (\Exception $e) {
       // Log error for debugging.
       $this->getLogger('simple_oauth_server_metadata')->error(
-        'Error generating OpenID Connect Discovery metadata: @message',
-        ['@message' => $e->getMessage()]
+        '💥 Exception in OpenIdConfigurationController: @message, @trace',
+        ['@message' => $e->getMessage(), '@trace' => $e->getTraceAsString()]
       );
 
+      $this->getLogger('simple_oauth_server_metadata')->debug('❌ Throwing ServiceUnavailableHttpException');
       // Return service unavailable for any errors.
       throw new ServiceUnavailableHttpException(300, 'OpenID Connect Discovery metadata temporarily unavailable');
     }
