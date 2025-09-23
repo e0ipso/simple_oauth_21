@@ -61,6 +61,9 @@ class OpenIdConfigurationFunctionalTest extends BrowserTestBase {
 
     // Clear caches to ensure services are properly initialized.
     drupal_flush_all_caches();
+
+    // Rebuild routes to ensure .well-known routes are properly compiled.
+    \Drupal::service('router.builder')->rebuild();
   }
 
   /**
