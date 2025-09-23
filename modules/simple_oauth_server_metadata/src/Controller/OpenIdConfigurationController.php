@@ -29,14 +29,14 @@ class OpenIdConfigurationController extends ControllerBase {
     ConfigFactoryInterface $configFactory,
   ) {
     $this->configFactory = $configFactory;
-    // Constructor debugging will be handled in configuration() method
+    // Constructor debugging will be handled in configuration() method.
   }
 
   /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container) {
-    // Static method debugging will be handled in configuration() method
+    // Static method debugging will be handled in configuration() method.
     return new self(
       $container->get('simple_oauth_server_metadata.openid_configuration'),
       $container->get('config.factory')
