@@ -50,7 +50,7 @@ class OpenIdConfigurationController extends ControllerBase {
    * @throws \Symfony\Component\HttpKernel\Exception\NotFoundHttpException
    *   When OpenID Connect is disabled.
    */
-  public function __invoke(): CacheableJsonResponse {
+  public function configuration(): CacheableJsonResponse {
     // Log that controller is being invoked.
     $this->getLogger('simple_oauth_server_metadata')->debug('OpenIdConfigurationController invoked');
 

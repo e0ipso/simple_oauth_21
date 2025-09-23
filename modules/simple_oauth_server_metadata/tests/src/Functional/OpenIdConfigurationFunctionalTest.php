@@ -143,15 +143,15 @@ class OpenIdConfigurationFunctionalTest extends BrowserTestBase {
       $openid_disabled = $simple_oauth_config->get('disable_openid_connect');
       $this->logDebug('OpenID Connect disabled in simple_oauth: ' . ($openid_disabled ? 'yes' : 'no'));
 
-      // Test controller creation directly.
+      // Test service creation directly.
       try {
-        $controller = $this->container->get('simple_oauth_server_metadata.openid_configuration');
-        $response = $controller->getOpenIdConfiguration();
-        $this->logDebug('Direct controller call succeeded with ' . count($response) . ' keys');
+        $service = $this->container->get('simple_oauth_server_metadata.openid_configuration');
+        $response = $service->getOpenIdConfiguration();
+        $this->logDebug('Direct service call succeeded with ' . count($response) . ' keys');
       }
-      catch (\Exception $controller_e) {
-        $this->logDebug('Direct controller call failed: ' . $controller_e->getMessage());
-        $this->logDebug('Controller exception type: ' . get_class($controller_e));
+      catch (\Exception $service_e) {
+        $this->logDebug('Direct service call failed: ' . $service_e->getMessage());
+        $this->logDebug('Service exception type: ' . get_class($service_e));
       }
     }
 

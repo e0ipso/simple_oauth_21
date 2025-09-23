@@ -27,7 +27,7 @@ simple_oauth_server_metadata.resource_metadata:
 simple_oauth_server_metadata.openid_configuration:
   path: '/.well-known/openid-configuration'
   defaults:
-    _controller: '\Drupal\simple_oauth_server_metadata\Controller\OpenIdConfigurationController'
+    _controller: '\Drupal\simple_oauth_server_metadata\Controller\OpenIdConfigurationController::configuration'
     _title: 'OpenID Connect Discovery'
   methods: [GET]
   requirements:
