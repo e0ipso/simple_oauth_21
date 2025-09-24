@@ -39,7 +39,7 @@ class ServerMetadataController extends ControllerBase {
    * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   The JSON response containing RFC 8414 metadata.
    */
-  public function metadata(): CacheableJsonResponse {
+  public function __invoke(): CacheableJsonResponse {
     try {
       // Get metadata from service.
       $metadata = $this->serverMetadataService->getServerMetadata();
