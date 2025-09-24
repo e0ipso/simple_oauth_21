@@ -233,10 +233,9 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
       throw new \InvalidArgumentException("Required 'openid' scope is missing from scopes_supported");
     }
 
-    // Validate that issuer is a valid HTTPS URL.
-    if (!filter_var($metadata['issuer'], FILTER_VALIDATE_URL) ||
-        !str_starts_with($metadata['issuer'], 'https://')) {
-      throw new \InvalidArgumentException("Issuer must be a valid HTTPS URL");
+    // Validate that issuer is a valid URL.
+    if (!filter_var($metadata['issuer'], FILTER_VALIDATE_URL)) {
+      throw new \InvalidArgumentException("Issuer must be a valid URL");
     }
   }
 

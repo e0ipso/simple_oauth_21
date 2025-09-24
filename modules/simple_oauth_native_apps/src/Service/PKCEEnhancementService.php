@@ -212,6 +212,14 @@ class PKCEEnhancementService {
 
     // Native clients must use S256 if enforcement is enabled.
     $enforced_method = $config->get('native.enforce', 'off');
+
+    // Defensive programming: validate config value before use.
+    if (empty($enforced_method) || !in_array($enforced_method, ['off', 'S256', 'plain'], TRUE)) {
+      // Fallback to safe default if config is invalid/missing.
+      $enforced_method = 'S256';
+      $this->logger->warning('Invalid or missing native.enforce configuration, falling back to S256');
+    }
+
     if ($is_native && $enforced_method !== 'off' && $method !== $enforced_method) {
       $result['valid'] = FALSE;
       $result['errors'][] = "Native clients must use {$enforced_method} challenge method";
@@ -490,7 +498,7 @@ class PKCEEnhancementService {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
     return [
-      'enhanced_pkce_enabled' => $config->get('native.enhanced_pkce') ?? TRUE,
+      'enhanced_pkce_enabled' => (bool) ($config->get('native.enhanced_pkce') ?? TRUE),
       'enforce_method' => $config->get('native.enforce', 'off'),
       'minimum_entropy_bits' => self::MINIMUM_ENTROPY_BITS,
       'log_validations' => FALSE,

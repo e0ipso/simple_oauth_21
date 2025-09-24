@@ -100,6 +100,19 @@ class ConsumerNativeAppsFormAlter {
     /** @var \Drupal\consumers\Entity\ConsumerInterface $consumer */
     $consumer = $form_state->getFormObject()->getEntity();
 
+    // Modify the confidential field description to warn about auto-detection.
+    if (isset($form['confidential'])) {
+      $original_description = $form['confidential']['widget']['value']['#description'] ?? '';
+      $additional_info = $this->t('<strong>Native Apps:</strong> Confidential consumers will be auto-detected as Web applications. Native apps (mobile/desktop/terminal) should typically be Public clients.');
+
+      if (empty($original_description)) {
+        $form['confidential']['widget']['value']['#description'] = $additional_info;
+      }
+      else {
+        $form['confidential']['widget']['value']['#description'] = $original_description . '<br><br>' . $additional_info;
+      }
+    }
+
     // Get global settings for defaults.
     $global_config = $this->configFactory->get('simple_oauth_native_apps.settings');
 

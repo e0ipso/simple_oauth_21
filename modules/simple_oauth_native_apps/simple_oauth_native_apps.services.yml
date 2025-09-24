@@ -72,3 +72,10 @@ services:
       - '@entity_type.manager'
     tags:
       - { name: event_subscriber }
+
+  simple_oauth_native_apps.exception_subscriber:
+    class: Drupal\simple_oauth_native_apps\EventSubscriber\NativeAppExceptionSubscriber
+    arguments:
+      - '@logger.channel.simple_oauth_native_apps'
+    tags:
+      - { name: event_subscriber }

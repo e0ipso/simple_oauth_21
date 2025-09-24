@@ -159,6 +159,13 @@ class NativeClientDetector {
     // Get global setting: 'auto-detect', 'enhanced', or 'not-enhanced'.
     $global_setting = $config->get('native.enhanced_pkce') ?? 'auto-detect';
 
+    // Defensive programming: validate config value before use.
+    if (empty($global_setting) || !in_array($global_setting, ['auto-detect', 'enhanced', 'not-enhanced'], TRUE)) {
+      // Fallback to safe default if config is invalid/missing.
+      $global_setting = 'auto-detect';
+      $this->logger->warning('Invalid or missing native.enhanced_pkce configuration, falling back to auto-detect');
+    }
+
     // If globally disabled, return FALSE unless overridden.
     if ($global_setting === 'not-enhanced') {
       // Still check for consumer override.

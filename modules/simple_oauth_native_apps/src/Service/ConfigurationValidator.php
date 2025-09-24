@@ -131,8 +131,33 @@ class ConfigurationValidator {
   public function validatePkceConfig(array $config): array {
     $errors = [];
 
-    // Currently no specific validations needed for PKCE config.
-    // This method is reserved for future enhancements.
+    // Validate enforce method setting if present.
+    if (isset($config['enforce_method'])) {
+      $valid_methods = ['off', 'S256', 'plain'];
+      if (!in_array($config['enforce_method'], $valid_methods, TRUE)) {
+        $errors[] = $this->t('Invalid PKCE enforcement method. Must be one of: @methods', [
+          '@methods' => implode(', ', $valid_methods),
+        ]);
+      }
+    }
+
+    // Validate enhanced PKCE setting if present.
+    if (isset($config['enhanced_pkce_for_native'])) {
+      $valid_enhanced = ['auto-detect', 'enhanced', 'not-enhanced'];
+      if (!in_array($config['enhanced_pkce_for_native'], $valid_enhanced, TRUE)) {
+        $errors[] = $this->t('Invalid enhanced PKCE setting. Must be one of: @settings', [
+          '@settings' => implode(', ', $valid_enhanced),
+        ]);
+      }
+    }
+
+    // Logical validation: Enhanced PKCE with enforce method.
+    if (isset($config['enhanced_pkce_for_native']) && isset($config['enforce_method'])) {
+      if ($config['enhanced_pkce_for_native'] === 'enhanced' && $config['enforce_method'] === 'off') {
+        $errors[] = $this->t('Enhanced PKCE is enabled but challenge method enforcement is off. Enhanced PKCE requires method enforcement to function properly.');
+      }
+    }
+
     return $errors;
   }
 

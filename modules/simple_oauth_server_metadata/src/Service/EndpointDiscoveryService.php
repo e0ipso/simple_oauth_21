@@ -94,7 +94,7 @@ class EndpointDiscoveryService {
    *   The OAuth server metadata endpoint URL.
    */
   public function getOauthServerMetadataEndpoint(): string {
-    return Url::fromRoute('simple_oauth.server_metadata')->setAbsolute()->toString();
+    return Url::fromRoute('simple_oauth_server_metadata.well_known')->setAbsolute()->toString();
   }
 
   /**

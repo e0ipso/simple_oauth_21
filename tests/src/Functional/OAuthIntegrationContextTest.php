@@ -9,6 +9,7 @@ use Drupal\Component\Serialization\Json;
 use GuzzleHttp\RequestOptions;
 use GuzzleHttp\Client;
 use Drupal\consumers\Entity\Consumer;
+use Drupal\simple_oauth_21\Trait\DebugLoggingTrait;
 
 /**
  * Integration tests for OAuth across different execution contexts.
@@ -21,6 +22,8 @@ use Drupal\consumers\Entity\Consumer;
  * @group oauth_integration
  */
 class OAuthIntegrationContextTest extends BrowserTestBase {
+
+  use DebugLoggingTrait;
 
   /**
    * {@inheritdoc}
@@ -51,10 +54,32 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    $this->logDebug('Starting test setup');
+
     $this->httpClient = new Client();
+    $this->logDebug('HTTP client initialized');
 
     // Ensure clean state.
     $this->clearAllTestCaches();
+    $this->logDebug('Test caches cleared');
+
+    // Log enabled modules for debugging.
+    $module_handler = $this->container->get('module_handler');
+    $enabled_oauth_modules = [];
+    $modules_to_check = [
+      'simple_oauth',
+      'simple_oauth_21',
+      'simple_oauth_client_registration',
+      'simple_oauth_server_metadata',
+      'simple_oauth_pkce',
+      'simple_oauth_native_apps',
+    ];
+    foreach ($modules_to_check as $module) {
+      if ($module_handler->moduleExists($module)) {
+        $enabled_oauth_modules[] = $module;
+      }
+    }
+    $this->logDebug('Enabled OAuth modules: ' . implode(', ', $enabled_oauth_modules));
   }
 
   /**
@@ -65,9 +90,13 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
    * coverage.
    */
   public function testComprehensiveOauthIntegrationAcrossContexts() {
+    $this->logDebug('Starting comprehensive OAuth integration test');
+
     // === Web Context OAuth Workflow ===
     // Test metadata endpoints are accessible via HTTP
+    $this->logDebug('Testing OAuth metadata endpoint');
     $this->drupalGet('/.well-known/oauth-authorization-server');
+    $this->logDebug('OAuth metadata endpoint response code: ' . $this->getSession()->getStatusCode());
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->responseHeaderContains('Content-Type', 'application/json');
 
@@ -222,9 +251,13 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
    * pre-existing OAuth clients.
    */
   public function testConfigurationAndExistingClientIntegration() {
+    $this->logDebug('Starting configuration and existing client integration test');
+
     // === Configuration Changes Propagation ===
+    $this->logDebug('Testing configuration changes propagation');
     $config = $this->container->get('config.factory')->getEditable('simple_oauth_server_metadata.settings');
     $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
+    $this->logDebug('Got config and metadata service');
 
     // Test auto-detection.
     $config->clear('registration_endpoint')->save();

@@ -3,6 +3,7 @@
 namespace Drupal\Tests\simple_oauth_native_apps\Functional;
 
 use Drupal\Tests\simple_oauth\Functional\TokenBearerFunctionalTestBase;
+use Drupal\simple_oauth_21\Trait\DebugLoggingTrait;
 
 /**
  * Tests native app configuration and validation features.
@@ -10,6 +11,8 @@ use Drupal\Tests\simple_oauth\Functional\TokenBearerFunctionalTestBase;
  * @group simple_oauth_native_apps
  */
 class NativeAppConfigurationTest extends TokenBearerFunctionalTestBase {
+
+  use DebugLoggingTrait;
 
   /**
    * {@inheritdoc}
@@ -28,8 +31,12 @@ class NativeAppConfigurationTest extends TokenBearerFunctionalTestBase {
    * Tests native app configuration and services.
    */
   public function testNativeAppConfiguration(): void {
+    $this->logDebug('Starting native app configuration test');
+
     // Test 1: Module installation and configuration defaults.
+    $this->logDebug('Testing module installation and configuration defaults');
     $config = $this->config('simple_oauth_native_apps.settings');
+    $this->logDebug('Got native apps config');
     $this->assertNotNull($config);
 
     // Test 2: Configuration form access and permissions.

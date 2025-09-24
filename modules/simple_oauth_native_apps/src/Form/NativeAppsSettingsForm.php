@@ -252,6 +252,19 @@ class NativeAppsSettingsForm extends ConfigFormBase {
       '#required' => TRUE,
     ];
 
+    $form['pkce']['enforce_method'] = [
+      '#type' => 'radios',
+      '#title' => $this->t('Enforce challenge method for native apps'),
+      '#description' => $this->t('🔒 <strong>Critical Security Setting:</strong> Specifies which PKCE challenge method native clients must use. S256 is strongly recommended for security. This setting prevents the configuration errors that can cause OAuth validation failures.'),
+      '#options' => [
+        'off' => $this->t('Off - Allow any method (not recommended)'),
+        'S256' => $this->t('S256 - Require SHA256 method (recommended)'),
+        'plain' => $this->t('Plain - Require plain method (not recommended)'),
+      ],
+      '#default_value' => $config->get('native.enforce') ?? 'S256',
+      '#required' => TRUE,
+    ];
+
     // Add help text.
     $form['help'] = [
       '#type' => 'details',
@@ -321,6 +334,7 @@ class NativeAppsSettingsForm extends ConfigFormBase {
       'allow_custom_uri_schemes' => $values['redirect_uri']['allow_custom_uri_schemes'] ?? 'auto-detect',
       'allow_loopback_redirects' => $values['redirect_uri']['allow_loopback_redirects'] ?? 'auto-detect',
       'enhanced_pkce_for_native' => $values['pkce']['enhanced_pkce_for_native'] ?? 'auto-detect',
+      'enforce_method' => $values['pkce']['enforce_method'] ?? 'S256',
     ];
   }
 
@@ -333,6 +347,21 @@ class NativeAppsSettingsForm extends ConfigFormBase {
    *   Form state.
    */
   protected function validateFormSpecificRules(array $values, FormStateInterface $form_state): void {
+    // Critical validation: Ensure enforce method is set.
+    if (empty($values['pkce']['enforce_method'])) {
+      $form_state->setErrorByName('pkce][enforce_method', $this->t('PKCE challenge method enforcement is required. This prevents configuration errors that cause OAuth validation failures.'));
+    }
+
+    // Logical validation: Enhanced PKCE with enforce method.
+    if ($values['pkce']['enhanced_pkce_for_native'] === 'enhanced' && $values['pkce']['enforce_method'] === 'off') {
+      $form_state->setErrorByName('pkce][enforce_method', $this->t('Enhanced PKCE is enabled but challenge method enforcement is off. Enhanced PKCE requires method enforcement to function properly.'));
+    }
+
+    // Security validation: Plain method warning.
+    if ($values['pkce']['enforce_method'] === 'plain') {
+      $this->messenger->addWarning($this->t('Plain PKCE method is not recommended for production use. S256 provides better security for native applications.'));
+    }
+
     // Warning if security is not enforced.
     if (!$values['security']['enforce_native_security']) {
       $this->messenger->addWarning($this->t('Enhanced native security is disabled. Native apps will receive basic PKCE protection (RFC 7636) but skip WebView detection and strict redirect validation (RFC 8252).'));
@@ -349,6 +378,11 @@ class NativeAppsSettingsForm extends ConfigFormBase {
     }
     elseif ($values['pkce']['enhanced_pkce_for_native'] === 'auto-detect') {
       $this->messenger->addMessage($this->t('Enhanced PKCE is set to auto-detect mode, which will apply enhanced PKCE based on client type detection.'));
+    }
+
+    // Success message for secure configuration.
+    if ($values['pkce']['enforce_method'] === 'S256' && $values['pkce']['enhanced_pkce_for_native'] !== 'not-enhanced') {
+      $this->messenger->addMessage($this->t('Secure PKCE configuration detected: S256 method enforcement with enhanced validation.'));
     }
   }
 
@@ -384,6 +418,7 @@ class NativeAppsSettingsForm extends ConfigFormBase {
 
     // Save PKCE settings.
     $config->set('native.enhanced_pkce', $values['pkce']['enhanced_pkce_for_native']);
+    $config->set('native.enforce', $values['pkce']['enforce_method']);
 
     $config->save();
 
