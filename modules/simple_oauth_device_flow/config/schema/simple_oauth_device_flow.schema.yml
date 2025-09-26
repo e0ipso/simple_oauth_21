@@ -23,3 +23,12 @@ simple_oauth_device_flow.settings:
     verification_uri_complete_enabled:
       type: boolean
       label: 'Enable verification URI complete'
+    cleanup_retention_days:
+      type: integer
+      label: 'Cleanup retention days for authorized codes'
+    max_cleanup_batch_size:
+      type: integer
+      label: 'Maximum cleanup batch size'
+    enable_statistics_logging:
+      type: boolean
+      label: 'Enable statistics logging'

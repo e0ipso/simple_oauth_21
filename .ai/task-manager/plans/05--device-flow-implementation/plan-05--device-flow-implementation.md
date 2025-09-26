@@ -329,12 +329,12 @@ graph TD
 - ✔️ Task 005: Implement Device Code Grant Plugin (depends on: 004)
 - ✔️ Task 008: Implement User Code Generator Service (depends on: 004)
 
-### Phase 6: API and Lifecycle
+### ✅ Phase 6: API and Lifecycle
 
 **Parallel Tasks:**
 
-- Task 006: Implement Device Authorization Controller (depends on: 005)
-- Task 009: Implement Device Code Lifecycle Service (depends on: 008)
+- ✔️ Task 006: Implement Device Authorization Controller (depends on: 005)
+- ✔️ Task 009: Implement Device Code Lifecycle Service (depends on: 008)
 
 ### Phase 7: User Interface
 

@@ -26,3 +26,4 @@ services:
       - '@simple_oauth_device_flow.user_code_generator'
       - '@simple_oauth_device_flow.settings'
       - '@datetime.time'
+      - '@logger.factory'

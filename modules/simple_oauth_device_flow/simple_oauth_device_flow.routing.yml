@@ -7,16 +7,14 @@ simple_oauth_device_flow.settings:
     _permission: 'administer simple_oauth entities'
   options:
     _admin_route: TRUE
-# Commented out until controllers are implemented
-# simple_oauth_device_flow.device_authorization:
-#   path: '/oauth/device_authorization'
-#   defaults:
-#     _controller: '\Drupal\simple_oauth_device_flow\Controller\DeviceAuthorizationController::authorize'
-#   methods: [POST]
-#   requirements:
-#     # RFC 8628 device authorization endpoint must be publicly accessible for OAuth clients.
-#     _access: 'TRUE'
-
+simple_oauth_device_flow.device_authorization:
+  path: '/oauth/device_authorization'
+  defaults:
+    _controller: '\Drupal\simple_oauth_device_flow\Controller\DeviceAuthorizationController::authorize'
+  methods: [POST]
+  requirements:
+    # RFC 8628 device authorization endpoint must be publicly accessible for OAuth clients.
+    _access: 'TRUE'
 # simple_oauth_device_flow.device_verification_form:
 #   path: '/oauth/device'
 #   defaults:

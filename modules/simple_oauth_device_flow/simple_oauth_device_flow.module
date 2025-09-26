@@ -72,3 +72,37 @@ function _simple_oauth_device_flow_help_overview() {
 function _simple_oauth_device_flow_help_settings() {
   return '<p>' . t('Configure OAuth 2.0 Device Authorization Grant settings. The device flow allows users to authorize applications on devices with limited input capabilities using a separate device with better input and display capabilities.') . '</p>';
 }
+
+/**
+ * Implements hook_cron().
+ *
+ * Performs periodic cleanup of expired and old device codes.
+ */
+function simple_oauth_device_flow_cron() {
+  try {
+    /** @var \Drupal\simple_oauth_device_flow\Service\DeviceCodeService $deviceCodeService */
+    $deviceCodeService = \Drupal::service('simple_oauth_device_flow.device_code_service');
+
+    // Perform comprehensive cleanup of device codes.
+    $result = $deviceCodeService->performCleanup();
+
+    // Log cleanup results if any codes were deleted.
+    if ($result['total_deleted'] > 0) {
+      \Drupal::logger('simple_oauth_device_flow')->info(
+        'Cron cleanup: @total device codes deleted (@expired expired, @authorized old authorized) in @time ms',
+        [
+          '@total' => $result['total_deleted'],
+          '@expired' => $result['expired_codes_deleted'],
+          '@authorized' => $result['old_authorized_codes_deleted'],
+          '@time' => $result['execution_time_ms'],
+        ]
+      );
+    }
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('simple_oauth_device_flow')->error(
+      'Failed to perform device code cleanup during cron: @message',
+      ['@message' => $e->getMessage()]
+    );
+  }
+}

@@ -2,6 +2,7 @@
 
 namespace Drupal\simple_oauth_device_flow\Repository;
 
+use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
@@ -342,6 +343,16 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
    */
   protected function validateUserCode(string $providedCode, string $storedCode): bool {
     return hash_equals($storedCode, $providedCode);
+  }
+
+  /**
+   * Gets the device code storage.
+   *
+   * @return \Drupal\Core\Entity\EntityStorageInterface
+   *   The device code entity storage.
+   */
+  public function getStorage(): EntityStorageInterface {
+    return $this->deviceCodeStorage;
   }
 
 }

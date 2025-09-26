@@ -2,7 +2,7 @@
 id: 6
 group: 'endpoints'
 dependencies: [5]
-status: 'pending'
+status: 'completed'
 created: '2025-09-26'
 skills: ['drupal-backend', 'api-endpoints']
 ---
