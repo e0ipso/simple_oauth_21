@@ -310,11 +310,11 @@ graph TD
 
 - ✔️ Task 002: Implement Device Code Database Schema (depends on: 001)
 
-### Phase 3: Entity Framework
+### ✅ Phase 3: Entity Framework
 
 **Parallel Tasks:**
 
-- Task 003: Implement Device Code Entity (depends on: 002)
+- ✔️ Task 003: Implement Device Code Entity (depends on: 002)
 
 ### Phase 4: Data Access Layer
 
