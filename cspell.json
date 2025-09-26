@@ -54,7 +54,8 @@
     "SIMPLETEST",
     "Denormalizer",
     "serializability",
-    "BCDFGHJKLMNPQRSTVWXZ"
+    "BCDFGHJKLMNPQRSTVWXZ",
+    "OILO"
   ],
   "ignorePaths": [
     "node_modules/**",

@@ -316,11 +316,11 @@ graph TD
 
 - ✔️ Task 003: Implement Device Code Entity (depends on: 002)
 
-### Phase 4: Data Access Layer
+### ✅ Phase 4: Data Access Layer
 
 **Parallel Tasks:**
 
-- Task 004: Implement Device Code Repository (depends on: 003)
+- ✔️ Task 004: Implement Device Code Repository (depends on: 003)
 
 ### Phase 5: Core Services
 

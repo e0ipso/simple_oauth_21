@@ -20,3 +20,6 @@ simple_oauth_device_flow.settings:
     verification_uri_complete:
       type: boolean
       label: 'Include verification URI complete'
+    verification_uri_complete_enabled:
+      type: boolean
+      label: 'Enable verification URI complete'

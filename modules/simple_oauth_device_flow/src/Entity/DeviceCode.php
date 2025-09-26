@@ -340,9 +340,14 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
       $scope_identifiers = unserialize($scopes_data, ['allowed_classes' => FALSE]);
       if (is_array($scope_identifiers)) {
         foreach ($scope_identifiers as $scope_id) {
-          $scope_entity = new ScopeEntity();
-          $scope_entity->setIdentifier($scope_id);
-          $this->scopes[] = $scope_entity;
+          // Load the actual scope entity from storage.
+          $scope_storage = \Drupal::entityTypeManager()->getStorage('oauth2_scope');
+          $scope_entities = $scope_storage->loadByProperties(['name' => $scope_id]);
+          if (!empty($scope_entities)) {
+            $scope_entity_obj = reset($scope_entities);
+            $scope_entity = new ScopeEntity($scope_entity_obj);
+            $this->scopes[] = $scope_entity;
+          }
         }
       }
     }

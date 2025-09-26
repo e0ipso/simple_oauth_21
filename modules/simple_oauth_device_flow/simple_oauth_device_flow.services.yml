@@ -5,7 +5,12 @@ services:
 
   simple_oauth_device_flow.device_code_repository:
     class: Drupal\simple_oauth_device_flow\Repository\DeviceCodeRepository
-    arguments: ['@entity_type.manager', '@simple_oauth_device_flow.settings']
+    arguments:
+      [
+        '@entity_type.manager',
+        '@simple_oauth_device_flow.settings',
+        '@logger.factory',
+      ]
 
   simple_oauth_device_flow.user_code_generator:
     class: Drupal\simple_oauth_device_flow\Service\UserCodeGenerator
