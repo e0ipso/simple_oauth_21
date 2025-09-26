@@ -1,0 +1,6 @@
+device_code_lifetime: 1800
+polling_interval: 5
+user_code_length: 8
+user_code_charset: 'BCDFGHJKLMNPQRSTVWXZ'
+verification_uri: '/oauth/device'
+verification_uri_complete: true

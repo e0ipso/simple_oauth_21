@@ -1,0 +1,37 @@
+simple_oauth_device_flow.settings:
+  path: '/admin/config/people/simple_oauth/oauth-21/device-flow'
+  defaults:
+    _form: '\Drupal\simple_oauth_device_flow\Form\DeviceFlowSettingsForm'
+    _title: 'Device Flow Settings'
+  requirements:
+    _permission: 'administer simple_oauth entities'
+  options:
+    _admin_route: TRUE
+
+simple_oauth_device_flow.device_authorization:
+  path: '/oauth/device_authorization'
+  defaults:
+    _controller: '\Drupal\simple_oauth_device_flow\Controller\DeviceAuthorizationController::authorize'
+  methods: [POST]
+  requirements:
+    # RFC 8628 device authorization endpoint must be publicly accessible for OAuth clients.
+    _access: 'TRUE'
+
+simple_oauth_device_flow.device_verification_form:
+  path: '/oauth/device'
+  defaults:
+    _controller: '\Drupal\simple_oauth_device_flow\Controller\DeviceVerificationController::form'
+    _title: 'Device Authorization'
+  methods: [GET]
+  requirements:
+    # Device verification page must be publicly accessible for users to enter codes.
+    _access: 'TRUE'
+
+simple_oauth_device_flow.device_verification_submit:
+  path: '/oauth/device'
+  defaults:
+    _controller: '\Drupal\simple_oauth_device_flow\Controller\DeviceVerificationController::verify'
+  methods: [POST]
+  requirements:
+    # Device verification submission must be publicly accessible for users to submit codes.
+    _access: 'TRUE'

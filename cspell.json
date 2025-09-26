@@ -53,7 +53,8 @@
     "updatedb",
     "SIMPLETEST",
     "Denormalizer",
-    "serializability"
+    "serializability",
+    "BCDFGHJKLMNPQRSTVWXZ"
   ],
   "ignorePaths": [
     "node_modules/**",

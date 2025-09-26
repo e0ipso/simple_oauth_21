@@ -1,0 +1,22 @@
+simple_oauth_device_flow.settings:
+  type: config_object
+  label: 'Simple OAuth Device Flow settings'
+  mapping:
+    device_code_lifetime:
+      type: integer
+      label: 'Device Code Lifetime (seconds)'
+    polling_interval:
+      type: integer
+      label: 'Polling Interval (seconds)'
+    user_code_length:
+      type: integer
+      label: 'User Code Length'
+    user_code_charset:
+      type: string
+      label: 'User Code Character Set'
+    verification_uri:
+      type: string
+      label: 'Verification URI'
+    verification_uri_complete:
+      type: boolean
+      label: 'Include verification URI complete'

@@ -1,0 +1,74 @@
+<?php
+
+/**
+ * @file
+ * Contains simple_oauth_device_flow.module.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function simple_oauth_device_flow_help($route_name, RouteMatchInterface $route_match) {
+  return match ($route_name) {
+    'help.page.simple_oauth_device_flow' => _simple_oauth_device_flow_help_overview(),
+    'simple_oauth_device_flow.settings' => _simple_oauth_device_flow_help_settings(),
+    default => NULL,
+  };
+}
+
+/**
+ * Provides overview help for the Simple OAuth Device Flow module.
+ */
+function _simple_oauth_device_flow_help_overview() {
+  $output = '';
+  $output .= '<h3>' . t('About') . '</h3>';
+  $output .= '<p>' . t('The Simple OAuth Device Flow module implements RFC 8628 OAuth 2.0 Device Authorization Grant. This flow is designed for devices that lack a web browser or are input-constrained, allowing users to authorize applications on a separate device with better input capabilities.') . '</p>';
+
+  $output .= '<h3>' . t('Features') . '</h3>';
+  $output .= '<ul>';
+  $output .= '<li>' . t('Implements RFC 8628 Device Authorization Grant specification') . '</li>';
+  $output .= '<li>' . t('Device authorization endpoint for initiating device flows') . '</li>';
+  $output .= '<li>' . t('User verification interface for device authorization') . '</li>';
+  $output .= '<li>' . t('Configurable device code and user code lifetimes') . '</li>';
+  $output .= '<li>' . t('Configurable polling intervals and user code formats') . '</li>';
+  $output .= '</ul>';
+
+  $output .= '<h3>' . t('Configuration') . '</h3>';
+  $output .= '<p>' . t('Configure Device Flow settings at <a href=":url">Administration » Configuration » People » Simple OAuth » Device Flow Settings</a>.', [
+    ':url' => \Drupal::urlGenerator()->generateFromRoute('simple_oauth_device_flow.settings'),
+  ]) . '</p>';
+
+  $output .= '<h3>' . t('Use Cases') . '</h3>';
+  $output .= '<ul>';
+  $output .= '<li>' . t('Smart TVs and streaming devices') . '</li>';
+  $output .= '<li>' . t('Gaming consoles') . '</li>';
+  $output .= '<li>' . t('IoT devices with limited input capabilities') . '</li>';
+  $output .= '<li>' . t('Command-line tools and applications') . '</li>';
+  $output .= '</ul>';
+
+  $output .= '<h3>' . t('Security Features') . '</h3>';
+  $output .= '<ul>';
+  $output .= '<li>' . t('Time-limited device and user codes') . '</li>';
+  $output .= '<li>' . t('Secure user verification process') . '</li>';
+  $output .= '<li>' . t('Protection against replay attacks') . '</li>';
+  $output .= '<li>' . t('Rate limiting for polling requests') . '</li>';
+  $output .= '</ul>';
+
+  $output .= '<h3>' . t('Resources') . '</h3>';
+  $output .= '<ul>';
+  $output .= '<li><a href="https://tools.ietf.org/html/rfc8628" target="_blank">' . t('RFC 8628: OAuth 2.0 Device Authorization Grant') . '</a></li>';
+  $output .= '<li><a href="https://oauth.net/2.1/" target="_blank">' . t('OAuth 2.1 Security Best Current Practice') . '</a></li>';
+  $output .= '<li><a href="https://www.drupal.org/project/simple_oauth" target="_blank">' . t('Simple OAuth module project page') . '</a></li>';
+  $output .= '</ul>';
+
+  return $output;
+}
+
+/**
+ * Provides help for the Device Flow settings page.
+ */
+function _simple_oauth_device_flow_help_settings() {
+  return '<p>' . t('Configure OAuth 2.0 Device Authorization Grant settings. The device flow allows users to authorize applications on devices with limited input capabilities using a separate device with better input and display capabilities.') . '</p>';
+}

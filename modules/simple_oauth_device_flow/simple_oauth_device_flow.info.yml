@@ -1,0 +1,10 @@
+name: 'Simple OAuth Device Flow'
+type: module
+description: 'Implements RFC 8628 OAuth 2.0 Device Authorization Grant'
+core_version_requirement: ^10.2 || ^11
+package: 'Authentication'
+configure: simple_oauth_device_flow.settings
+dependencies:
+  - simple_oauth_21:simple_oauth_21
+  - simple_oauth:simple_oauth
+  - consumers:consumers
