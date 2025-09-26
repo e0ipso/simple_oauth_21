@@ -2,7 +2,7 @@
 id: 5
 group: 'grant-implementation'
 dependencies: [4]
-status: 'pending'
+status: 'completed'
 created: '2025-09-26'
 skills: ['drupal-backend', 'php']
 ---

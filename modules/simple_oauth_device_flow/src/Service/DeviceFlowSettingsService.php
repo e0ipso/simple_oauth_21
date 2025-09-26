@@ -58,6 +58,16 @@ class DeviceFlowSettingsService {
   }
 
   /**
+   * Gets the user code character set.
+   *
+   * @return string|null
+   *   The user code character set, or NULL to use default.
+   */
+  public function getUserCodeCharset(): ?string {
+    return $this->getConfig()->get('user_code_charset');
+  }
+
+  /**
    * Gets the user code format pattern.
    *
    * @return string

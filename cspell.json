@@ -55,7 +55,10 @@
     "Denormalizer",
     "serializability",
     "BCDFGHJKLMNPQRSTVWXZ",
-    "OILO"
+    "OILO",
+    "BCDFGHJKLMNPQRSTVWXYZ",
+    "EFGH",
+    "prophesize"
   ],
   "ignorePaths": [
     "node_modules/**",

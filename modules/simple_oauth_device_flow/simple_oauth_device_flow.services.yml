@@ -14,7 +14,10 @@ services:
 
   simple_oauth_device_flow.user_code_generator:
     class: Drupal\simple_oauth_device_flow\Service\UserCodeGenerator
-    arguments: ['@simple_oauth_device_flow.settings']
+    arguments:
+      - '@config.factory'
+      - '@simple_oauth_device_flow.device_code_repository'
+      - '@logger.factory'
 
   simple_oauth_device_flow.device_code_service:
     class: Drupal\simple_oauth_device_flow\Service\DeviceCodeService

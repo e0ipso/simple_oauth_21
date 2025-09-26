@@ -322,12 +322,12 @@ graph TD
 
 - ✔️ Task 004: Implement Device Code Repository (depends on: 003)
 
-### Phase 5: Core Services
+### ✅ Phase 5: Core Services
 
 **Parallel Tasks:**
 
-- Task 005: Implement Device Code Grant Plugin (depends on: 004)
-- Task 008: Implement User Code Generator Service (depends on: 004)
+- ✔️ Task 005: Implement Device Code Grant Plugin (depends on: 004)
+- ✔️ Task 008: Implement User Code Generator Service (depends on: 004)
 
 ### Phase 6: API and Lifecycle
 
