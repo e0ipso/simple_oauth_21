@@ -74,7 +74,18 @@
     "kwargs",
     "startswith",
     "urlencode",
-    "webprofiler"
+    "webprofiler",
+    "Rkqt",
+    "setopt",
+    "CURLOPT",
+    "POSTFIELDS",
+    "HTTPHEADER",
+    "RETURNTRANSFER",
+    "getinfo",
+    "CURLINFO",
+    "VARCHAR",
+    "microtime",
+    "Azko"
   ],
   "ignorePaths": [
     "node_modules/**",
