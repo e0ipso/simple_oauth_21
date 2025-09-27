@@ -172,14 +172,6 @@ class ServerMetadataFunctionalTest extends BrowserTestBase {
     $this->assertNotEmpty($json_metadata['issuer']);
     $this->assertStringStartsWith('http', $json_metadata['authorization_endpoint']);
     $this->assertStringStartsWith('http', $json_metadata['token_endpoint']);
-
-    // Test 10: Verify device_authorization_endpoint is included when available.
-    // The device_authorization_endpoint should only be present if the
-    // device flow module is enabled.
-    if (isset($json_metadata['device_authorization_endpoint'])) {
-      $this->assertStringStartsWith('http', $json_metadata['device_authorization_endpoint']);
-      $this->assertStringContains('/oauth/device_authorization', $json_metadata['device_authorization_endpoint']);
-    }
   }
 
 }
