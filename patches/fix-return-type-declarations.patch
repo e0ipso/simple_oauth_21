@@ -1,0 +1,39 @@
+diff --git i/src/EventSubscriber/ExceptionLoggingSubscriber.php w/src/EventSubscriber/ExceptionLoggingSubscriber.php
+index b91d129..05718f7 100644
+--- i/src/EventSubscriber/ExceptionLoggingSubscriber.php
++++ w/src/EventSubscriber/ExceptionLoggingSubscriber.php
+@@ -58,7 +58,7 @@ class ExceptionLoggingSubscriber implements EventSubscriberInterface {
+   /**
+    * {@inheritDoc}
+    */
+-  public static function getSubscribedEvents() {
++  public static function getSubscribedEvents(): array {
+     return CoreExceptionLoggingSubscriber::getSubscribedEvents();
+   }
+ 
+diff --git i/src/OpenIdConnect/UserIdentityProvider.php w/src/OpenIdConnect/UserIdentityProvider.php
+index a1d33a7..1bd0db3 100644
+--- i/src/OpenIdConnect/UserIdentityProvider.php
++++ w/src/OpenIdConnect/UserIdentityProvider.php
+@@ -42,6 +42,8 @@ class UserIdentityProvider implements IdentityProviderInterface {
+ 
+   /**
+    * {@inheritdoc}
++   *
++   * @return \OpenIDConnectServer\Entities\UserEntityInterface&\OpenIDConnectServer\Entities\ClaimSetInterface
+    */
+   public function getUserEntityByIdentifier($identifier) {
+     $user = $this->entityTypeManager->getStorage('user')->load($identifier);
+diff --git i/src/Plugin/Validation/Constraint/Oauth2RedirectUriValidator.php w/src/Plugin/Validation/Constraint/Oauth2RedirectUriValidator.php
+index 16aa7e3..34ff474 100644
+--- i/src/Plugin/Validation/Constraint/Oauth2RedirectUriValidator.php
++++ w/src/Plugin/Validation/Constraint/Oauth2RedirectUriValidator.php
+@@ -13,7 +13,7 @@ class Oauth2RedirectUriValidator extends ConstraintValidator {
+   /**
+    * {@inheritdoc}
+    */
+-  public function validate($value, Constraint $constraint) {
++  public function validate($value, Constraint $constraint): void {
+     foreach ($value->getValue() as $item) {
+       if (!preg_match("
+         /^

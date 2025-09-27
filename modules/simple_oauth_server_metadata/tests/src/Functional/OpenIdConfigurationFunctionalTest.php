@@ -296,7 +296,7 @@ class OpenIdConfigurationFunctionalTest extends BrowserTestBase {
     // Test OAuth server metadata endpoint.
     $this->assertArrayHasKey('oauth_authorization_server_metadata_endpoint', $metadata);
     $this->assertStringStartsWith('http', $metadata['oauth_authorization_server_metadata_endpoint']);
-    $this->assertStringContains('/.well-known/oauth-authorization-server', $metadata['oauth_authorization_server_metadata_endpoint']);
+    $this->assertStringContainsString('/.well-known/oauth-authorization-server', $metadata['oauth_authorization_server_metadata_endpoint']);
   }
 
   /**
@@ -479,7 +479,7 @@ class OpenIdConfigurationFunctionalTest extends BrowserTestBase {
     // If registration_endpoint is present, it should be a valid URL.
     if (isset($metadata['registration_endpoint'])) {
       $this->assertStringStartsWith('http', $metadata['registration_endpoint']);
-      $this->assertStringContains('/oauth/register', $metadata['registration_endpoint']);
+      $this->assertStringContainsString('/oauth/register', $metadata['registration_endpoint']);
     }
   }
 
