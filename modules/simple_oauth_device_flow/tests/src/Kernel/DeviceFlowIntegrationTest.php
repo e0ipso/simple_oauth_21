@@ -42,13 +42,13 @@ class DeviceFlowIntegrationTest extends KernelTestBase {
     $generator = $this->container->get('simple_oauth_device_flow.user_code_generator');
     $this->assertInstanceOf(UserCodeGenerator::class, $generator);
 
-    // Test user code generation
+    // Test user code generation.
     $user_code = $generator->generateUserCode();
     $this->assertIsString($user_code);
     $this->assertGreaterThan(4, strlen($user_code));
     $this->assertLessThan(20, strlen($user_code));
 
-    // Test multiple codes are different
+    // Test multiple codes are different.
     $user_code2 = $generator->generateUserCode();
     $this->assertNotEquals($user_code, $user_code2);
   }
@@ -57,18 +57,18 @@ class DeviceFlowIntegrationTest extends KernelTestBase {
    * Tests device flow settings service.
    */
   public function testDeviceFlowSettingsService(): void {
-    // Install config
+    // Install config.
     $this->installConfig(['simple_oauth_device_flow']);
 
     $settings = $this->container->get('simple_oauth_device_flow.settings');
     $this->assertInstanceOf(DeviceFlowSettingsService::class, $settings);
 
-    // Test default settings
+    // Test default settings.
     $this->assertIsInt($settings->getDeviceCodeExpiration());
     $this->assertIsInt($settings->getPollingInterval());
     $this->assertIsString($settings->getVerificationUri());
 
-    // Test settings validation
+    // Test settings validation.
     $this->assertGreaterThan(0, $settings->getDeviceCodeExpiration());
     $this->assertGreaterThan(0, $settings->getPollingInterval());
   }
@@ -77,18 +77,18 @@ class DeviceFlowIntegrationTest extends KernelTestBase {
    * Tests device flow routing and controller setup.
    */
   public function testDeviceFlowRouting(): void {
-    // Install routing config
+    // Install routing config.
     $this->installConfig(['simple_oauth_device_flow']);
 
     $route_provider = $this->container->get('router.route_provider');
 
-    // Test device authorization route exists
+    // Test device authorization route exists.
     $device_auth_route = $route_provider->getRouteByName('simple_oauth_device_flow.device_authorization');
     $this->assertNotNull($device_auth_route);
     $this->assertEquals('/oauth/device_authorization', $device_auth_route->getPath());
     $this->assertEquals(['POST'], $device_auth_route->getMethods());
 
-    // Test device verification routes exist
+    // Test device verification routes exist.
     $device_verify_route = $route_provider->getRouteByName('simple_oauth_device_flow.device_verification_form');
     $this->assertNotNull($device_verify_route);
     $this->assertEquals('/oauth/device', $device_verify_route->getPath());
@@ -106,7 +106,7 @@ class DeviceFlowIntegrationTest extends KernelTestBase {
   public function testDeviceFlowServices(): void {
     $container = $this->container;
 
-    // Test all expected services are registered
+    // Test all expected services are registered.
     $expected_services = [
       'simple_oauth_device_flow.device_code_service',
       'simple_oauth_device_flow.user_code_generator',
@@ -130,11 +130,10 @@ class DeviceFlowIntegrationTest extends KernelTestBase {
     $this->assertNotNull($config);
 
     // Test default configuration values exist (they may be null, that's OK)
-    $device_code_expiration = $config->get('device_code_expiration');
-    $polling_interval = $config->get('polling_interval');
-    $verification_uri = $config->get('verification_uri');
-
-    // Values can be null (using defaults), just test they don't cause errors
+    // Just test that getting the values doesn't cause errors.
+    $config->get('device_code_expiration');
+    $config->get('polling_interval');
+    $config->get('verification_uri');
     $this->assertTrue(TRUE, 'Configuration loaded without errors');
   }
 
@@ -144,7 +143,7 @@ class DeviceFlowIntegrationTest extends KernelTestBase {
   public function testDeviceFlowConfigurationRoute(): void {
     $route_provider = $this->container->get('router.route_provider');
 
-    // Test device flow settings route exists
+    // Test device flow settings route exists.
     $settings_route = $route_provider->getRouteByName('simple_oauth_device_flow.settings');
     $this->assertNotNull($settings_route);
     $this->assertEquals('/admin/config/people/simple_oauth/oauth-21/device-flow', $settings_route->getPath());

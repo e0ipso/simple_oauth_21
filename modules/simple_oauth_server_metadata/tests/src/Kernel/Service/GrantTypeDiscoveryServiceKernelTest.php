@@ -74,7 +74,7 @@ class GrantTypeDiscoveryServiceKernelTest extends KernelTestBase {
     $service = $this->container->get('simple_oauth_server_metadata.grant_type_discovery');
     $response_types = $service->getResponseTypesSupported();
 
-    // In kernel test environment, verify the service works and returns an array.
+    // In kernel test, verify the service works and returns an array.
     $this->assertIsArray($response_types);
     $this->assertGreaterThanOrEqual(0, count($response_types));
   }
