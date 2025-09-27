@@ -28,8 +28,8 @@ Use your internal Todo task tool to track the execution of all parts of the task
 
 - Plan ID: $1 (required)
 - Task ID: $2 (required)
-- Task management directory structure: `@.ai/task-manager/`
-- Dependency checking script: `.ai/task-manager/config/scripts/check-task-dependencies.js`
+- Task management directory structure: `/`
+- Dependency checking script: `.ai/task-manager/config/scripts/check-task-dependencies.cjs`
 
 ### Input Validation
 
@@ -136,7 +136,7 @@ Use the dependency checking script to validate all dependencies:
 
 ```bash
 # Call the dependency checking script
-if ! node .ai/task-manager/config/scripts/check-task-dependencies.js "$PLAN_ID" "$TASK_ID"; then
+if ! node .ai/task-manager/config/scripts/check-task-dependencies.cjs "$PLAN_ID" "$TASK_ID"; then
     echo ""
     echo "Task execution blocked by unresolved dependencies."
     echo "Please complete the required dependencies first."
@@ -151,9 +151,7 @@ echo "✓ All dependencies resolved - proceeding with execution"
 
 Read task skills and select appropriate task-specific agent:
 
-```bash
-Read and execute @.ai/task-manager/config/hooks/PRE_TASK_ASSIGNMENT.md
-```
+Read and execute .ai/task-manager/config/hooks/PRE_TASK_ASSIGNMENT.md
 
 ### 6. Status Update to In-Progress
 
@@ -238,7 +236,7 @@ echo "You can now execute dependent tasks or continue with the full blueprint ex
 
 ## Error Handling
 
-Read and execute @.ai/task-manager/config/hooks/POST_ERROR_DETECTION.md
+Read and execute .ai/task-manager/config/hooks/POST_ERROR_DETECTION.md
 
 ## Usage Examples
 

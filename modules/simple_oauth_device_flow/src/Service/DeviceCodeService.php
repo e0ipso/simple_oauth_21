@@ -289,6 +289,74 @@ class DeviceCodeService {
   }
 
   /**
+   * Generates device authorization data for OAuth 2.0 Device Flow.
+   *
+   * Creates a new device code entity with generated device code, user code,
+   * and expiration information according to RFC 8628 specifications.
+   *
+   * @param object $client_entity
+   *   The OAuth client entity requesting device authorization.
+   * @param string $scope
+   *   The requested scope for the authorization.
+   *
+   * @return array
+   *   Array containing device_code, user_code, expires_in, and interval.
+   *
+   * @throws \RuntimeException
+   *   When device authorization generation fails.
+   */
+  public function generateDeviceAuthorization($client_entity, string $scope = ''): array {
+    try {
+      // Generate a unique device code.
+      $device_code = $this->generateUniqueDeviceCode();
+
+      // Generate a unique user code.
+      $user_code = $this->userCodeGenerator->generateUserCode();
+
+      // Get configuration values.
+      $expires_in = $this->settings->getDeviceCodeExpiry();
+      $polling_interval = $this->settings->getPollingInterval();
+      $current_time = $this->time->getCurrentTime();
+      $expires_at = $current_time + $expires_in;
+
+      // Create device code entity.
+      $device_code_entity = $this->deviceCodeRepository->getNewDeviceCode();
+      $device_code_entity->setIdentifier($device_code);
+      $device_code_entity->setUserCode($user_code);
+      $device_code_entity->setClient($client_entity);
+      $device_code_entity->setExpiryDateTime(new \DateTimeImmutable('@' . $expires_at));
+
+      // Set additional properties.
+      $device_code_entity->set('scope', $scope);
+      $device_code_entity->set('created_at', $current_time);
+      $device_code_entity->set('expires_at', $expires_at);
+      $device_code_entity->set('authorized', FALSE);
+
+      // Persist the device code.
+      $this->deviceCodeRepository->persistDeviceCode($device_code_entity);
+
+      $this->logger->info('Device authorization generated for client @client_id: device_code=@device_code, user_code=@user_code', [
+        '@client_id' => $client_entity->getClientId(),
+        '@device_code' => $device_code,
+        '@user_code' => $user_code,
+      ]);
+
+      return [
+        'device_code' => $device_code,
+        'user_code' => $user_code,
+        'expires_in' => $expires_in,
+        'interval' => $polling_interval,
+      ];
+    }
+    catch (\Exception $e) {
+      $this->logger->error('Failed to generate device authorization: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+      throw new \RuntimeException('Device authorization generation failed: ' . $e->getMessage(), 0, $e);
+    }
+  }
+
+  /**
    * Performs comprehensive cleanup of device codes.
    *
    * Runs both expired code cleanup and old authorized code cleanup.
@@ -352,6 +420,56 @@ class DeviceCodeService {
    */
   protected function isStatisticsLoggingEnabled(): bool {
     return $this->settings->getConfig()->get('enable_statistics_logging') ?? TRUE;
+  }
+
+  /**
+   * Generates a unique device code identifier.
+   *
+   * Creates a cryptographically secure, URL-safe device code that is
+   * guaranteed to be unique in the system.
+   *
+   * @return string
+   *   The unique device code identifier.
+   *
+   * @throws \RuntimeException
+   *   When unable to generate a unique device code.
+   */
+  protected function generateUniqueDeviceCode(): string {
+    $max_attempts = 10;
+    $attempts = 0;
+
+    while ($attempts < $max_attempts) {
+      $attempts++;
+
+      try {
+        // Generate a cryptographically secure random device code.
+        // Using 32 bytes (256 bits) for high entropy.
+        $random_bytes = random_bytes(32);
+        $device_code = rtrim(strtr(base64_encode($random_bytes), '+/', '-_'), '=');
+
+        // Check if this device code already exists.
+        $existing_entity = $this->deviceCodeRepository->getDeviceCodeEntityByDeviceCode($device_code);
+        if ($existing_entity === NULL) {
+          return $device_code;
+        }
+
+        $this->logger->debug('Device code collision on attempt @attempt', [
+          '@attempt' => $attempts,
+        ]);
+      }
+      catch (\Exception $e) {
+        $this->logger->error('Error generating device code on attempt @attempt: @message', [
+          '@attempt' => $attempts,
+          '@message' => $e->getMessage(),
+        ]);
+      }
+    }
+
+    $this->logger->error('Failed to generate unique device code after @attempts attempts', [
+      '@attempts' => $max_attempts,
+    ]);
+
+    throw new \RuntimeException('Unable to generate unique device code after maximum attempts');
   }
 
 }
