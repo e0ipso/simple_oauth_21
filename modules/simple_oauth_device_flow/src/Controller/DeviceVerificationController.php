@@ -22,15 +22,6 @@ use Symfony\Component\HttpFoundation\Request;
  */
 final class DeviceVerificationController extends ControllerBase {
 
-  /**
-   * The form builder service.
-   */
-  private FormBuilderInterface $formBuilder;
-
-  /**
-   * The current user.
-   */
-  private AccountInterface $currentUser;
 
   /**
    * The logger for device flow operations.
