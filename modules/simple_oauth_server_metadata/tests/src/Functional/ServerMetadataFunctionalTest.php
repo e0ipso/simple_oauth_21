@@ -4,12 +4,12 @@ namespace Drupal\Tests\simple_oauth_server_metadata\Functional;
 
 use Drupal\Component\Serialization\Json;
 use Drupal\Tests\BrowserTestBase;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Tests OAuth 2.0 server metadata functionality and RFC 8414 compliance.
- *
- * @group simple_oauth_server_metadata
  */
+#[Group('simple_oauth_server_metadata')]
 class ServerMetadataFunctionalTest extends BrowserTestBase {
 
   /**

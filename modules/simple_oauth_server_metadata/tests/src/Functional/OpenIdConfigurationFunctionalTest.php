@@ -5,6 +5,7 @@ namespace Drupal\Tests\simple_oauth_server_metadata\Functional;
 use Drupal\Component\Serialization\Json;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\simple_oauth_21\Trait\DebugLoggingTrait;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Tests OpenID Connect Discovery endpoint functionality and compliance.
@@ -16,9 +17,8 @@ use Drupal\simple_oauth_21\Trait\DebugLoggingTrait;
  * dependency issues in the test environment. The endpoint works correctly
  * in production (verified via curl), but the complex service injection
  * in the test environment causes ServiceUnavailableHttpException errors.
- *
- * @group simple_oauth_server_metadata
  */
+#[Group('simple_oauth_server_metadata')]
 class OpenIdConfigurationFunctionalTest extends BrowserTestBase {
 
   use DebugLoggingTrait;

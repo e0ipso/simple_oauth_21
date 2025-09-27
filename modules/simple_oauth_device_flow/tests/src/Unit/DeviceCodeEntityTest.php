@@ -4,12 +4,12 @@ namespace Drupal\Tests\simple_oauth_device_flow\Unit;
 
 use Drupal\simple_oauth_device_flow\Entity\DeviceCode;
 use Drupal\Tests\UnitTestCase;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Unit tests for DeviceCode entity.
- *
- * @group simple_oauth_device_flow
  */
+#[Group('simple_oauth_device_flow')]
 class DeviceCodeEntityTest extends UnitTestCase {
 
   /**

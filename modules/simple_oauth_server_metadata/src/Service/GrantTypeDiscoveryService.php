@@ -43,6 +43,7 @@ class GrantTypeDiscoveryService {
       }
       catch (\Exception $e) {
         // Plugin is not available, skip it.
+        // This can happen if dependencies are not installed/available.
       }
     }
 

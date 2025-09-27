@@ -4,13 +4,14 @@ namespace Drupal\Tests\simple_oauth_native_apps\Unit;
 
 use Drupal\simple_oauth_native_apps\Service\ConfigStructureMapper;
 use Drupal\Tests\UnitTestCase;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Tests config structure mapping to prevent validation mismatches.
  *
- * @group simple_oauth_native_apps
  * @coversDefaultClass \Drupal\simple_oauth_native_apps\Service\ConfigStructureMapper
  */
+#[Group('simple_oauth_native_apps')]
 class ConfigStructureMappingTest extends UnitTestCase {
 
   /**

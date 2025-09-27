@@ -7,6 +7,7 @@ use Drupal\Tests\BrowserTestBase;
 use Drupal\Component\Serialization\Json;
 use GuzzleHttp\RequestOptions;
 use GuzzleHttp\Client;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Comprehensive validation tests for OAuth RFC compliance and metadata.
@@ -14,11 +15,10 @@ use GuzzleHttp\Client;
  * This test class performs comprehensive validation and integration testing
  * to ensure OAuth metadata advertisement is working correctly across all
  * contexts and that our OAuth RFC compliance implementation is robust.
- *
- * @group simple_oauth_21
- * @group functional
- * @group oauth_validation
  */
+#[Group('simple_oauth_21')]
+#[Group('functional')]
+#[Group('oauth_validation')]
 class OAuthMetadataValidationTest extends BrowserTestBase {
 
   /**

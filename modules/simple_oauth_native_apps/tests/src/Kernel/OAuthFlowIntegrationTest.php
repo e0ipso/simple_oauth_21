@@ -9,12 +9,12 @@ use Drupal\simple_oauth_native_apps\EventSubscriber\PkceValidationSubscriber;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Tests OAuth flow integration with native apps enhancements.
- *
- * @group simple_oauth_native_apps
  */
+#[Group('simple_oauth_native_apps')]
 class OAuthFlowIntegrationTest extends KernelTestBase {
 
   /**

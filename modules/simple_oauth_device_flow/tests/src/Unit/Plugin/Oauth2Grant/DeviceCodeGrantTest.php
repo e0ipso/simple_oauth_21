@@ -11,15 +11,15 @@ use Drupal\simple_oauth_device_flow\Plugin\Oauth2Grant\DeviceCodeGrant;
 use Drupal\Tests\UnitTestCase;
 use League\OAuth2\Server\Grant\DeviceCodeGrant as LeagueDeviceCodeGrant;
 use League\OAuth2\Server\Repositories\DeviceCodeRepositoryInterface;
+use PHPUnit\Framework\Attributes\Group;
 use Prophecy\PhpUnit\ProphecyTrait;
 
 /**
  * Unit tests for DeviceCodeGrant plugin.
  *
- * @group simple_oauth_device_flow
- *
  * @coversDefaultClass \Drupal\simple_oauth_device_flow\Plugin\Oauth2Grant\DeviceCodeGrant
  */
+#[Group('simple_oauth_device_flow')]
 class DeviceCodeGrantTest extends UnitTestCase {
 
   use ProphecyTrait;

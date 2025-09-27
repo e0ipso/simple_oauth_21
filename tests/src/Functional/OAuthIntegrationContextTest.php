@@ -10,17 +10,17 @@ use GuzzleHttp\RequestOptions;
 use GuzzleHttp\Client;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\simple_oauth_21\Trait\DebugLoggingTrait;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Integration tests for OAuth across different execution contexts.
  *
  * Tests OAuth functionality across web, CLI, and test environments to ensure
  * consistent behavior and proper cache handling in all contexts.
- *
- * @group simple_oauth_21
- * @group functional
- * @group oauth_integration
  */
+#[Group('simple_oauth_21')]
+#[Group('functional')]
+#[Group('oauth_integration')]
 class OAuthIntegrationContextTest extends BrowserTestBase {
 
   use DebugLoggingTrait;

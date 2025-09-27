@@ -2,10 +2,12 @@
 
 namespace Drupal\simple_oauth_device_flow\Entity;
 
+use Drupal\Core\Entity\Attribute\ContentEntityType;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\ContentEntityBase;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\simple_oauth\Entities\ScopeEntity;
 use League\OAuth2\Server\Entities\ClientEntityInterface;
 use League\OAuth2\Server\Entities\DeviceCodeEntityInterface;
@@ -15,21 +17,20 @@ use League\OAuth2\Server\Entities\ScopeEntityInterface;
  * Defines the Device Code entity for OAuth 2.0 Device Authorization Grant.
  *
  * @ingroup simple_oauth_device_flow
- *
- * @ContentEntityType(
- *   id = "oauth2_device_code",
- *   label = @Translation("OAuth2 Device Code"),
- *   handlers = {
- *     "views_data" = "Drupal\views\EntityViewsData",
- *   },
- *   base_table = "oauth2_device_code",
- *   admin_permission = "administer simple_oauth entities",
- *   entity_keys = {
- *     "id" = "device_code"
- *   },
- *   list_cache_tags = { "oauth2_device_code" },
- * )
  */
+#[ContentEntityType(
+  id: 'oauth2_device_code',
+  label: new TranslatableMarkup('OAuth2 Device Code'),
+  handlers: [
+    'views_data' => 'Drupal\views\EntityViewsData',
+  ],
+  base_table: 'oauth2_device_code',
+  admin_permission: 'administer simple_oauth entities',
+  entity_keys: [
+    'id' => 'device_code',
+  ],
+  list_cache_tags: ['oauth2_device_code'],
+)]
 class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface {
 
   /**

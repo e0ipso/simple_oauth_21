@@ -10,12 +10,12 @@ use Drupal\simple_oauth_native_apps\Service\NativeClientDetector;
 use Drupal\simple_oauth_native_apps\Service\PKCEEnhancementService;
 use Drupal\simple_oauth_native_apps\Service\RedirectUriValidator;
 use Drupal\simple_oauth_native_apps\Service\UserAgentAnalyzer;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Tests service integration for native apps module.
- *
- * @group simple_oauth_native_apps
  */
+#[Group('simple_oauth_native_apps')]
 class ServiceIntegrationTest extends KernelTestBase {
 
   /**

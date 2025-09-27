@@ -3,12 +3,12 @@
 namespace Drupal\Tests\simple_oauth_21\Functional;
 
 use Drupal\Tests\BrowserTestBase;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Tests the OAuth 2.1 compliance dashboard functionality.
- *
- * @group simple_oauth_21
  */
+#[Group('simple_oauth_21')]
 class ComplianceDashboardTest extends BrowserTestBase {
 
   /**
