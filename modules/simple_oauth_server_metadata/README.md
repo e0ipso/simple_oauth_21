@@ -11,18 +11,21 @@ The Simple OAuth Server Metadata module implements RFC 8414 "OAuth 2.0 Authoriza
 This module implements multiple OAuth discovery standards:
 
 **RFC 8414 - Authorization Server Metadata:**
+
 - **Well-Known Endpoint**: Standard `/.well-known/oauth-authorization-server` endpoint
 - **Automatic Discovery**: Enables clients to automatically configure OAuth settings
 - **Capability Advertisement**: Exposes supported grant types, response types, and extensions
 - **Extensible Metadata**: Support for custom metadata fields and OAuth extensions
 
 **RFC 9728 - Protected Resource Metadata:**
+
 - **Resource Metadata**: Standard `/.well-known/oauth-protected-resource` endpoint
 - **Resource Discovery**: Advertises protected resource capabilities and requirements
 - **Authorization Requirements**: Exposes scope and authentication requirements
 - **Resource Server Information**: Provides resource-specific OAuth metadata
 
 **OpenID Connect Discovery:**
+
 - **OIDC Endpoint**: Standard `/.well-known/openid-configuration` endpoint
 - **OpenID Compatibility**: Compatible with OpenID Connect discovery protocols
 - **Extended Claims**: Support for OpenID Connect specific metadata fields
@@ -127,16 +130,19 @@ ui_locales_supported: ['en', 'es', 'fr']
 ### Available Endpoints
 
 #### Authorization Server Metadata (RFC 8414)
+
 ```
 https://your-drupal-site.com/.well-known/oauth-authorization-server
 ```
 
 #### Protected Resource Metadata (RFC 9728)
+
 ```
 https://your-drupal-site.com/.well-known/oauth-protected-resource
 ```
 
 #### OpenID Connect Discovery
+
 ```
 https://your-drupal-site.com/.well-known/openid-configuration
 ```

@@ -18,15 +18,18 @@ The Simple OAuth Client Registration module provides a complete implementation o
 ## Requirements
 
 ### Drupal Core
+
 - Drupal 10.x or 11.x
 
 ### Module Dependencies
+
 - `simple_oauth_21` - Main OAuth 2.1 umbrella module
 - `simple_oauth` - Core OAuth 2.0 functionality
 - `consumers` - OAuth consumer entity management
 - `serialization` - JSON serialization support
 
 ### Recommended Modules
+
 - `simple_oauth_server_metadata` - Automatic endpoint discovery
 - `simple_oauth_native_apps` - Enhanced native app support
 - `simple_oauth_pkce` - PKCE security enhancement
@@ -34,16 +37,19 @@ The Simple OAuth Client Registration module provides a complete implementation o
 ## Installation
 
 1. **Install via Composer** (recommended):
+
    ```bash
    composer require drupal/simple_oauth_21
    ```
 
 2. **Enable the module**:
+
    ```bash
    drush pm:enable simple_oauth_client_registration
    ```
 
 3. **Run database updates**:
+
    ```bash
    drush updatedb
    ```
@@ -96,11 +102,13 @@ The module adds the following RFC 7591 metadata fields to Consumer entities:
 Register a new OAuth client with the authorization server.
 
 #### Request Headers
+
 ```
 Content-Type: application/json
 ```
 
 #### Request Body
+
 ```json
 {
   "client_name": "My Application",
@@ -108,21 +116,13 @@ Content-Type: application/json
     "https://myapp.example.com/callback",
     "https://myapp.example.com/callback2"
   ],
-  "grant_types": [
-    "authorization_code",
-    "refresh_token"
-  ],
-  "response_types": [
-    "code"
-  ],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
   "token_endpoint_auth_method": "client_secret_basic",
   "scope": "read write",
   "client_uri": "https://myapp.example.com",
   "logo_uri": "https://myapp.example.com/logo.png",
-  "contacts": [
-    "admin@myapp.example.com",
-    "support@myapp.example.com"
-  ],
+  "contacts": ["admin@myapp.example.com", "support@myapp.example.com"],
   "tos_uri": "https://myapp.example.com/terms",
   "policy_uri": "https://myapp.example.com/privacy",
   "software_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -132,6 +132,7 @@ Content-Type: application/json
 ```
 
 #### Response (201 Created)
+
 ```json
 {
   "client_id": "s6BhdRkqt3_client_id_example",
@@ -145,21 +146,13 @@ Content-Type: application/json
     "https://myapp.example.com/callback",
     "https://myapp.example.com/callback2"
   ],
-  "grant_types": [
-    "authorization_code",
-    "refresh_token"
-  ],
-  "response_types": [
-    "code"
-  ],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
   "token_endpoint_auth_method": "client_secret_basic",
   "scope": "read write",
   "client_uri": "https://myapp.example.com",
   "logo_uri": "https://myapp.example.com/logo.png",
-  "contacts": [
-    "admin@myapp.example.com",
-    "support@myapp.example.com"
-  ],
+  "contacts": ["admin@myapp.example.com", "support@myapp.example.com"],
   "tos_uri": "https://myapp.example.com/terms",
   "policy_uri": "https://myapp.example.com/privacy",
   "software_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -176,11 +169,13 @@ All client management operations require the `registration_access_token` obtaine
 **GET** `/oauth/register/{client_id}`
 
 #### Request Headers
+
 ```
 Authorization: Bearer {registration_access_token}
 ```
 
 #### Response (200 OK)
+
 ```json
 {
   "client_id": "s6BhdRkqt3_client_id_example",
@@ -197,12 +192,14 @@ Authorization: Bearer {registration_access_token}
 **PUT** `/oauth/register/{client_id}`
 
 #### Request Headers
+
 ```
 Authorization: Bearer {registration_access_token}
 Content-Type: application/json
 ```
 
 #### Request Body
+
 ```json
 {
   "client_name": "My Updated Application Name",
@@ -215,6 +212,7 @@ Content-Type: application/json
 ```
 
 #### Response (200 OK)
+
 Returns updated client metadata in the same format as GET.
 
 #### Delete Client Registration
@@ -222,11 +220,13 @@ Returns updated client metadata in the same format as GET.
 **DELETE** `/oauth/register/{client_id}`
 
 #### Request Headers
+
 ```
 Authorization: Bearer {registration_access_token}
 ```
 
 #### Response (204 No Content)
+
 Empty response body on successful deletion.
 
 ### Error Responses
@@ -241,6 +241,7 @@ All endpoints return RFC 7591 compliant error responses:
 ```
 
 **Common Error Codes:**
+
 - `invalid_client_metadata`: Invalid or missing client metadata
 - `invalid_request`: Malformed request
 - `server_error`: Internal server error
@@ -253,26 +254,27 @@ All endpoints return RFC 7591 compliant error responses:
 
 ### Optional Fields
 
-| Field | Type | Description | Example |
-|-------|------|-------------|---------|
-| `client_name` | string | Human-readable application name | "My Application" |
-| `client_uri` | URI | Application homepage URL | "https://myapp.example.com" |
-| `logo_uri` | URI | Application logo URL | "https://myapp.example.com/logo.png" |
-| `contacts` | array | Developer email addresses | ["admin@example.com"] |
-| `tos_uri` | URI | Terms of service URL | "https://myapp.example.com/terms" |
-| `policy_uri` | URI | Privacy policy URL | "https://myapp.example.com/privacy" |
-| `jwks_uri` | URI | JSON Web Key Set URL | "https://myapp.example.com/.well-known/jwks.json" |
-| `software_id` | string | Unique software identifier | "550e8400-e29b-41d4-a716-446655440000" |
-| `software_version` | string | Software version | "1.0.0" |
-| `grant_types` | array | OAuth grant types | ["authorization_code", "refresh_token"] |
-| `response_types` | array | OAuth response types | ["code"] |
-| `token_endpoint_auth_method` | string | Token endpoint authentication | "client_secret_basic" |
-| `scope` | string | Requested OAuth scopes | "read write" |
-| `application_type` | string | Application type | "web" or "native" |
+| Field                        | Type   | Description                     | Example                                           |
+| ---------------------------- | ------ | ------------------------------- | ------------------------------------------------- |
+| `client_name`                | string | Human-readable application name | "My Application"                                  |
+| `client_uri`                 | URI    | Application homepage URL        | "https://myapp.example.com"                       |
+| `logo_uri`                   | URI    | Application logo URL            | "https://myapp.example.com/logo.png"              |
+| `contacts`                   | array  | Developer email addresses       | ["admin@example.com"]                             |
+| `tos_uri`                    | URI    | Terms of service URL            | "https://myapp.example.com/terms"                 |
+| `policy_uri`                 | URI    | Privacy policy URL              | "https://myapp.example.com/privacy"               |
+| `jwks_uri`                   | URI    | JSON Web Key Set URL            | "https://myapp.example.com/.well-known/jwks.json" |
+| `software_id`                | string | Unique software identifier      | "550e8400-e29b-41d4-a716-446655440000"            |
+| `software_version`           | string | Software version                | "1.0.0"                                           |
+| `grant_types`                | array  | OAuth grant types               | ["authorization_code", "refresh_token"]           |
+| `response_types`             | array  | OAuth response types            | ["code"]                                          |
+| `token_endpoint_auth_method` | string | Token endpoint authentication   | "client_secret_basic"                             |
+| `scope`                      | string | Requested OAuth scopes          | "read write"                                      |
+| `application_type`           | string | Application type                | "web" or "native"                                 |
 
 ### Authentication Methods
 
 Supported `token_endpoint_auth_method` values:
+
 - `client_secret_basic` - HTTP Basic authentication (default)
 - `client_secret_post` - Client credentials in POST body
 - `none` - Public client (no authentication)
@@ -282,6 +284,7 @@ Supported `token_endpoint_auth_method` values:
 ### Grant Types
 
 Supported OAuth 2.0 grant types:
+
 - `authorization_code` - Standard authorization code flow
 - `implicit` - Implicit flow (deprecated)
 - `password` - Resource owner password credentials
@@ -335,46 +338,50 @@ if ($http_code === 201) {
 ```javascript
 // Register a new OAuth client
 const clientData = {
-    client_name: 'JavaScript Application',
-    redirect_uris: ['https://spa.example.com/callback'],
-    grant_types: ['authorization_code'],
-    response_types: ['code'],
-    token_endpoint_auth_method: 'none', // Public client
-    application_type: 'web',
-    client_uri: 'https://spa.example.com',
-    contacts: ['admin@spa.example.com']
+  client_name: 'JavaScript Application',
+  redirect_uris: ['https://spa.example.com/callback'],
+  grant_types: ['authorization_code'],
+  response_types: ['code'],
+  token_endpoint_auth_method: 'none', // Public client
+  application_type: 'web',
+  client_uri: 'https://spa.example.com',
+  contacts: ['admin@spa.example.com'],
 };
 
 fetch('https://oauth-server.com/oauth/register', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-    },
-    body: JSON.stringify(clientData)
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+  },
+  body: JSON.stringify(clientData),
 })
-.then(response => {
+  .then(response => {
     if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     return response.json();
-})
-.then(client => {
+  })
+  .then(client => {
     console.log('Client registered:', client.client_id);
     console.log('Registration token:', client.registration_access_token);
 
     // Store registration token for future management operations
-    localStorage.setItem('registration_token', client.registration_access_token);
+    localStorage.setItem(
+      'registration_token',
+      client.registration_access_token,
+    );
     localStorage.setItem('client_id', client.client_id);
-})
-.catch(error => {
+  })
+  .catch(error => {
     console.error('Registration failed:', error);
-});
+  });
 ```
 
 ### cURL Examples
 
 #### Register a Client
+
 ```bash
 curl -X POST https://oauth-server.com/oauth/register \
   -H "Content-Type: application/json" \
@@ -387,6 +394,7 @@ curl -X POST https://oauth-server.com/oauth/register \
 ```
 
 #### Update Client Configuration
+
 ```bash
 curl -X PUT https://oauth-server.com/oauth/register/CLIENT_ID \
   -H "Authorization: Bearer REGISTRATION_ACCESS_TOKEN" \
@@ -398,6 +406,7 @@ curl -X PUT https://oauth-server.com/oauth/register/CLIENT_ID \
 ```
 
 #### Delete Client Registration
+
 ```bash
 curl -X DELETE https://oauth-server.com/oauth/register/CLIENT_ID \
   -H "Authorization: Bearer REGISTRATION_ACCESS_TOKEN"
@@ -412,6 +421,7 @@ Navigate to **Administration » Configuration » People » OAuth » Consumers** 
 #### Client Identification
 
 Dynamically registered clients are identified by:
+
 - **Description**: "Client registered via RFC 7591 Dynamic Client Registration"
 - **Third Party**: Marked as TRUE
 - **Enhanced Metadata**: Additional RFC 7591 fields populated
@@ -419,6 +429,7 @@ Dynamically registered clients are identified by:
 #### Administrative Actions
 
 Administrators can:
+
 - View client registration details
 - Edit client metadata
 - Disable or delete clients
@@ -506,6 +517,7 @@ function simple_oauth_client_registration_rate_limit() {
 **Cause**: Module not properly installed or routes not cleared.
 
 **Solution**:
+
 ```bash
 drush cache:rebuild
 drush router:rebuild
@@ -516,6 +528,7 @@ drush router:rebuild
 **Cause**: Missing required fields or invalid data format.
 
 **Solution**: Verify request format matches RFC 7591 specification:
+
 - `redirect_uris` must be a non-empty array
 - URI fields must be valid HTTP/HTTPS URLs
 - Email addresses must be properly formatted
@@ -525,6 +538,7 @@ drush router:rebuild
 **Cause**: Token expired, client deleted, or token corruption.
 
 **Solution**:
+
 - Verify token hasn't expired (1-year default)
 - Check if client still exists in the system
 - Re-register client if token is permanently lost
@@ -534,6 +548,7 @@ drush router:rebuild
 **Cause**: Token table not created or database permissions.
 
 **Solution**:
+
 ```bash
 drush updatedb
 drush entity:updates

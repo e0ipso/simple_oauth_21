@@ -26,11 +26,13 @@ This module provides full compliance with [RFC 8628 OAuth 2.0 Device Authorizati
 ## Installation
 
 1. Install the required dependencies:
+
    ```bash
    composer require drupal/simple_oauth drupal/consumers
    ```
 
 2. Enable the module:
+
    ```bash
    drush pm:enable simple_oauth_device_flow
    ```
@@ -48,17 +50,17 @@ Navigate to **Administration » Configuration » People » Simple OAuth » OAuth
 
 ### Configuration Options
 
-| Setting | Description | Default | Recommended |
-|---------|-------------|---------|-------------|
-| **Device Code Lifetime** | How long device codes remain valid (seconds) | 1800 (30 min) | 300-1800 |
-| **Polling Interval** | Minimum seconds between token polling requests | 5 | 5-15 |
-| **User Code Length** | Length of human-readable user codes | 8 | 6-12 |
-| **User Code Charset** | Characters allowed in user codes | `BCDFGHJKLMNPQRSTVWXZ` | Exclude ambiguous chars |
-| **Verification URI** | Path for user verification | `/oauth/device` | Keep default |
-| **Verification URI Complete** | Include device code in verification URI | `true` | `true` for UX |
-| **Cleanup Retention Days** | Days to keep completed device codes | 7 | 1-30 |
-| **Max Cleanup Batch Size** | Maximum codes to clean up per batch | 1000 | 500-2000 |
-| **Enable Statistics Logging** | Log device flow usage statistics | `true` | `true` for monitoring |
+| Setting                       | Description                                    | Default                | Recommended             |
+| ----------------------------- | ---------------------------------------------- | ---------------------- | ----------------------- |
+| **Device Code Lifetime**      | How long device codes remain valid (seconds)   | 1800 (30 min)          | 300-1800                |
+| **Polling Interval**          | Minimum seconds between token polling requests | 5                      | 5-15                    |
+| **User Code Length**          | Length of human-readable user codes            | 8                      | 6-12                    |
+| **User Code Charset**         | Characters allowed in user codes               | `BCDFGHJKLMNPQRSTVWXZ` | Exclude ambiguous chars |
+| **Verification URI**          | Path for user verification                     | `/oauth/device`        | Keep default            |
+| **Verification URI Complete** | Include device code in verification URI        | `true`                 | `true` for UX           |
+| **Cleanup Retention Days**    | Days to keep completed device codes            | 7                      | 1-30                    |
+| **Max Cleanup Batch Size**    | Maximum codes to clean up per batch            | 1000                   | 500-2000                |
+| **Enable Statistics Logging** | Log device flow usage statistics               | `true`                 | `true` for monitoring   |
 
 ### OAuth Client Configuration
 
@@ -78,10 +80,10 @@ Initiates the device authorization flow by generating device and user codes.
 
 #### Request Parameters
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `client_id` | Yes | OAuth client identifier |
-| `scope` | No | Space-delimited list of requested scopes |
+| Parameter   | Required | Description                              |
+| ----------- | -------- | ---------------------------------------- |
+| `client_id` | Yes      | OAuth client identifier                  |
+| `scope`     | No       | Space-delimited list of requested scopes |
 
 #### Example Request
 
@@ -112,9 +114,9 @@ Displays the user verification form where users enter their device code.
 
 #### Query Parameters
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `user_code` | No | Pre-filled user code (when using verification_uri_complete) |
+| Parameter   | Required | Description                                                 |
+| ----------- | -------- | ----------------------------------------------------------- |
+| `user_code` | No       | Pre-filled user code (when using verification_uri_complete) |
 
 ### Token Exchange
 
@@ -124,11 +126,11 @@ Use the standard OAuth token endpoint with the device code grant:
 
 #### Request Parameters
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `grant_type` | Yes | Must be `urn:ietf:params:oauth:grant-type:device_code` |
-| `device_code` | Yes | Device code from authorization response |
-| `client_id` | Yes | OAuth client identifier |
+| Parameter     | Required | Description                                            |
+| ------------- | -------- | ------------------------------------------------------ |
+| `grant_type`  | Yes      | Must be `urn:ietf:params:oauth:grant-type:device_code` |
+| `device_code` | Yes      | Device code from authorization response                |
+| `client_id`   | Yes      | OAuth client identifier                                |
 
 #### Example Request
 
@@ -209,21 +211,21 @@ Once authorized, the server returns an access token:
 
 ### Device Authorization Errors
 
-| Error Code | Description | HTTP Status |
-|------------|-------------|-------------|
-| `invalid_request` | Missing or invalid request parameters | 400 |
-| `invalid_client` | Invalid client_id | 400 |
-| `invalid_scope` | Invalid or unknown scope | 400 |
-| `server_error` | Internal server error | 500 |
+| Error Code        | Description                           | HTTP Status |
+| ----------------- | ------------------------------------- | ----------- |
+| `invalid_request` | Missing or invalid request parameters | 400         |
+| `invalid_client`  | Invalid client_id                     | 400         |
+| `invalid_scope`   | Invalid or unknown scope              | 400         |
+| `server_error`    | Internal server error                 | 500         |
 
 ### Token Exchange Errors
 
-| Error Code | Description | Action |
-|------------|-------------|--------|
-| `authorization_pending` | User hasn't completed authorization yet | Continue polling |
-| `slow_down` | Polling too frequently | Increase polling interval |
-| `expired_token` | Device code has expired | Start new flow |
-| `access_denied` | User denied the request | Handle denial |
+| Error Code              | Description                             | Action                    |
+| ----------------------- | --------------------------------------- | ------------------------- |
+| `authorization_pending` | User hasn't completed authorization yet | Continue polling          |
+| `slow_down`             | Polling too frequently                  | Increase polling interval |
+| `expired_token`         | Device code has expired                 | Start new flow            |
+| `access_denied`         | User denied the request                 | Handle denial             |
 
 ### Example Error Response
 
@@ -303,12 +305,16 @@ const axios = require('axios');
 
 async function deviceFlow() {
   // Step 1: Request device authorization
-  const authResponse = await axios.post('https://your-site.com/oauth/device_authorization', {
-    client_id: 'your_client_id',
-    scope: 'read write'
-  });
+  const authResponse = await axios.post(
+    'https://your-site.com/oauth/device_authorization',
+    {
+      client_id: 'your_client_id',
+      scope: 'read write',
+    },
+  );
 
-  const { device_code, user_code, verification_uri, interval } = authResponse.data;
+  const { device_code, user_code, verification_uri, interval } =
+    authResponse.data;
 
   console.log(`Visit: ${verification_uri}`);
   console.log(`Enter code: ${user_code}`);
@@ -316,11 +322,14 @@ async function deviceFlow() {
   // Step 2: Poll for token
   while (true) {
     try {
-      const tokenResponse = await axios.post('https://your-site.com/oauth/token', {
-        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-        device_code: device_code,
-        client_id: 'your_client_id'
-      });
+      const tokenResponse = await axios.post(
+        'https://your-site.com/oauth/token',
+        {
+          grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+          device_code: device_code,
+          client_id: 'your_client_id',
+        },
+      );
 
       console.log('Access token:', tokenResponse.data.access_token);
       break;
@@ -369,21 +378,25 @@ Enable statistics logging to monitor:
 ### Common Issues
 
 **Issue: "Invalid device code" error**
+
 - Verify device code hasn't expired (check `expires_in`)
 - Ensure device code is being passed correctly
 - Check for typos in device code
 
 **Issue: "Authorization pending" continues indefinitely**
+
 - Verify user completed verification process
 - Check if user code was entered correctly
 - Ensure user is properly authenticated
 
 **Issue: Device authorization endpoint returns 404**
+
 - Verify module is enabled
 - Clear Drupal cache
 - Check routing configuration
 
 **Issue: User verification page not accessible**
+
 - Check permissions for anonymous users
 - Verify route is not being overridden
 - Clear Drupal cache
@@ -391,16 +404,19 @@ Enable statistics logging to monitor:
 ### Debug Steps
 
 1. **Check module status:**
+
    ```bash
    drush pm:list --type=module --filter=device_flow
    ```
 
 2. **Clear cache:**
+
    ```bash
    drush cache:rebuild
    ```
 
 3. **Check logs:**
+
    ```bash
    drush watchdog:show --filter=simple_oauth_device_flow
    ```
@@ -446,6 +462,7 @@ The module includes comprehensive tests:
 - Kernel tests for integration scenarios
 
 Run tests with:
+
 ```bash
 vendor/bin/phpunit --group simple_oauth_device_flow
 ```
