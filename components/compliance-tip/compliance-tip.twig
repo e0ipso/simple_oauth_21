@@ -1,0 +1,18 @@
+<div
+  class="messages messages-{{ type|default('info') }}"
+  role="region"
+  aria-label="{{ type|default('info')|title }} message"
+>
+  <div class="messages-content">
+    {% if type == 'success' %}
+      <span class="messages-icon" aria-hidden="true">✓</span>
+    {% elseif type == 'warning' %}
+      <span class="messages-icon" aria-hidden="true">⚠</span>
+    {% else %}
+      <span class="messages-icon" aria-hidden="true">ℹ</span>
+    {% endif %}
+    <div class="messages-text">
+      {{ message }}
+    </div>
+  </div>
+</div>

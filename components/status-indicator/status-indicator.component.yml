@@ -1,0 +1,19 @@
+$schema: https://git.drupalcode.org/project/drupal/-/raw/10.1.x/core/modules/sdc/src/metadata.schema.json
+name: Status Indicator
+status: stable
+description: Displays status badge with icon and text for module status
+props:
+  type: object
+  properties:
+    status:
+      type: string
+      title: Status
+      description: Module status
+      enum: ['enabled', 'disabled', 'not-installed']
+    label:
+      type: string
+      title: Label
+      description: Text label for the status indicator
+  required:
+    - status
+    - label
