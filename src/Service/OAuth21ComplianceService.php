@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Drupal\simple_oauth_21\Service;
 
+use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Config\Config;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\Core\Extension\ModuleHandlerInterface;
+use Drupal\Core\Routing\RouteProviderInterface;
 use Drupal\Core\Url;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Routing\Exception\RouteNotFoundException;
 
 /**
  * Service for OAuth 2.1 compliance detection and assessment.
@@ -42,6 +45,16 @@ final class OAuth21ComplianceService {
       'contrib' => 'simple_oauth_native_apps',
       'path' => 'modules/simple_oauth_native_apps',
     ],
+    'simple_oauth_device_flow' => [
+      'submodule' => 'simple_oauth_21_device_flow',
+      'contrib' => 'simple_oauth_device_flow',
+      'path' => 'modules/simple_oauth_device_flow',
+    ],
+    'simple_oauth_client_registration' => [
+      'submodule' => 'simple_oauth_21_client_registration',
+      'contrib' => 'simple_oauth_client_registration',
+      'path' => 'modules/simple_oauth_client_registration',
+    ],
   ];
 
   /**
@@ -55,12 +68,18 @@ final class OAuth21ComplianceService {
    *   The extension list module service.
    * @param \Psr\Log\LoggerInterface $logger
    *   The logger service.
+   * @param \Drupal\Core\Cache\CacheBackendInterface $cache
+   *   The cache backend service.
+   * @param \Drupal\Core\Routing\RouteProviderInterface $routeProvider
+   *   The route provider service.
    */
   public function __construct(
     private readonly ModuleHandlerInterface $moduleHandler,
     private readonly ConfigFactoryInterface $configFactory,
     private readonly ModuleExtensionList $extensionListModule,
     private readonly LoggerInterface $logger,
+    private readonly CacheBackendInterface $cache,
+    private readonly RouteProviderInterface $routeProvider,
   ) {}
 
   /**
@@ -180,8 +199,10 @@ final class OAuth21ComplianceService {
       $native_config = $this->getModuleConfig('simple_oauth_native_apps.settings');
 
       // Custom URI Schemes Support (RFC 8252 requirement).
-      $allow_custom_schemes = (bool) ($native_config?->get('allow.custom_uri_schemes') ??
-                                      $native_config?->get('allow_custom_uri_schemes') ?? FALSE);
+      $custom_schemes_setting = $native_config?->get('allow.custom_uri_schemes');
+      // Consider it allowed if set to 'native' or 'auto-detect', not allowed
+      // if 'web'.
+      $allow_custom_schemes = in_array($custom_schemes_setting, ['native', 'auto-detect'], TRUE);
       $requirements['custom_uri_schemes'] = [
         'status' => $allow_custom_schemes ? 'compliant' : 'non_compliant',
         'title' => 'Custom URI Schemes for Native Apps',
@@ -193,8 +214,10 @@ final class OAuth21ComplianceService {
       ];
 
       // Loopback Redirects Support (RFC 8252 requirement).
-      $allow_loopback = (bool) ($native_config?->get('allow.loopback_redirects') ??
-                                $native_config?->get('allow_loopback_redirects') ?? FALSE);
+      $loopback_setting = $native_config?->get('allow.loopback_redirects');
+      // Consider it allowed if set to 'native' or 'auto-detect', not allowed
+      // if 'web'.
+      $allow_loopback = in_array($loopback_setting, ['native', 'auto-detect'], TRUE);
       $requirements['loopback_redirects'] = [
         'status' => $allow_loopback ? 'compliant' : 'non_compliant',
         'title' => 'Loopback Redirects for Native Apps',
@@ -360,7 +383,10 @@ final class OAuth21ComplianceService {
       ];
 
       // Enhanced PKCE for Native Apps.
-      $enhanced_pkce = (bool) ($native_config?->get('enhanced_pkce_for_native') ?? FALSE);
+      $enhanced_pkce_setting = $native_config?->get('native.enhanced_pkce');
+      // Consider it enabled if the setting is 'enhanced'.
+      $enhanced_pkce = ($enhanced_pkce_setting === 'enhanced');
+
       $requirements['enhanced_pkce_native'] = [
         'status' => $enhanced_pkce ? 'compliant' : 'recommended',
         'title' => 'Enhanced PKCE for Native Apps',
@@ -540,9 +566,7 @@ final class OAuth21ComplianceService {
     $mapping = self::SUBMODULE_MAPPING[$base_module_name] ?? [];
 
     if (empty($mapping)) {
-      $this->logger->warning('Unknown module requested for detection: @module', [
-        '@module' => $base_module_name,
-      ]);
+      // For core modules like 'simple_oauth', check directly without warning.
       return $this->moduleHandler->moduleExists($base_module_name);
     }
 
@@ -651,21 +675,13 @@ final class OAuth21ComplianceService {
       'enabled' => $enabled_name !== NULL,
       'enabled_name' => $enabled_name,
       'available' => $is_available,
-      'installation_type' => 'unknown',
       'submodule_preferred' => !empty($mapping['submodule']),
       'fallback_available' => FALSE,
     ];
 
     if ($enabled_name && !empty($mapping)) {
-      if ($enabled_name === $mapping['submodule']) {
-        $status['installation_type'] = 'submodule';
-      }
-      elseif ($enabled_name === $mapping['contrib']) {
-        $status['installation_type'] = 'contrib';
+      if ($enabled_name === $mapping['contrib']) {
         $status['fallback_available'] = $this->extensionListModule->exists($mapping['submodule']);
-      }
-      else {
-        $status['installation_type'] = 'direct';
       }
     }
 
@@ -817,6 +833,580 @@ final class OAuth21ComplianceService {
   }
 
   /**
+   * Gets comprehensive submodule capability information.
+   *
+   * Provides detailed capability data for all OAuth 2.1 submodules including
+   * use cases, features, endpoints, and installation status.
+   *
+   * @return array
+   *   Array of submodule capabilities with detailed status information.
+   */
+  public function getSubmoduleCapabilities(): array {
+    $cid = 'simple_oauth_21:submodule_capabilities';
+    $cached = $this->cache->get($cid);
+
+    if ($cached && $cached->data) {
+      return $cached->data;
+    }
+
+    $capabilities = [
+      'simple_oauth_pkce' => [
+        'use_cases' => ['Mobile Apps', 'SPAs', 'Native Applications', 'Public Clients'],
+        'features' => ['PKCE Code Challenge', 'S256 Challenge Method', 'Authorization Code Flow Protection'],
+        'endpoints' => ['/oauth/authorize', '/oauth/token'],
+        'status' => $this->getModuleCapabilityStatus('simple_oauth_pkce'),
+        'rfc' => 'RFC 7636',
+        'description' => 'Proof Key for Code Exchange (PKCE) adds security to OAuth authorization code flows',
+        'priority' => 'mandatory',
+      ],
+      'simple_oauth_server_metadata' => [
+        'use_cases' => ['API Discovery', 'Client Configuration', 'Service Documentation'],
+        'features' => ['Server Metadata Endpoint', 'OAuth Discovery', 'Configuration Advertising'],
+        'endpoints' => ['/.well-known/oauth-authorization-server'],
+        'status' => $this->getModuleCapabilityStatus('simple_oauth_server_metadata'),
+        'rfc' => 'RFC 8414',
+        'description' => 'Provides OAuth server metadata for automatic client configuration and discovery',
+        'priority' => 'required',
+      ],
+      'simple_oauth_native_apps' => [
+        'use_cases' => ['Mobile Apps', 'Desktop Applications', 'CLI Tools'],
+        'features' => ['Custom URI Schemes', 'Loopback Redirects', 'WebView Detection', 'Enhanced Security'],
+        'endpoints' => ['/oauth/authorize', '/oauth/token'],
+        'status' => $this->getModuleCapabilityStatus('simple_oauth_native_apps'),
+        'rfc' => 'RFC 8252',
+        'description' => 'Enhanced security and usability for OAuth in native applications',
+        'priority' => 'recommended',
+      ],
+      'simple_oauth_device_flow' => [
+        'use_cases' => ['Smart TVs', 'IoT Devices', 'Gaming Consoles', 'Input-Constrained Devices'],
+        'features' => ['Device Authorization Grant', 'User Code Verification', 'Polling for Tokens'],
+        'endpoints' => ['/oauth/device_authorization', '/oauth/device'],
+        'status' => $this->getModuleCapabilityStatus('simple_oauth_device_flow'),
+        'rfc' => 'RFC 8628',
+        'description' => 'OAuth flow for devices with limited input capabilities or no web browser',
+        'priority' => 'optional',
+      ],
+      'simple_oauth_client_registration' => [
+        'use_cases' => ['Dynamic Client Creation', 'Automated Onboarding', 'Multi-tenant Applications'],
+        'features' => ['Dynamic Client Registration', 'Client Metadata Management', 'Automated Configuration'],
+        'endpoints' => ['/oauth/register'],
+        'status' => $this->getModuleCapabilityStatus('simple_oauth_client_registration'),
+        'rfc' => 'RFC 7591',
+        'description' => 'Enables dynamic registration of OAuth clients without manual intervention',
+        'priority' => 'optional',
+      ],
+    ];
+
+    // Cache for 5 minutes with module-specific tags for invalidation.
+    $cache_tags = ['config:module_list'];
+    foreach (array_keys($capabilities) as $module_name) {
+      $cache_tags[] = "config:{$module_name}.settings";
+    }
+
+    $this->cache->set($cid, $capabilities, time() + 300, $cache_tags);
+
+    return $capabilities;
+  }
+
+  /**
+   * Gets business use case to module mapping.
+   *
+   * Maps common OAuth implementation scenarios to the required modules
+   * and provides guidance on module selection.
+   *
+   * @return array
+   *   Array of use cases mapped to required modules with descriptions.
+   */
+  public function getUseCaseModuleMapping(): array {
+    $cid = 'simple_oauth_21:use_case_mapping';
+    $cached = $this->cache->get($cid);
+
+    if ($cached && $cached->data) {
+      return $cached->data;
+    }
+
+    $use_cases = [
+      'mobile_apps' => [
+        'modules' => ['simple_oauth_pkce', 'simple_oauth_native_apps'],
+        'description' => 'Secure OAuth for mobile applications with enhanced native app support',
+        'priority' => 'high',
+        'implementation_notes' => 'PKCE is mandatory for mobile apps, native apps module adds security features',
+        'security_level' => 'high',
+      ],
+      'single_page_applications' => [
+        'modules' => ['simple_oauth_pkce'],
+        'description' => 'OAuth for browser-based SPAs using authorization code flow with PKCE',
+        'priority' => 'high',
+        'implementation_notes' => 'PKCE replaces implicit flow for better security in public clients',
+        'security_level' => 'high',
+      ],
+      'device_integration' => [
+        'modules' => ['simple_oauth_device_flow', 'simple_oauth_pkce'],
+        'description' => 'OAuth for smart TVs, IoT devices, and input-constrained devices',
+        'priority' => 'medium',
+        'implementation_notes' => 'Device flow enables OAuth on devices without web browsers',
+        'security_level' => 'medium',
+      ],
+      'api_discovery' => [
+        'modules' => ['simple_oauth_server_metadata'],
+        'description' => 'Automatic client configuration and OAuth server discovery',
+        'priority' => 'medium',
+        'implementation_notes' => 'Enables clients to automatically discover OAuth capabilities',
+        'security_level' => 'low',
+      ],
+      'dynamic_client_onboarding' => [
+        'modules' => ['simple_oauth_client_registration', 'simple_oauth_server_metadata'],
+        'description' => 'Automated client registration and configuration',
+        'priority' => 'low',
+        'implementation_notes' => 'Useful for multi-tenant applications and automated deployment',
+        'security_level' => 'medium',
+      ],
+      'enterprise_web_applications' => [
+        'modules' => ['simple_oauth_server_metadata'],
+        'description' => 'Traditional server-side web applications with OAuth integration',
+        'priority' => 'low',
+        'implementation_notes' => 'Confidential clients using authorization code flow',
+        'security_level' => 'high',
+      ],
+      'complete_oauth_ecosystem' => [
+        'modules' => [
+          'simple_oauth_pkce',
+          'simple_oauth_server_metadata',
+          'simple_oauth_native_apps',
+          'simple_oauth_device_flow',
+          'simple_oauth_client_registration',
+        ],
+        'description' => 'Full OAuth 2.1 implementation supporting all client types and flows',
+        'priority' => 'high',
+        'implementation_notes' => 'Comprehensive OAuth server supporting all modern OAuth patterns',
+        'security_level' => 'maximum',
+      ],
+    ];
+
+    // Cache for 10 minutes with module list tags.
+    $this->cache->set($cid, $use_cases, time() + 600, ['config:module_list']);
+
+    return $use_cases;
+  }
+
+  /**
+   * Gets feature availability matrix for OAuth flows and capabilities.
+   *
+   * Provides information about available OAuth features based on currently
+   * enabled modules and their configuration status.
+   *
+   * @return array
+   *   Matrix of OAuth features and their availability status.
+   */
+  public function getFeatureAvailabilityMatrix(): array {
+    $cid = 'simple_oauth_21:feature_availability';
+    $cached = $this->cache->get($cid);
+
+    if ($cached && $cached->data) {
+      return $cached->data;
+    }
+
+    $features = [
+      'authorization_code_flow' => [
+        'available' => $this->moduleHandler->moduleExists('simple_oauth'),
+        'modules' => ['simple_oauth'],
+        'enhanced_by' => ['simple_oauth_pkce'],
+        'description' => 'Standard OAuth authorization code flow',
+        'security_notes' => 'Enhanced security with PKCE when available',
+      ],
+      'pkce_protection' => [
+        'available' => $this->isModuleEnabledWithFallback('simple_oauth_pkce'),
+        'modules' => ['simple_oauth_pkce'],
+        'requires' => ['simple_oauth'],
+        'description' => 'Proof Key for Code Exchange protection for authorization code flows',
+        'security_notes' => 'Mandatory for OAuth 2.1 compliance and public clients',
+      ],
+      'device_authorization_flow' => [
+        'available' => $this->isModuleEnabledWithFallback('simple_oauth_device_flow'),
+        'modules' => ['simple_oauth_device_flow'],
+        'requires' => ['simple_oauth'],
+        'description' => 'OAuth flow for input-constrained devices',
+        'security_notes' => 'Enables OAuth on devices without web browsers',
+      ],
+      'server_metadata_discovery' => [
+        'available' => $this->isModuleEnabledWithFallback('simple_oauth_server_metadata'),
+        'modules' => ['simple_oauth_server_metadata'],
+        'requires' => ['simple_oauth'],
+        'description' => 'Automatic OAuth server capability discovery',
+        'security_notes' => 'Helps clients configure security settings automatically',
+      ],
+      'native_app_security' => [
+        'available' => $this->isModuleEnabledWithFallback('simple_oauth_native_apps'),
+        'modules' => ['simple_oauth_native_apps'],
+        'requires' => ['simple_oauth'],
+        'enhanced_by' => ['simple_oauth_pkce'],
+        'description' => 'Enhanced security features for native applications',
+        'security_notes' => 'Includes WebView detection and custom URI scheme support',
+      ],
+      'dynamic_client_registration' => [
+        'available' => $this->isModuleEnabledWithFallback('simple_oauth_client_registration'),
+        'modules' => ['simple_oauth_client_registration'],
+        'requires' => ['simple_oauth'],
+        'description' => 'Automated OAuth client registration and management',
+        'security_notes' => 'Enables programmatic client creation with proper validation',
+      ],
+      'oauth_21_compliance' => [
+        'available' => $this->checkOauth21Compliance(),
+        'modules' => ['simple_oauth_pkce'],
+        'requires' => ['simple_oauth'],
+        'enhanced_by' => ['simple_oauth_server_metadata', 'simple_oauth_native_apps'],
+        'description' => 'Full OAuth 2.1 specification compliance',
+        'security_notes' => 'Requires PKCE and deprecates implicit grant flow',
+      ],
+    ];
+
+    // Add endpoint availability information.
+    foreach ($features as $feature_name => &$feature) {
+      $feature['endpoints'] = $this->getFeatureEndpoints($feature_name, $feature['modules']);
+    }
+
+    // Cache for 5 minutes with configuration and module tags.
+    $cache_tags = ['config:module_list', 'config:simple_oauth.settings'];
+    foreach (array_keys(self::SUBMODULE_MAPPING) as $module_name) {
+      $cache_tags[] = "config:{$module_name}.settings";
+    }
+
+    $this->cache->set($cid, $features, time() + 300, $cache_tags);
+
+    return $features;
+  }
+
+  /**
+   * Gets detailed capability status for a specific module.
+   *
+   * Provides granular status information about module installation,
+   * configuration, and functional readiness.
+   *
+   * @param string $module_name
+   *   The base module name to check.
+   *
+   * @return array
+   *   Detailed capability status information.
+   */
+  private function getModuleCapabilityStatus(string $module_name): array {
+    $module_status = $this->getModuleStatus($module_name);
+    $config = $this->getModuleConfigWithFallback($module_name);
+
+    $status = [
+      'installation_status' => $this->determineInstallationStatus($module_status),
+      'configuration_status' => $this->determineConfigurationStatus($module_name, $config),
+      'endpoint_status' => $this->checkModuleEndpoints($module_name),
+      'enabled' => $module_status['enabled'],
+      'available' => $module_status['available'],
+      'installation_type' => $module_status['installation_type'],
+    ];
+
+    // Overall readiness assessment.
+    $status['overall_readiness'] = $this->calculateOverallReadiness($status);
+
+    return $status;
+  }
+
+  /**
+   * Determines the installation status level for a module.
+   *
+   * @param array $module_status
+   *   Module status information from getModuleStatus().
+   *
+   * @return string
+   *   Installation status level.
+   */
+  private function determineInstallationStatus(array $module_status): string {
+    if (!$module_status['available']) {
+      return 'not_installed';
+    }
+
+    if (!$module_status['enabled']) {
+      return 'installed_disabled';
+    }
+
+    return 'enabled';
+  }
+
+  /**
+   * Determines the configuration status for a module.
+   *
+   * @param string $module_name
+   *   The module name to check configuration for.
+   * @param \Drupal\Core\Config\Config|null $config
+   *   The module configuration object.
+   *
+   * @return string
+   *   Configuration status level.
+   */
+  private function determineConfigurationStatus(string $module_name, ?Config $config): string {
+    if (!$config) {
+      return 'no_configuration';
+    }
+
+    // Module-specific configuration checks.
+    $configured_properly = match ($module_name) {
+      'simple_oauth_pkce' => $this->checkPkceConfiguration($config),
+      'simple_oauth_server_metadata' => $this->checkServerMetadataConfiguration($config),
+      'simple_oauth_native_apps' => $this->checkNativeAppsConfiguration($config),
+      'simple_oauth_device_flow' => $this->checkDeviceFlowConfiguration($config),
+      'simple_oauth_client_registration' => $this->checkClientRegistrationConfiguration($config),
+      default => TRUE,
+    };
+
+    return $configured_properly ? 'fully_configured' : 'partially_configured';
+  }
+
+  /**
+   * Checks PKCE module configuration completeness.
+   *
+   * @param \Drupal\Core\Config\Config $config
+   *   PKCE configuration object.
+   *
+   * @return bool
+   *   TRUE if properly configured.
+   */
+  private function checkPkceConfiguration(Config $config): bool {
+    $enforcement = $config->get('enforcement') ?? 'optional';
+    $s256_enabled = (bool) ($config->get('s256_enabled') ?? FALSE);
+
+    // For OAuth 2.1 compliance, PKCE should be mandatory and S256 enabled.
+    return $enforcement === 'mandatory' && $s256_enabled;
+  }
+
+  /**
+   * Checks server metadata module configuration completeness.
+   *
+   * @param \Drupal\Core\Config\Config $config
+   *   Server metadata configuration object.
+   *
+   * @return bool
+   *   TRUE if properly configured.
+   */
+  private function checkServerMetadataConfiguration(Config $config): bool {
+    // Basic check: ensure essential metadata is configured.
+    $issuer = $config->get('issuer') ?? '';
+    $authorization_endpoint = $config->get('authorization_endpoint') ?? '';
+    $token_endpoint = $config->get('token_endpoint') ?? '';
+
+    return !empty($issuer) && !empty($authorization_endpoint) && !empty($token_endpoint);
+  }
+
+  /**
+   * Checks native apps module configuration completeness.
+   *
+   * @param \Drupal\Core\Config\Config $config
+   *   Native apps configuration object.
+   *
+   * @return bool
+   *   TRUE if properly configured.
+   */
+  private function checkNativeAppsConfiguration(Config $config): bool {
+    $custom_schemes_setting = $config->get('allow.custom_uri_schemes');
+    $loopback_setting = $config->get('allow.loopback_redirects');
+
+    // Consider them allowed if set to 'native' or 'auto-detect'.
+    $allow_custom_schemes = in_array($custom_schemes_setting, ['native', 'auto-detect'], TRUE);
+    $allow_loopback = in_array($loopback_setting, ['native', 'auto-detect'], TRUE);
+
+    // For native apps, both custom schemes and loopback redirects should be
+    // allowed.
+    return $allow_custom_schemes && $allow_loopback;
+  }
+
+  /**
+   * Checks device flow module configuration completeness.
+   *
+   * @param \Drupal\Core\Config\Config $config
+   *   Device flow configuration object.
+   *
+   * @return bool
+   *   TRUE if properly configured.
+   */
+  private function checkDeviceFlowConfiguration(Config $config): bool {
+    $verification_uri = $config->get('verification_uri') ?? '';
+    $device_code_expiration = (int) ($config->get('device_code_expiration') ?? 0);
+
+    return !empty($verification_uri) && $device_code_expiration > 0;
+  }
+
+  /**
+   * Checks client registration module configuration completeness.
+   *
+   * @param \Drupal\Core\Config\Config $config
+   *   Client registration configuration object.
+   *
+   * @return bool
+   *   TRUE if properly configured.
+   */
+  private function checkClientRegistrationConfiguration(Config $config): bool {
+    $allow_dynamic_registration = (bool) ($config->get('allow_dynamic_registration') ?? FALSE);
+    $require_authentication = (bool) ($config->get('require_authentication') ?? TRUE);
+
+    return $allow_dynamic_registration && $require_authentication;
+  }
+
+  /**
+   * Checks endpoint availability for a specific module.
+   *
+   * @param string $module_name
+   *   The module name to check endpoints for.
+   *
+   * @return array
+   *   Array of endpoint status information.
+   */
+  private function checkModuleEndpoints(string $module_name): array {
+    $endpoints = match ($module_name) {
+      'simple_oauth_pkce' => ['/oauth/authorize', '/oauth/token'],
+      'simple_oauth_server_metadata' => ['/.well-known/oauth-authorization-server'],
+      'simple_oauth_native_apps' => ['/oauth/authorize', '/oauth/token'],
+      'simple_oauth_device_flow' => ['/oauth/device_authorization', '/oauth/device'],
+      'simple_oauth_client_registration' => ['/oauth/register'],
+      default => [],
+    };
+
+    $endpoint_status = [];
+    foreach ($endpoints as $endpoint) {
+      $endpoint_status[$endpoint] = $this->checkEndpointAvailability($endpoint);
+    }
+
+    return $endpoint_status;
+  }
+
+  /**
+   * Checks if a specific endpoint is available and accessible.
+   *
+   * @param string $path
+   *   The endpoint path to check.
+   *
+   * @return array
+   *   Endpoint availability information.
+   */
+  private function checkEndpointAvailability(string $path): array {
+    $route_name = $this->getRouteNameForPath($path);
+
+    return [
+      'path' => $path,
+      'route_exists' => $route_name !== NULL,
+      'route_name' => $route_name,
+      'accessible' => $route_name !== NULL ? $this->testRouteAccess($route_name) : FALSE,
+    ];
+  }
+
+  /**
+   * Gets the route name for a given path.
+   *
+   * @param string $path
+   *   The path to find the route for.
+   *
+   * @return string|null
+   *   The route name if found, NULL otherwise.
+   */
+  private function getRouteNameForPath(string $path): ?string {
+    $route_map = [
+      '/oauth/authorize' => 'oauth2_token.authorize',
+      '/oauth/token' => 'oauth2_token.token',
+      '/.well-known/oauth-authorization-server' => 'simple_oauth_server_metadata.well_known',
+      '/oauth/device_authorization' => 'simple_oauth_device_flow.device_authorization',
+      '/oauth/device' => 'simple_oauth_device_flow.device_token',
+      '/oauth/register' => 'simple_oauth_client_registration.register',
+    ];
+
+    return $route_map[$path] ?? NULL;
+  }
+
+  /**
+   * Tests if a route is accessible.
+   *
+   * @param string $route_name
+   *   The route name to test.
+   *
+   * @return bool
+   *   TRUE if the route is accessible.
+   */
+  private function testRouteAccess(string $route_name): bool {
+    try {
+      $this->routeProvider->getRouteByName($route_name);
+      return TRUE;
+    }
+    catch (RouteNotFoundException $e) {
+      return FALSE;
+    }
+  }
+
+  /**
+   * Gets endpoint information for a specific feature.
+   *
+   * @param string $feature_name
+   *   The feature name.
+   * @param array $modules
+   *   The modules that provide this feature.
+   *
+   * @return array
+   *   Endpoint information for the feature.
+   */
+  private function getFeatureEndpoints(string $feature_name, array $modules): array {
+    $endpoints = [];
+
+    foreach ($modules as $module) {
+      if ($this->isModuleEnabledWithFallback($module)) {
+        $module_endpoints = $this->checkModuleEndpoints($module);
+        $endpoints = array_merge($endpoints, $module_endpoints);
+      }
+    }
+
+    return $endpoints;
+  }
+
+  /**
+   * Calculates overall readiness assessment for a module.
+   *
+   * @param array $status
+   *   The detailed status array.
+   *
+   * @return string
+   *   Overall readiness level.
+   */
+  private function calculateOverallReadiness(array $status): string {
+    if (!$status['enabled']) {
+      return $status['available'] ? 'available_not_enabled' : 'not_available';
+    }
+
+    if ($status['configuration_status'] === 'fully_configured') {
+      $working_endpoints = count(array_filter($status['endpoint_status'], fn($ep) => $ep['accessible']));
+      $total_endpoints = count($status['endpoint_status']);
+
+      if ($working_endpoints === $total_endpoints && $total_endpoints > 0) {
+        return 'fully_ready';
+      }
+      elseif ($working_endpoints > 0) {
+        return 'partially_ready';
+      }
+      else {
+        return 'configured_not_functional';
+      }
+    }
+
+    return match ($status['configuration_status']) {
+      'partially_configured' => 'needs_configuration',
+      'no_configuration' => 'needs_configuration',
+      default => 'unknown',
+    };
+  }
+
+  /**
+   * Checks OAuth 2.1 compliance status for feature matrix.
+   *
+   * @return bool
+   *   TRUE if OAuth 2.1 compliant.
+   */
+  private function checkOauth21Compliance(): bool {
+    $compliance = $this->getComplianceStatus();
+    return $compliance['overall_status']['status'] === 'fully_compliant' ||
+           $compliance['overall_status']['status'] === 'mostly_compliant';
+  }
+
+  /**
    * Provides a failsafe compliance status when the service encounters errors.
    *
    * @param \Exception $exception
@@ -903,17 +1493,17 @@ final class OAuth21ComplianceService {
       'mandatory_score' => [
         'compliant' => $mandatory_compliant,
         'total' => $mandatory_total,
-        'percentage' => round($mandatory_percentage, 1),
+        'percentage' => floor($mandatory_percentage),
       ],
       'required_score' => [
         'compliant' => $required_compliant,
         'total' => $required_total,
-        'percentage' => round($required_percentage, 1),
+        'percentage' => floor($required_percentage),
       ],
       'recommended_score' => [
         'compliant' => $recommended_compliant,
         'total' => $recommended_total,
-        'percentage' => round($recommended_percentage, 1),
+        'percentage' => floor($recommended_percentage),
       ],
     ];
   }

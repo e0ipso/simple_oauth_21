@@ -4,11 +4,14 @@ namespace Drupal\simple_oauth_server_metadata\Form;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Routing\RouteProviderInterface;
 use Drupal\Core\Url;
 use Drupal\simple_oauth_server_metadata\Service\ServerMetadataService;
 use Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService;
+use Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -27,12 +30,21 @@ class ServerMetadataSettingsForm extends ConfigFormBase {
    *   The server metadata service.
    * @param \Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService $resourceMetadataService
    *   The resource metadata service.
+   * @param \Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService $endpointDiscoveryService
+   *   The endpoint discovery service.
+   * @param \Drupal\Core\Extension\ModuleHandlerInterface $moduleHandler
+   *   The module handler.
+   * @param \Drupal\Core\Routing\RouteProviderInterface $routeProvider
+   *   The route provider.
    */
   public function __construct(
     ConfigFactoryInterface $config_factory,
     TypedConfigManagerInterface $typed_config_manager,
     private readonly ServerMetadataService $serverMetadataService,
     private readonly ResourceMetadataService $resourceMetadataService,
+    private readonly EndpointDiscoveryService $endpointDiscoveryService,
+    private readonly ModuleHandlerInterface $moduleHandler,
+    private readonly RouteProviderInterface $routeProvider,
   ) {
     parent::__construct($config_factory, $typed_config_manager);
   }
@@ -45,7 +57,10 @@ class ServerMetadataSettingsForm extends ConfigFormBase {
       $container->get('config.factory'),
       $container->get('config.typed'),
       $container->get('simple_oauth_server_metadata.server_metadata'),
-      $container->get('simple_oauth_server_metadata.resource_metadata')
+      $container->get('simple_oauth_server_metadata.resource_metadata'),
+      $container->get('simple_oauth_server_metadata.endpoint_discovery'),
+      $container->get('module_handler'),
+      $container->get('router.route_provider')
     );
   }
 
@@ -84,30 +99,57 @@ class ServerMetadataSettingsForm extends ConfigFormBase {
     $form['endpoints'] = [
       '#type' => 'details',
       '#title' => $this->t('Optional Endpoints'),
-      '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Server metadata should advertise all supported endpoints for better OAuth 2.1 compliance. Configure optional endpoints that your authorization server supports. (<a href="https://datatracker.ietf.org/doc/html/rfc8414#section-2" target="_blank">RFC 8414 Section 2</a>)'),
+      '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Server metadata should advertise all supported endpoints for better OAuth 2.1 compliance. Endpoints are auto-detected based on enabled modules. You can override the auto-detected values if needed. (<a href="https://datatracker.ietf.org/doc/html/rfc8414#section-2" target="_blank">RFC 8414 Section 2</a>)'),
       '#open' => TRUE,
     ];
 
+    // Auto-detect available endpoints.
+    $auto_detected_endpoints = $this->getAutoDetectedEndpoints();
+
+    $registration_endpoint_value = $config->get('registration_endpoint') ?: ($auto_detected_endpoints['registration'] ?? '');
     $form['endpoints']['registration_endpoint'] = [
       '#type' => 'url',
       '#title' => $this->t('Client Registration Endpoint'),
-      '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> RFC 8414 Authorization Server Metadata recommends including client registration endpoint information for OAuth 2.1 compliance. Leave empty to auto-populate with the Drupal consumer add form URL. (<a href="https://datatracker.ietf.org/doc/html/rfc7591#section-3" target="_blank">RFC 7591 Section 3</a>)'),
-      '#default_value' => $config->get('registration_endpoint'),
+      '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> RFC 8414 Authorization Server Metadata recommends including client registration endpoint information for OAuth 2.1 compliance. @auto_detected (<a href="https://datatracker.ietf.org/doc/html/rfc7591#section-3" target="_blank">RFC 7591 Section 3</a>)', [
+        '@auto_detected' => isset($auto_detected_endpoints['registration']) ? $this->t('Auto-detected from Dynamic Client Registration module.') : $this->t('Module not detected. Enter manually if available.'),
+      ]),
+      '#default_value' => $registration_endpoint_value,
+      '#placeholder' => $auto_detected_endpoints['registration'] ?? '',
     ];
 
+    $revocation_endpoint_value = $config->get('revocation_endpoint') ?: ($auto_detected_endpoints['revocation'] ?? '');
     $form['endpoints']['revocation_endpoint'] = [
       '#type' => 'url',
       '#title' => $this->t('Token Revocation Endpoint'),
-      '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Token revocation endpoint allows clients to invalidate tokens when no longer needed. This enhances security by preventing token misuse after app uninstall or logout. (<a href="https://datatracker.ietf.org/doc/html/rfc7009#section-2" target="_blank">RFC 7009 Section 2</a>)'),
-      '#default_value' => $config->get('revocation_endpoint'),
+      '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Token revocation endpoint allows clients to invalidate tokens when no longer needed. This enhances security by preventing token misuse after app uninstall or logout. @auto_detected (<a href="https://datatracker.ietf.org/doc/html/rfc7009#section-2" target="_blank">RFC 7009 Section 2</a>)', [
+        '@auto_detected' => isset($auto_detected_endpoints['revocation']) ? $this->t('Auto-detected from Simple OAuth module.') : $this->t('Enter manually if available.'),
+      ]),
+      '#default_value' => $revocation_endpoint_value,
+      '#placeholder' => $auto_detected_endpoints['revocation'] ?? '',
     ];
 
+    $introspection_endpoint_value = $config->get('introspection_endpoint') ?: ($auto_detected_endpoints['introspection'] ?? '');
     $form['endpoints']['introspection_endpoint'] = [
       '#type' => 'url',
       '#title' => $this->t('Token Introspection Endpoint'),
-      '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Token introspection endpoint enables resource servers to validate tokens and check their status. This supports OAuth 2.1 security best practices for token validation. (<a href="https://datatracker.ietf.org/doc/html/rfc7662#section-2" target="_blank">RFC 7662 Section 2</a>)'),
-      '#default_value' => $config->get('introspection_endpoint'),
+      '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Token introspection endpoint enables resource servers to validate tokens and check their status. This supports OAuth 2.1 security best practices for token validation. @auto_detected (<a href="https://datatracker.ietf.org/doc/html/rfc7662#section-2" target="_blank">RFC 7662 Section 2</a>)', [
+        '@auto_detected' => isset($auto_detected_endpoints['introspection']) ? $this->t('Auto-detected from Simple OAuth module.') : $this->t('Enter manually if available.'),
+      ]),
+      '#default_value' => $introspection_endpoint_value,
+      '#placeholder' => $auto_detected_endpoints['introspection'] ?? '',
     ];
+
+    // Device Authorization endpoint (RFC 8628).
+    if (isset($auto_detected_endpoints['device_authorization'])) {
+      $device_authorization_value = $config->get('device_authorization_endpoint') ?: $auto_detected_endpoints['device_authorization'];
+      $form['endpoints']['device_authorization_endpoint'] = [
+        '#type' => 'url',
+        '#title' => $this->t('Device Authorization Endpoint'),
+        '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Device authorization endpoint enables OAuth flows for devices with limited input capabilities like smart TVs and IoT devices. Auto-detected from Device Flow module. (<a href="https://datatracker.ietf.org/doc/html/rfc8628#section-3.1" target="_blank">RFC 8628 Section 3.1</a>)'),
+        '#default_value' => $device_authorization_value,
+        '#placeholder' => $auto_detected_endpoints['device_authorization'],
+      ];
+    }
 
     // OpenID Connect Discovery section.
     $form['openid_discovery'] = [
@@ -314,6 +356,7 @@ class ServerMetadataSettingsForm extends ConfigFormBase {
       'registration_endpoint',
       'revocation_endpoint',
       'introspection_endpoint',
+      'device_authorization_endpoint',
       'service_documentation',
       'op_policy_uri',
       'op_tos_uri',
@@ -347,6 +390,67 @@ class ServerMetadataSettingsForm extends ConfigFormBase {
 
     $config->save();
     parent::submitForm($form, $form_state);
+  }
+
+  /**
+   * Auto-detects available OAuth endpoints based on enabled modules.
+   *
+   * @return array
+   *   An array of auto-detected endpoint URLs keyed by endpoint type.
+   */
+  protected function getAutoDetectedEndpoints(): array {
+    $endpoints = [];
+
+    // Check for Dynamic Client Registration module.
+    if ($this->moduleHandler->moduleExists('simple_oauth_client_registration')) {
+      try {
+        $url = Url::fromRoute('simple_oauth_client_registration.register');
+        $endpoints['registration'] = $url->setAbsolute()->toString();
+      }
+      catch (\Exception $e) {
+        // Route doesn't exist or error generating URL.
+      }
+    }
+
+    // Check for Device Flow module.
+    if ($this->moduleHandler->moduleExists('simple_oauth_device_flow')) {
+      try {
+        $url = Url::fromRoute('simple_oauth_device_flow.device_authorization');
+        $endpoints['device_authorization'] = $url->setAbsolute()->toString();
+      }
+      catch (\Exception $e) {
+        // Route doesn't exist or error generating URL.
+      }
+    }
+
+    // Check for core Simple OAuth revocation endpoint.
+    if ($this->moduleHandler->moduleExists('simple_oauth')) {
+      try {
+        // Check if revocation route exists.
+        $routes = $this->routeProvider->getRoutesByPattern('/oauth/revoke');
+        if (count($routes) > 0) {
+          $url = Url::fromUri('internal:/oauth/revoke');
+          $endpoints['revocation'] = $url->setAbsolute()->toString();
+        }
+      }
+      catch (\Exception $e) {
+        // Route doesn't exist.
+      }
+
+      try {
+        // Check if introspection route exists.
+        $routes = $this->routeProvider->getRoutesByPattern('/oauth/introspect');
+        if (count($routes) > 0) {
+          $url = Url::fromUri('internal:/oauth/introspect');
+          $endpoints['introspection'] = $url->setAbsolute()->toString();
+        }
+      }
+      catch (\Exception $e) {
+        // Route doesn't exist.
+      }
+    }
+
+    return $endpoints;
   }
 
 }
