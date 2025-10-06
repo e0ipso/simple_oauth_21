@@ -1,0 +1,37 @@
+$schema: https://git.drupalcode.org/project/drupal/-/raw/10.1.x/core/modules/sdc/src/metadata.schema.json
+name: RFC Matrix
+status: stable
+description: Displays RFC implementation table with module status and actions
+props:
+  type: object
+  properties:
+    rfcs:
+      type: array
+      title: RFC Data
+      description: Array of RFC implementation data
+      items:
+        type: object
+        properties:
+          id:
+            type: string
+            description: RFC identifier (e.g., "rfc6749")
+          title:
+            type: string
+            description: RFC title
+          description:
+            type: string
+            description: RFC description
+          status:
+            type: string
+            description: Implementation status (enabled|disabled|not-installed)
+            enum: ['enabled', 'disabled', 'not-installed']
+          module:
+            type: string
+            description: Module name that implements this RFC
+    title:
+      type: string
+      title: Table Title
+      description: Title for the RFC matrix table
+      default: 'OAuth 2.1 RFC Implementation Matrix'
+  required:
+    - rfcs

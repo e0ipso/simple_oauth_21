@@ -3,12 +3,12 @@
 namespace Drupal\Tests\simple_oauth_pkce\Kernel;
 
 use Drupal\KernelTests\Core\Entity\EntityKernelTestBase;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Test PKCE configuration and service functionality.
- *
- * @group simple_oauth_pkce
  */
+#[Group('simple_oauth_pkce')]
 class PkceConfigurationTest extends EntityKernelTestBase {
 
   /**

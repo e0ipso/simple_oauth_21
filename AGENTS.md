@@ -1,6 +1,6 @@
 ⚠️ **READ THIS FIRST - CHECK BEFORE EVERY ACTION** ⚠️
 
-This file contains CRITICAL instructions that MUST be followed in ALL interactions.
+This file contains CRITICAL instructions that MUST be followed in ALL interactions with the Simple OAuth 2.1 module ecosystem.
 These instructions OVERRIDE any default behavior and take precedence over global instructions.
 
 # 🚨 MANDATORY PRE-ACTION CHECKLIST 🚨
@@ -10,6 +10,7 @@ Before taking ANY action (commits, PRs, file creation, etc.), verify:
 ✅ Am I about to attribute AI involvement anywhere?
 ✅ Am I creating unnecessary files?
 ✅ Am I doing more than requested?
+✅ Am I following the project's strict coding standards?
 
 # AI Attribution - ABSOLUTE PROHIBITION
 
@@ -38,3 +39,134 @@ Before taking ANY action (commits, PRs, file creation, etc.), verify:
 - Do not add "helpful" extras unless specifically requested
 - Do not anticipate future needs
 - Stay focused on the immediate task
+
+# Project-Specific Guidelines for Simple OAuth 2.1
+
+## Module Ecosystem Structure
+
+This project is a **6-module OAuth 2.1 compliance ecosystem**:
+
+### Main Module
+
+- `simple_oauth_21` - Umbrella coordination module with compliance dashboard
+
+### Sub-modules (in `/modules/` directory)
+
+- `simple_oauth_device_flow` - RFC 8628 Device Authorization Grant
+- `simple_oauth_pkce` - RFC 7636 PKCE implementation
+- `simple_oauth_native_apps` - RFC 8252 OAuth for Native Apps
+- `simple_oauth_client_registration` - RFC 7591 Dynamic Client Registration
+- `simple_oauth_server_metadata` - RFC 8414/9728 Server/Resource Metadata
+
+## Coding Standards (MANDATORY)
+
+### PHP Standards
+
+- **ALWAYS** use `declare(strict_types=1);` at the top of all PHP files
+- **ALWAYS** use `final` keyword for classes unless inheritance is specifically required
+- **ALWAYS** use typed properties with visibility declaration (e.g., `private OAuth21ComplianceService $complianceService;`)
+- **ALWAYS** provide comprehensive PHPDoc comments for all classes, methods, and properties
+- Follow Drupal coding standards with PSR-4 autoloading
+
+### File Organization
+
+- Controllers: `src/Controller/`
+- Services: `src/Service/`
+- Forms: `src/Form/`
+- Plugins: `src/Plugin/`
+- Traits: `src/Trait/`
+- Tests: `tests/src/` (Functional/Kernel/Unit)
+
+### Configuration Files
+
+- Module info: `{module_name}.info.yml`
+- Services: `{module_name}.services.yml`
+- Routing: `{module_name}.routing.yml`
+- Install config: `config/install/`
+- Schema: `config/schema/`
+
+## Development Workflow Requirements
+
+### Before Any Code Changes
+
+1. Read existing code to understand patterns and conventions
+2. Ensure changes align with OAuth RFC implementations
+3. Verify module interdependencies are maintained
+4. Check that compliance service integration is preserved
+
+### When Modifying Configuration
+
+- Update corresponding schema files in `config/schema/`
+- Ensure configuration forms have proper validation
+- Maintain consistency with existing configuration patterns
+
+### When Adding Routes
+
+- Follow existing route naming conventions: `simple_oauth_21.*`
+- Use appropriate access controls and permissions
+- Document public API endpoints vs administrative interfaces
+
+### Testing Requirements
+
+- Unit tests for isolated components and services
+- Kernel tests for integration with minimal Drupal bootstrap
+- Functional tests for complete user workflows
+- Test files must follow naming: `{ClassName}Test.php`
+
+## Security Guidelines
+
+### OAuth-Specific Security
+
+- Never expose client secrets in plain text
+- Always validate PKCE challenges when implemented
+- Implement proper redirect URI validation
+- Follow RFC security considerations for each implemented standard
+
+### Drupal Security
+
+- Use dependency injection for all services
+- Sanitize all user inputs through appropriate Drupal APIs
+- Follow Drupal's access control patterns
+- Never bypass Drupal's security layers
+
+## Module Interdependency Rules
+
+### Dependencies
+
+- All sub-modules MUST depend on `simple_oauth_21` (umbrella module)
+- All modules MUST depend on `simple_oauth` (core OAuth implementation)
+- Additional dependencies must be justified and documented
+
+### Service Integration
+
+- Integrate with `OAuth21ComplianceService` for compliance reporting
+- Use existing service patterns for consistency
+- Maintain service discovery compatibility
+
+## Documentation Standards
+
+### Code Documentation
+
+- All public methods require comprehensive PHPDoc
+- Include `@param` and `@return` annotations with types
+- Document thrown exceptions with `@throws`
+- Include usage examples for complex services
+
+### Configuration Documentation
+
+- Document all configuration options in schema files
+- Provide clear descriptions for administrative forms
+- Include validation rules and default values
+
+## File Path Conventions
+
+- **NEVER** use environment-specific paths (no DDEV, no localhost references)
+- Use relative paths within the module structure
+- Reference other Drupal modules through proper dependency injection
+- All file paths in documentation must be relative to module root
+
+## Commands
+
+### Running tests
+
+cd /var/www/html && vendor/bin/phpunit web/modules/contrib/simple_oauth/tests web/modules/contrib/simple_oauth/modules && cd -

@@ -1,0 +1,19 @@
+<span
+  class="status-badge status-badge-{{ status }}"
+  role="status"
+  aria-label="{{ status|title }} status: {{ label }}"
+>
+  {% if status == 'enabled' %}
+    <span class="status-icon" aria-hidden="true">✓</span>
+    <span class="status-text">{{ label }} (Enabled)</span>
+  {% elseif status == 'disabled' %}
+    <span class="status-icon" aria-hidden="true">⚠</span>
+    <span class="status-text">{{ label }} (Disabled)</span>
+  {% elseif status == 'not-installed' %}
+    <span class="status-icon" aria-hidden="true">×</span>
+    <span class="status-text">{{ label }} (Not Installed)</span>
+  {% else %}
+    <span class="status-icon" aria-hidden="true">?</span>
+    <span class="status-text">{{ label }} (Unknown)</span>
+  {% endif %}
+</span>

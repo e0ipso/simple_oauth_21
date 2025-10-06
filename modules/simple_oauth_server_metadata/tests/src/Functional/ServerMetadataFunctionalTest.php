@@ -4,12 +4,12 @@ namespace Drupal\Tests\simple_oauth_server_metadata\Functional;
 
 use Drupal\Component\Serialization\Json;
 use Drupal\Tests\BrowserTestBase;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Tests OAuth 2.0 server metadata functionality and RFC 8414 compliance.
- *
- * @group simple_oauth_server_metadata
  */
+#[Group('simple_oauth_server_metadata')]
 class ServerMetadataFunctionalTest extends BrowserTestBase {
 
   /**
@@ -172,6 +172,14 @@ class ServerMetadataFunctionalTest extends BrowserTestBase {
     $this->assertNotEmpty($json_metadata['issuer']);
     $this->assertStringStartsWith('http', $json_metadata['authorization_endpoint']);
     $this->assertStringStartsWith('http', $json_metadata['token_endpoint']);
+
+    // Test 10: Verify device_authorization_endpoint is included when available.
+    // The device_authorization_endpoint should only be present if the
+    // device flow module is enabled.
+    if (isset($json_metadata['device_authorization_endpoint'])) {
+      $this->assertStringStartsWith('http', $json_metadata['device_authorization_endpoint']);
+      $this->assertStringContains('/oauth/device_authorization', $json_metadata['device_authorization_endpoint']);
+    }
   }
 
 }

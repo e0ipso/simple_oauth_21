@@ -1,0 +1,80 @@
+<div class="admin-item">
+  {% if title %}
+    <h3>{{ title }}</h3>
+  {% endif %}
+
+  {% if rfcs %}
+    <table class="admin-list" role="table" aria-label="{{ title|default('RFC Implementation Matrix') }}">
+      <thead>
+        <tr>
+          <th scope="col">RFC</th>
+          <th scope="col">Title/Description</th>
+          <th scope="col">Module Status</th>
+          <th scope="col">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rfc in rfcs %}
+          <tr>
+            <td>
+              {% if rfc.rfc_url %}
+                <a href="{{ rfc.rfc_url }}" target="_blank" rel="noopener">
+                  <strong>{{ rfc.id|upper }}</strong>
+                </a>
+              {% else %}
+                <strong>{{ rfc.id|upper }}</strong>
+              {% endif %}
+            </td>
+            <td>
+              <div>
+                <strong>{{ rfc.title }}</strong>
+                {% if rfc.description %}
+                  <div class="description">{{ rfc.description }}</div>
+                {% endif %}
+                {% if rfc.service_status == 'needs_attention' and rfc.recommendation %}
+                  <div class="description" style="color: #d97706; margin-top: 0.25rem;">
+                    <em>{{ rfc.recommendation }}</em>
+                  </div>
+                {% endif %}
+              </div>
+            </td>
+            <td>
+              <div class="status-indicator" data-status="{{ rfc.status }}">
+                {% include 'simple_oauth_21:status-indicator' with {
+                  status: rfc.status,
+                  label: rfc.module ?: 'Unknown module'
+                } %}
+              </div>
+            </td>
+            <td>
+              <div class="form-actions">
+                {% if rfc.status == 'enabled' and rfc.config_route %}
+                  <a href="{{ path(rfc.config_route) }}" class="button" aria-label="Configure {{ rfc.module }}">
+                    {% if rfc.service_status == 'needs_attention' %}
+                      Configure
+                    {% else %}
+                      Settings
+                    {% endif %}
+                  </a>
+                {% elseif rfc.status == 'not-installed' %}
+                  <span class="button disabled" aria-label="Module {{ rfc.module }} not available">
+                    Install Required
+                  </span>
+                {% endif %}
+                {% if rfc.rfc_url %}
+                  <a href="{{ rfc.rfc_url }}" target="_blank" rel="noopener" class="button" aria-label="View RFC documentation">
+                    RFC Docs
+                  </a>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty-message">
+      <p>No RFC data available.</p>
+    </div>
+  {% endif %}
+</div>

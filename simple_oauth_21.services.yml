@@ -11,4 +11,6 @@ services:
         '@config.factory',
         '@extension.list.module',
         '@logger.channel.simple_oauth_21',
+        '@cache.default',
+        '@router.route_provider',
       ]

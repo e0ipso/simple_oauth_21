@@ -5,6 +5,7 @@ namespace Drupal\Tests\simple_oauth_server_metadata\Functional;
 use Drupal\Component\Serialization\Json;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\simple_oauth_21\Trait\DebugLoggingTrait;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Tests OpenID Connect Discovery endpoint functionality and compliance.
@@ -16,9 +17,8 @@ use Drupal\simple_oauth_21\Trait\DebugLoggingTrait;
  * dependency issues in the test environment. The endpoint works correctly
  * in production (verified via curl), but the complex service injection
  * in the test environment causes ServiceUnavailableHttpException errors.
- *
- * @group simple_oauth_server_metadata
  */
+#[Group('simple_oauth_server_metadata')]
 class OpenIdConfigurationFunctionalTest extends BrowserTestBase {
 
   use DebugLoggingTrait;
@@ -354,7 +354,10 @@ class OpenIdConfigurationFunctionalTest extends BrowserTestBase {
     $this->assertStringStartsWith('http', $metadata['userinfo_endpoint']);
     $this->assertStringStartsWith('http', $metadata['jwks_uri']);
 
-    // Test that issuer is a valid HTTPS URL.
+    // Test that issuer is a valid URL.
+    // OAuth 2.1 Section 4.3 requires HTTPS for authorization servers
+    // in production.
+    // Test environments may use HTTP for simplicity.
     $this->assertIsString($metadata['issuer']);
     $this->assertTrue(filter_var($metadata['issuer'], FILTER_VALIDATE_URL) !== FALSE);
 

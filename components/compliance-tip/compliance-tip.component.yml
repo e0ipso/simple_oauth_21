@@ -1,0 +1,19 @@
+$schema: https://git.drupalcode.org/project/drupal/-/raw/10.1.x/core/modules/sdc/src/metadata.schema.json
+name: Compliance Tip
+status: stable
+description: Displays styled recommendation text for OAuth 2.1 compliance
+props:
+  type: object
+  properties:
+    message:
+      type: string
+      title: Message
+      description: The recommendation or tip message to display
+    type:
+      type: string
+      title: Type
+      description: The type of message (affects styling and icon)
+      enum: ['info', 'warning', 'success']
+      default: 'info'
+  required:
+    - message

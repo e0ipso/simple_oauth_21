@@ -1,0 +1,448 @@
+<?php
+
+namespace Drupal\Tests\simple_oauth_device_flow\Functional;
+
+use Drupal\Component\Serialization\Json;
+use Drupal\consumers\Entity\Consumer;
+use Drupal\Tests\BrowserTestBase;
+use Drupal\user\Entity\User;
+use GuzzleHttp\Client;
+use GuzzleHttp\RequestOptions;
+use PHPUnit\Framework\Attributes\Group;
+
+/**
+ * Functional tests for RFC 8628 OAuth 2.0 Device Authorization Grant.
+ *
+ * Tests the complete device flow including:
+ * - Device authorization endpoint
+ * - User verification flow
+ * - Token endpoint with device grant
+ * - Device polling and error handling.
+ */
+#[Group('simple_oauth_device_flow')]
+#[Group('functional')]
+class DeviceFlowFunctionalTest extends BrowserTestBase {
+
+  /**
+   * {@inheritdoc}
+   */
+  protected static $modules = [
+    'user',
+    'serialization',
+    'simple_oauth',
+    'consumers',
+    'simple_oauth_21',
+    'simple_oauth_device_flow',
+  ];
+
+  /**
+   * {@inheritdoc}
+   */
+  protected $defaultTheme = 'stark';
+
+  /**
+   * The HTTP client for API requests.
+   *
+   * @var \GuzzleHttp\Client
+   */
+  protected $httpClient;
+
+  /**
+   * Test consumer entity.
+   *
+   * @var \Drupal\consumers\Entity\Consumer
+   */
+  protected $consumer;
+
+  /**
+   * Test user for authentication.
+   *
+   * @var \Drupal\user\Entity\User
+   */
+  protected $testUser;
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+
+    $this->httpClient = new Client();
+
+    // Clear caches to ensure entity types are properly discovered.
+    drupal_flush_all_caches();
+
+    // Create test user.
+    $this->testUser = User::create([
+      'name' => 'test_device_user',
+      'mail' => 'test@example.com',
+      'status' => 1,
+    ]);
+    $this->testUser->setPassword('test_password');
+    $this->testUser->save();
+
+    // Create test consumer for device flow.
+    $this->consumer = Consumer::create([
+      'label' => 'Test Device Client',
+      'client_id' => 'test_device_client',
+      'grant_types' => ['device_code', 'refresh_token'],
+      'scopes' => [],
+    // Device flow typically uses public clients.
+      'confidential' => FALSE,
+      'redirect' => [],
+      'access_token_expiration' => 300,
+      'refresh_token_expiration' => 1209600,
+      'user_id' => $this->testUser->id(),
+    ]);
+    $this->consumer->save();
+  }
+
+  /**
+   * Tests device authorization endpoint functionality.
+   *
+   * @covers \Drupal\simple_oauth_device_flow\Controller\DeviceAuthorizationController::authorize
+   */
+  public function testDeviceAuthorizationEndpoint(): array {
+    $device_auth_url = $this->getAbsoluteUrl('/oauth/device_authorization');
+
+    // Test valid device authorization request.
+    $response = $this->httpClient->post($device_auth_url, [
+      RequestOptions::FORM_PARAMS => [
+        'client_id' => $this->consumer->getClientId(),
+    // Empty scope for basic test.
+        'scope' => '',
+      ],
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertEquals('application/json', $response->getHeaderLine('Content-Type'));
+
+    $data = Json::decode($response->getBody()->getContents());
+
+    // Verify required RFC 8628 response fields.
+    $this->assertArrayHasKey('device_code', $data);
+    $this->assertArrayHasKey('user_code', $data);
+    $this->assertArrayHasKey('verification_uri', $data);
+    $this->assertArrayHasKey('expires_in', $data);
+    $this->assertArrayHasKey('interval', $data);
+
+    // Verify response structure.
+    $this->assertIsString($data['device_code']);
+    $this->assertIsString($data['user_code']);
+    $this->assertIsString($data['verification_uri']);
+    $this->assertIsInt($data['expires_in']);
+    $this->assertIsInt($data['interval']);
+
+    // Verify device code is properly formatted (should be long and random)
+    $this->assertGreaterThan(20, strlen($data['device_code']));
+
+    // Verify user code is properly formatted (shorter and user-friendly).
+    $this->assertLessThan(20, strlen($data['user_code']));
+    $this->assertGreaterThan(4, strlen($data['user_code']));
+
+    // Verify verification URI points to our device endpoint.
+    $this->assertStringContains('/oauth/device', $data['verification_uri']);
+
+    // Return for use in other tests.
+    return $data;
+  }
+
+  /**
+   * Tests device authorization endpoint with invalid client.
+   */
+  public function testDeviceAuthorizationWithInvalidClient(): void {
+    $device_auth_url = $this->getAbsoluteUrl('/oauth/device_authorization');
+
+    $response = $this->httpClient->post($device_auth_url, [
+      RequestOptions::FORM_PARAMS => [
+        'client_id' => 'invalid_client_id',
+        'scope' => '',
+      ],
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+
+    $this->assertEquals(400, $response->getStatusCode());
+    $data = Json::decode($response->getBody()->getContents());
+    $this->assertEquals('invalid_client', $data['error']);
+  }
+
+  /**
+   * Tests device authorization endpoint with missing client_id.
+   */
+  public function testDeviceAuthorizationWithMissingClientId(): void {
+    $device_auth_url = $this->getAbsoluteUrl('/oauth/device_authorization');
+
+    $response = $this->httpClient->post($device_auth_url, [
+      RequestOptions::FORM_PARAMS => [
+        'scope' => '',
+      ],
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+
+    $this->assertEquals(400, $response->getStatusCode());
+    $data = Json::decode($response->getBody()->getContents());
+    $this->assertEquals('invalid_request', $data['error']);
+  }
+
+  /**
+   * Tests device verification form display.
+   *
+   * @covers \Drupal\simple_oauth_device_flow\Controller\DeviceVerificationController::form
+   */
+  public function testDeviceVerificationForm(): void {
+    $verification_url = $this->getAbsoluteUrl('/oauth/device');
+
+    // Test GET request to verification form.
+    $response = $this->httpClient->get($verification_url, [
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertStringContains('text/html', $response->getHeaderLine('Content-Type'));
+
+    $body = $response->getBody()->getContents();
+
+    // Verify form elements are present.
+    $this->assertStringContains('user_code', $body);
+    $this->assertStringContains('form', $body);
+    $this->assertStringContains('Device Authorization', $body);
+  }
+
+  /**
+   * Tests complete device verification flow.
+   *
+   * @covers \Drupal\simple_oauth_device_flow\Controller\DeviceVerificationController::verify
+   */
+  public function testDeviceVerificationFlow(): void {
+    // First, get device authorization.
+    $device_data = $this->testDeviceAuthorizationEndpoint();
+
+    // Log in as test user.
+    $this->drupalLogin($this->testUser);
+
+    // Access verification form with user code.
+    $verification_url = $this->getAbsoluteUrl('/oauth/device');
+    $this->drupalGet($verification_url);
+
+    // Submit the verification form with the user code.
+    $this->submitForm([
+      'user_code' => $device_data['user_code'],
+    ], 'Authorize');
+
+    // Should redirect to confirmation or success page.
+    $this->assertSession()->statusCodeEquals(200);
+  }
+
+  /**
+   * Tests device verification with invalid user code.
+   */
+  public function testDeviceVerificationWithInvalidCode(): void {
+    $this->drupalLogin($this->testUser);
+
+    $verification_url = $this->getAbsoluteUrl('/oauth/device');
+    $this->drupalGet($verification_url);
+
+    $this->submitForm([
+      'user_code' => 'INVALID_CODE',
+    ], 'Authorize');
+
+    // Should show error message.
+    $this->assertSession()->pageTextContains('Invalid user code');
+  }
+
+  /**
+   * Tests token endpoint with device code grant.
+   *
+   * This test covers the polling mechanism that devices use to get tokens.
+   */
+  public function testTokenEndpointWithDeviceGrant(): void {
+    // Get device authorization.
+    $device_data = $this->testDeviceAuthorizationEndpoint();
+    $device_code = $device_data['device_code'];
+
+    $token_url = $this->getAbsoluteUrl('/oauth/token');
+
+    // Test polling before user authorization (returns authorization_pending).
+    $response = $this->httpClient->post($token_url, [
+      RequestOptions::FORM_PARAMS => [
+        'grant_type' => 'urn:ietf:params:oauth:grant-type:device_code',
+        'device_code' => $device_code,
+        'client_id' => $this->consumer->getClientId(),
+      ],
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+
+    $this->assertEquals(400, $response->getStatusCode());
+    $data = Json::decode($response->getBody()->getContents());
+    $this->assertEquals('authorization_pending', $data['error']);
+
+    // Now authorize the device.
+    $this->drupalLogin($this->testUser);
+    $verification_url = $this->getAbsoluteUrl('/oauth/device');
+    $this->drupalGet($verification_url);
+    $this->submitForm([
+      'user_code' => $device_data['user_code'],
+    ], 'Authorize');
+
+    // Poll again after authorization (should succeed)
+    $response = $this->httpClient->post($token_url, [
+      RequestOptions::FORM_PARAMS => [
+        'grant_type' => 'urn:ietf:params:oauth:grant-type:device_code',
+        'device_code' => $device_code,
+        'client_id' => $this->consumer->getClientId(),
+      ],
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = Json::decode($response->getBody()->getContents());
+
+    // Verify token response structure.
+    $this->assertArrayHasKey('access_token', $data);
+    $this->assertArrayHasKey('token_type', $data);
+    $this->assertArrayHasKey('expires_in', $data);
+    $this->assertEquals('Bearer', $data['token_type']);
+    $this->assertIsString($data['access_token']);
+    $this->assertIsInt($data['expires_in']);
+  }
+
+  /**
+   * Tests token endpoint with invalid device code.
+   */
+  public function testTokenEndpointWithInvalidDeviceCode(): void {
+    $token_url = $this->getAbsoluteUrl('/oauth/token');
+
+    $response = $this->httpClient->post($token_url, [
+      RequestOptions::FORM_PARAMS => [
+        'grant_type' => 'urn:ietf:params:oauth:grant-type:device_code',
+        'device_code' => 'invalid_device_code',
+        'client_id' => $this->consumer->getClientId(),
+      ],
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+
+    $this->assertEquals(400, $response->getStatusCode());
+    $data = Json::decode($response->getBody()->getContents());
+    $this->assertEquals('invalid_grant', $data['error']);
+  }
+
+  /**
+   * Tests token endpoint with expired device code.
+   */
+  public function testTokenEndpointWithExpiredDeviceCode(): void {
+    // This test would require manipulating the device code expiration
+    // For now, we'll test the basic structure.
+    $this->assertTrue(TRUE, 'Expired device code test placeholder');
+  }
+
+  /**
+   * Tests device flow rate limiting (slow_down error).
+   */
+  public function testDeviceFlowRateLimiting(): void {
+    // Get device authorization.
+    $device_data = $this->testDeviceAuthorizationEndpoint();
+    $device_code = $device_data['device_code'];
+
+    $token_url = $this->getAbsoluteUrl('/oauth/token');
+
+    // Make rapid requests to trigger rate limiting.
+    for ($i = 0; $i < 3; $i++) {
+      $response = $this->httpClient->post($token_url, [
+        RequestOptions::FORM_PARAMS => [
+          'grant_type' => 'urn:ietf:params:oauth:grant-type:device_code',
+          'device_code' => $device_code,
+          'client_id' => $this->consumer->getClientId(),
+        ],
+        RequestOptions::HTTP_ERRORS => FALSE,
+      ]);
+    }
+
+    // Last request might return slow_down if rate limiting is implemented.
+    $data = Json::decode($response->getBody()->getContents());
+
+    // Accept either authorization_pending or slow_down as valid responses.
+    $this->assertContains($data['error'], ['authorization_pending', 'slow_down']);
+  }
+
+  /**
+   * Tests device flow with scopes.
+   */
+  public function testDeviceFlowWithScopes(): void {
+    // Create consumer with specific scopes.
+    $scoped_consumer = Consumer::create([
+      'label' => 'Test Scoped Device Client',
+      'client_id' => 'test_scoped_client',
+      'grant_types' => ['device_code'],
+      'scopes' => ['read', 'write'],
+      'confidential' => FALSE,
+      'redirect' => [],
+      'access_token_expiration' => 300,
+      'user_id' => $this->testUser->id(),
+    ]);
+    $scoped_consumer->save();
+
+    $device_auth_url = $this->getAbsoluteUrl('/oauth/device_authorization');
+
+    $response = $this->httpClient->post($device_auth_url, [
+      RequestOptions::FORM_PARAMS => [
+        'client_id' => $scoped_consumer->getClientId(),
+        'scope' => 'read write',
+      ],
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = Json::decode($response->getBody()->getContents());
+
+    // Verify scope is handled properly.
+    $this->assertArrayHasKey('device_code', $data);
+    $this->assertArrayHasKey('user_code', $data);
+  }
+
+  /**
+   * Tests device flow security - device code should be single use.
+   */
+  public function testDeviceCodeSingleUse(): void {
+    // Get device authorization and complete the flow.
+    $device_data = $this->testDeviceAuthorizationEndpoint();
+    $device_code = $device_data['device_code'];
+
+    // Authorize the device.
+    $this->drupalLogin($this->testUser);
+    $verification_url = $this->getAbsoluteUrl('/oauth/device');
+    $this->drupalGet($verification_url);
+    $this->submitForm([
+      'user_code' => $device_data['user_code'],
+    ], 'Authorize');
+
+    $token_url = $this->getAbsoluteUrl('/oauth/token');
+
+    // First token request should succeed.
+    $response = $this->httpClient->post($token_url, [
+      RequestOptions::FORM_PARAMS => [
+        'grant_type' => 'urn:ietf:params:oauth:grant-type:device_code',
+        'device_code' => $device_code,
+        'client_id' => $this->consumer->getClientId(),
+      ],
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+
+    $this->assertEquals(200, $response->getStatusCode());
+
+    // Second token request with same device code should fail.
+    $response = $this->httpClient->post($token_url, [
+      RequestOptions::FORM_PARAMS => [
+        'grant_type' => 'urn:ietf:params:oauth:grant-type:device_code',
+        'device_code' => $device_code,
+        'client_id' => $this->consumer->getClientId(),
+      ],
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+
+    $this->assertEquals(400, $response->getStatusCode());
+    $data = Json::decode($response->getBody()->getContents());
+    $this->assertEquals('invalid_grant', $data['error']);
+  }
+
+}

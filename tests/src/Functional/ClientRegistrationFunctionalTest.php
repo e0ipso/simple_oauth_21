@@ -7,13 +7,13 @@ use Drupal\Tests\BrowserTestBase;
 use Drupal\Component\Serialization\Json;
 use GuzzleHttp\RequestOptions;
 use GuzzleHttp\Client;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Functional tests for RFC 7591 OAuth Dynamic Client Registration.
- *
- * @group simple_oauth_21
- * @group functional
  */
+#[Group('simple_oauth_21')]
+#[Group('functional')]
 class ClientRegistrationFunctionalTest extends BrowserTestBase {
 
   /**

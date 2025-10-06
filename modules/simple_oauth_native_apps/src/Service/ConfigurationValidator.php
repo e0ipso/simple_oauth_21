@@ -80,16 +80,16 @@ class ConfigurationValidator {
     }
 
     // Validate whitelist patterns if provided.
-    if (!empty($config['webview_whitelist'])) {
-      $whitelist_errors = $this->validateRegexPatterns($config['webview_whitelist']);
+    if (!empty($config['webview']['whitelist'])) {
+      $whitelist_errors = $this->validateRegexPatterns($config['webview']['whitelist']);
       foreach ($whitelist_errors as $error) {
         $errors[] = $this->t('WebView whitelist pattern error: @error', ['@error' => $error]);
       }
     }
 
     // Validate custom detection patterns if provided.
-    if (!empty($config['webview_patterns'])) {
-      $pattern_errors = $this->validateRegexPatterns($config['webview_patterns']);
+    if (!empty($config['webview']['patterns'])) {
+      $pattern_errors = $this->validateRegexPatterns($config['webview']['patterns']);
       foreach ($pattern_errors as $error) {
         $errors[] = $this->t('WebView detection pattern error: @error', ['@error' => $error]);
       }
@@ -111,8 +111,13 @@ class ConfigurationValidator {
     $errors = [];
 
     // Check for logical conflicts.
+    // Consider 'web' as not allowing the feature, 'native' and 'auto-detect'
+    // as allowing it.
+    $custom_uri_disabled = isset($config['allow']['custom_uri_schemes']) && $config['allow']['custom_uri_schemes'] === 'web';
+    $loopback_disabled = isset($config['allow']['loopback_redirects']) && $config['allow']['loopback_redirects'] === 'web';
+
     if (!empty($config['require_exact_redirect_match']) &&
-        (empty($config['allow']['custom_uri_schemes']) && empty($config['allow']['loopback_redirects']))) {
+        ($custom_uri_disabled && $loopback_disabled)) {
       $errors[] = $this->t('Requiring exact redirect match without allowing custom schemes or loopback redirects may prevent native apps from functioning properly.');
     }
 
@@ -132,9 +137,9 @@ class ConfigurationValidator {
     $errors = [];
 
     // Validate enforce method setting if present.
-    if (isset($config['enforce_method'])) {
+    if (isset($config['native']['enforce'])) {
       $valid_methods = ['off', 'S256', 'plain'];
-      if (!in_array($config['enforce_method'], $valid_methods, TRUE)) {
+      if (!in_array($config['native']['enforce'], $valid_methods, TRUE)) {
         $errors[] = $this->t('Invalid PKCE enforcement method. Must be one of: @methods', [
           '@methods' => implode(', ', $valid_methods),
         ]);
@@ -142,9 +147,9 @@ class ConfigurationValidator {
     }
 
     // Validate enhanced PKCE setting if present.
-    if (isset($config['enhanced_pkce_for_native'])) {
+    if (isset($config['native']['enhanced_pkce'])) {
       $valid_enhanced = ['auto-detect', 'enhanced', 'not-enhanced'];
-      if (!in_array($config['enhanced_pkce_for_native'], $valid_enhanced, TRUE)) {
+      if (!in_array($config['native']['enhanced_pkce'], $valid_enhanced, TRUE)) {
         $errors[] = $this->t('Invalid enhanced PKCE setting. Must be one of: @settings', [
           '@settings' => implode(', ', $valid_enhanced),
         ]);
@@ -152,8 +157,8 @@ class ConfigurationValidator {
     }
 
     // Logical validation: Enhanced PKCE with enforce method.
-    if (isset($config['enhanced_pkce_for_native']) && isset($config['enforce_method'])) {
-      if ($config['enhanced_pkce_for_native'] === 'enhanced' && $config['enforce_method'] === 'off') {
+    if (isset($config['native']['enhanced_pkce']) && isset($config['native']['enforce'])) {
+      if ($config['native']['enhanced_pkce'] === 'enhanced' && $config['native']['enforce'] === 'off') {
         $errors[] = $this->t('Enhanced PKCE is enabled but challenge method enforcement is off. Enhanced PKCE requires method enforcement to function properly.');
       }
     }

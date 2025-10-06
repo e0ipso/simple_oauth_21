@@ -1,26 +1,43 @@
 # Simple OAuth Server Metadata
 
-Provides RFC 8414 Authorization Server Metadata implementation for automatic OAuth server discovery and client configuration with comprehensive metadata endpoint support.
+Provides RFC 8414 Authorization Server Metadata and RFC 9728 Protected Resource Metadata implementation for automatic OAuth server discovery and client configuration with comprehensive metadata endpoint support.
 
 ## Overview
 
-The Simple OAuth Server Metadata module implements RFC 8414 "OAuth 2.0 Authorization Server Metadata" to provide automatic discovery capabilities for OAuth clients. It exposes a standardized `/.well-known/oauth-authorization-server` endpoint that advertises server capabilities, supported features, and endpoint URLs.
+The Simple OAuth Server Metadata module implements RFC 8414 "OAuth 2.0 Authorization Server Metadata" and RFC 9728 "OAuth 2.0 Protected Resource Metadata" to provide comprehensive automatic discovery capabilities for OAuth clients. It exposes standardized well-known endpoints that advertise server capabilities, supported features, endpoint URLs, and protected resource information.
 
-### RFC 8414 Compliance
+### RFC 8414 & RFC 9728 Compliance
 
-RFC 8414 defines a standard mechanism for OAuth clients to discover authorization server capabilities. This module provides:
+This module implements multiple OAuth discovery standards:
+
+**RFC 8414 - Authorization Server Metadata:**
 
 - **Well-Known Endpoint**: Standard `/.well-known/oauth-authorization-server` endpoint
 - **Automatic Discovery**: Enables clients to automatically configure OAuth settings
 - **Capability Advertisement**: Exposes supported grant types, response types, and extensions
 - **Extensible Metadata**: Support for custom metadata fields and OAuth extensions
 
+**RFC 9728 - Protected Resource Metadata:**
+
+- **Resource Metadata**: Standard `/.well-known/oauth-protected-resource` endpoint
+- **Resource Discovery**: Advertises protected resource capabilities and requirements
+- **Authorization Requirements**: Exposes scope and authentication requirements
+- **Resource Server Information**: Provides resource-specific OAuth metadata
+
+**OpenID Connect Discovery:**
+
+- **OIDC Endpoint**: Standard `/.well-known/openid-configuration` endpoint
+- **OpenID Compatibility**: Compatible with OpenID Connect discovery protocols
+- **Extended Claims**: Support for OpenID Connect specific metadata fields
+
 ## Features
 
-### Core Metadata Endpoint
+### Core Metadata Endpoints
 
-- **Standard Endpoint**: RFC 8414 compliant `/.well-known/oauth-authorization-server`
-- **JSON Response**: Properly formatted OAuth server metadata
+- **Authorization Server Metadata**: RFC 8414 compliant `/.well-known/oauth-authorization-server`
+- **Protected Resource Metadata**: RFC 9728 compliant `/.well-known/oauth-protected-resource`
+- **OpenID Connect Discovery**: Standard `/.well-known/openid-configuration`
+- **JSON Response**: Properly formatted OAuth server metadata for all endpoints
 - **Caching**: Optimized performance with intelligent cache invalidation
 - **CORS Support**: Cross-origin request support for browser-based clients
 - **Error Handling**: Graceful degradation with proper HTTP status codes
@@ -31,6 +48,8 @@ RFC 8414 defines a standard mechanism for OAuth clients to discover authorizatio
 - **Grant Type Discovery**: Detects and advertises supported grant types
 - **Scope Discovery**: Discovers and lists available OAuth scopes
 - **Authentication Discovery**: Advertises supported client authentication methods
+- **Claims Discovery**: Identifies available OpenID Connect claims
+- **Resource Discovery**: Detects protected resource capabilities and requirements
 
 ### Configurable Metadata
 
@@ -106,17 +125,33 @@ op_tos_uri: 'https://yoursite.com/terms'
 ui_locales_supported: ['en', 'es', 'fr']
 ```
 
-## Metadata Endpoint
+## Metadata Endpoints
 
-### Endpoint URL
+### Available Endpoints
+
+#### Authorization Server Metadata (RFC 8414)
 
 ```
 https://your-drupal-site.com/.well-known/oauth-authorization-server
 ```
 
-### Response Format
+#### Protected Resource Metadata (RFC 9728)
 
-The endpoint returns JSON metadata conforming to RFC 8414:
+```
+https://your-drupal-site.com/.well-known/oauth-protected-resource
+```
+
+#### OpenID Connect Discovery
+
+```
+https://your-drupal-site.com/.well-known/openid-configuration
+```
+
+### Response Formats
+
+#### Authorization Server Metadata (RFC 8414)
+
+The authorization server metadata endpoint returns JSON metadata conforming to RFC 8414:
 
 ```json
 {
@@ -134,6 +169,21 @@ The endpoint returns JSON metadata conforming to RFC 8414:
   "revocation_endpoint": "https://your-drupal-site.com/oauth/revoke",
   "introspection_endpoint": "https://your-drupal-site.com/oauth/introspect",
   "service_documentation": "https://your-drupal-site.com/docs/oauth"
+}
+```
+
+#### Protected Resource Metadata (RFC 9728)
+
+The protected resource metadata endpoint returns JSON metadata conforming to RFC 9728:
+
+```json
+{
+  "resource": "https://your-drupal-site.com",
+  "authorization_servers": ["https://your-drupal-site.com"],
+  "scopes_supported": ["read", "write", "admin"],
+  "bearer_methods_supported": ["header", "body", "query"],
+  "resource_documentation": "https://your-drupal-site.com/docs/api",
+  "scope_policy_uri": "https://your-drupal-site.com/scope-policy"
 }
 ```
 
@@ -251,7 +301,9 @@ AuthorizationServiceConfiguration.fetchFromIssuer(issuerUri, callback);
 
 ### Architecture
 
-**ServerMetadataController**: HTTP endpoint controller with proper headers and caching
+**ServerMetadataController**: Authorization server metadata endpoint controller with proper headers and caching
+**ResourceMetadataController**: Protected resource metadata endpoint controller (RFC 9728)
+**OpenIdConfigurationController**: OpenID Connect discovery endpoint controller
 **ServerMetadataService**: Core metadata generation with discovery services
 **Discovery Services**: Specialized services for each metadata category
 **Cache Management**: Intelligent caching with automatic invalidation
@@ -441,9 +493,11 @@ vendor/bin/phpunit --filter ServerMetadataTest
 This module implements:
 
 - **RFC 8414**: OAuth 2.0 Authorization Server Metadata (complete implementation)
+- **RFC 9728**: OAuth 2.0 Protected Resource Metadata (complete implementation)
 - **RFC 7591**: Dynamic Client Registration endpoint advertisement
 - **RFC 7009**: Token Revocation endpoint advertisement
 - **RFC 7662**: Token Introspection endpoint advertisement
+- **OpenID Connect Discovery**: OpenID Connect configuration endpoint
 
 ### RFC 8414 Compliance Checklist
 
@@ -452,6 +506,14 @@ This module implements:
 - ✅ Section 3.1: Required metadata parameters
 - ✅ Section 3.2: Optional metadata parameters
 - ✅ Section 4: Obtaining Authorization Server Metadata
+
+### RFC 9728 Compliance Checklist
+
+- ✅ Section 2: Protected Resource Metadata Request
+- ✅ Section 3: Protected Resource Metadata Response
+- ✅ Section 3.1: Required metadata parameters
+- ✅ Section 3.2: Optional metadata parameters
+- ✅ Section 4: Obtaining Protected Resource Metadata
 
 ### Metadata Parameter Support
 

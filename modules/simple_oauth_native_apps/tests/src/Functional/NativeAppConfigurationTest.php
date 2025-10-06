@@ -4,12 +4,12 @@ namespace Drupal\Tests\simple_oauth_native_apps\Functional;
 
 use Drupal\Tests\simple_oauth\Functional\TokenBearerFunctionalTestBase;
 use Drupal\simple_oauth_21\Trait\DebugLoggingTrait;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Tests native app configuration and validation features.
- *
- * @group simple_oauth_native_apps
  */
+#[Group('simple_oauth_native_apps')]
 class NativeAppConfigurationTest extends TokenBearerFunctionalTestBase {
 
   use DebugLoggingTrait;

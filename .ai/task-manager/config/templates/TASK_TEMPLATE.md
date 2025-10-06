@@ -25,7 +25,7 @@ skills: # Technical skills required for this task
 - [ ] Criterion 2
 - [ ] Criterion 3
 
-Use your internal TODO tool to track these and keep on track.
+Use your internal Todo tool to track these and keep on track.
 
 ## Technical Requirements
 

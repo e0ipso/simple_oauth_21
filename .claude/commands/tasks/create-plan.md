@@ -5,9 +5,11 @@ description: Create a comprehensive plan to accomplish the request from the user
 
 # Comprehensive Plan Creation
 
+Think harder and use tools.
+
 You are a comprehensive task planning assistant. Your role is to think hard to create detailed, actionable plans based on user input while ensuring you have all necessary context before proceeding.
 
-Include @.ai/task-manager/config/TASK_MANAGER.md for the directory structure of tasks.
+Include .ai/task-manager/config/TASK_MANAGER.md for the directory structure of tasks.
 
 ## Instructions
 
@@ -17,20 +19,52 @@ The user input is:
 $ARGUMENTS
 </user-input>
 
-If no user input is provided stop immediately and show an error message to the user:
+If no user input is provided stop immediately and show an error message to the user.
 
 ### Process
 
-Use your internal Todo task tool to track the plan generation. Example:
+Use your internal Todo task tool to track the plan generation:
 
+- [ ] Read and execute .ai/task-manager/config/hooks/PRE_PLAN.md
 - [ ] User input and context analysis
 - [ ] Clarification questions
 - [ ] Plan generation: Executive Summary
 - [ ] Plan generation: Detailed Steps
 - [ ] Plan generation: Risk Considerations
 - [ ] Plan generation: Success Metrics
+- [ ] Read and execute .ai/task-manager/config/hooks/POST_PLAN.md
 
-Read and execute @.ai/task-manager/config/hooks/POST_PLAN.md
+#### Step 1: Context Analysis
+
+Before creating any plan, analyze the user's request for:
+
+- **Objective**: What is the end goal?
+- **Scope**: What are the boundaries and constraints?
+- **Resources**: What tools, budget, or team are available?
+- **Success Criteria**: How will success be measured?
+- **Dependencies**: What prerequisites or blockers exist?
+- **Technical Requirements**: What technologies or skills are needed?
+
+#### Step 2: Clarification Phase
+
+If any critical context is missing:
+
+1. Identify specific gaps in the information provided
+2. Ask targeted follow-up questions grouped by category
+3. Wait for user responses before proceeding to planning
+4. Frame questions clearly with examples when helpful
+5. Be extra cautious. Users miss important context very often. Don't hesitate to ask for clarifications.
+
+Example clarifying questions:
+
+- "Q: What is your primary goal with [specific aspect]?"
+- "Q: Do you have any existing [resources/code/infrastructure] I should consider?"
+- "Q: What is your timeline for completing this?"
+- "Q: Are there specific constraints I should account for?"
+- "Q: Do you want me to write tests for this?"
+- "Q: Are there other systems, projects, or modules that perform a similar task?"
+
+Try to answer your own questions first by inspecting the codebase, docs, and assistant documents like CLAUDE.md, GEMINI.md, AGENTS.md ...
 
 #### Step 3: Plan Generation
 
@@ -43,39 +77,6 @@ Only after confirming sufficient context, create a plan that includes:
 
 Remember that a plan needs to be reviewed by a human. Be concise and to the point. Also, include mermaid diagrams to illustrate the plan.
 
-##### Scope Control Guidelines
-
-**Critical: Implement ONLY what is explicitly requested**
-
-- **Minimal Viable Implementation**: Build exactly what the user asked for, nothing more
-- **Question Everything Extra**: If not directly mentioned by the user, don't add it
-- **Avoid Feature Creep**: Resist the urge to add "helpful" features or "nice-to-have" additions
-- **YAGNI Principle**: _You Aren't Gonna Need It_ - don't build for hypothetical future needs
-
-**Common Scope Creep Anti-Patterns to Avoid:**
-
-1. Adding extra commands or features "for completeness"
-2. Creating infrastructure for future features that weren't requested
-3. Building abstractions or frameworks when simple solutions suffice
-4. Adding configuration options not specifically mentioned
-5. Implementing error handling beyond what's necessary for the core request
-6. Creating documentation or help systems unless explicitly requested
-
-**When in doubt, ask**: "Is this feature explicitly mentioned in the user's request?"
-
-##### Simplicity Principles
-
-**Favor maintainability over cleverness**
-
-- **Simple Solutions First**: Choose the most straightforward approach that meets requirements
-- **Avoid Over-Engineering**: Don't create complex systems when simple ones work
-- **Readable Code**: Write code that others can easily understand and modify
-- **Standard Patterns**: Use established patterns rather than inventing new ones
-- **Minimal Dependencies**: Add external dependencies only when essential, but do not re-invent the wheel
-- **Clear Structure**: Organize code in obvious, predictable ways
-
-**Remember**: A working simple solution is better than a complex "perfect" one.
-
 ##### Output Format
 
 Structure your response as follows:
@@ -87,7 +88,7 @@ Outside the plan document, be **extremely** concise. Just tell the user that you
 
 ###### Plan Template
 
-Use the template in @.ai/task-manager/config/templates/PLAN_TEMPLATE.md
+Use the template in .ai/task-manager/config/templates/PLAN_TEMPLATE.md
 
 ###### Patterns to Avoid
 
@@ -133,20 +134,12 @@ The schema for this frontmatter is:
 }
 ```
 
-### Critical Notes
-
-- Never generate a partial or assumed plan without adequate context
-- Prioritize accuracy over speed
-- Consider both technical and non-technical aspects
-- Use the plan template in .ai/task-manager/config/templates/PLAN_TEMPLATE.md
-- DO NOT create or list any tasks or phases during the plan creation. This will be done in a later step. Stick to writing the PRD (Project Requirements Document).
-
 ### Plan ID Generation
 
 **Auto-generate the next plan ID:**
 
 ```bash
-echo $(($(find .ai/task-manager/{plans,archive} -name "plan-[0-9]*--*.md" 2>/dev/null -exec sh -c 'grep -m1 "^[[:space:]]*id:[[:space:]]*[0-9][0-9]*[[:space:]]*$" "$1" 2>/dev/null || echo "id: 0"' _ {} \; | sed -E "s/^[[:space:]]*id:[[:space:]]*([0-9]+)[[:space:]]*$/\1/" | awk 'BEGIN{max=0} {if($1+0>max) max=$1+0} END{print max}') + 1))
+node .ai/task-manager/config/scripts/get-next-plan-id.cjs
 ```
 
 **Key formatting:**
@@ -154,20 +147,20 @@ echo $(($(find .ai/task-manager/{plans,archive} -name "plan-[0-9]*--*.md" 2>/dev
 - **Front-matter**: Use numeric values (`id: 7`)
 - **Directory names**: Use zero-padded strings (`07--plan-name`)
 
-This enhanced command provides robust plan ID generation with comprehensive error handling:
+This Node.js script provides robust plan ID generation with comprehensive error handling:
 
 **Features:**
 
-- **Flexible Whitespace Handling**: Supports various patterns: `id: 5`, `id:5`, `id:  15`, `id:	25` (tabs)
+- **Flexible Whitespace Handling**: Supports various frontmatter patterns
 - **Validation Layer**: Only processes files with valid numeric ID fields in YAML frontmatter
 - **Error Resilience**: Gracefully handles empty directories, corrupted files, and parsing failures
-- **Fallback Logic**: Returns ID 1 when no valid plans found, ensuring command never fails
-- **Robust Parsing**: Uses POSIX character classes for reliable whitespace matching across systems
+- **Fallback Logic**: Returns ID 1 when no valid plans found, ensuring script never fails
+- **Dual ID Detection**: Checks both filename patterns and frontmatter for maximum reliability
 
 **Handles Edge Cases:**
 
 - Empty plans/archive directories → Returns 1
 - Corrupted or malformed YAML frontmatter → Skips invalid files
 - Non-numeric ID values → Filters out automatically
-- Missing frontmatter → Ignored safely
-- File system errors → Suppressed with 2>/dev/null
+- Missing frontmatter → Uses filename fallback
+- File system errors → Gracefully handled

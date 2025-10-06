@@ -1,0 +1,188 @@
+<?php
+
+/**
+ * @file
+ * Install/uninstall functions for Simple OAuth Device Flow module.
+ */
+
+use Drupal\Core\Database\Database;
+
+/**
+ * Implements hook_schema().
+ */
+function simple_oauth_device_flow_schema() {
+  $schema = [];
+
+  $schema['oauth2_device_code'] = [
+    'description' => 'Stores OAuth 2.0 device codes for RFC 8628 device flow',
+    'fields' => [
+      'device_code' => [
+        'type' => 'varchar',
+        'length' => 128,
+        'not null' => TRUE,
+        'description' => 'The device code identifier',
+      ],
+      'user_code' => [
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'description' => 'Human-readable user code',
+      ],
+      'client_id' => [
+        'type' => 'varchar',
+        'length' => 128,
+        'not null' => TRUE,
+        'description' => 'OAuth client identifier',
+      ],
+      'scopes' => [
+        'type' => 'text',
+        'description' => 'Serialized array of requested scopes',
+      ],
+      'user_id' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'description' => 'User ID once authorized',
+      ],
+      'authorized' => [
+        'type' => 'int',
+        'size' => 'tiny',
+        'default' => 0,
+        'description' => 'Authorization status',
+      ],
+      'created_at' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'description' => 'Creation timestamp',
+      ],
+      'expires_at' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'description' => 'Expiration timestamp',
+      ],
+      'last_polled_at' => [
+        'type' => 'int',
+        'description' => 'Last polling timestamp',
+      ],
+      'interval' => [
+        'type' => 'int',
+        'default' => 5,
+        'description' => 'Polling interval in seconds',
+      ],
+    ],
+    'primary key' => ['device_code'],
+    'unique keys' => [
+      'user_code' => ['user_code'],
+    ],
+    'indexes' => [
+      'client_id' => ['client_id'],
+      'expires_at' => ['expires_at'],
+      'user_id' => ['user_id'],
+    ],
+  ];
+
+  return $schema;
+}
+
+/**
+ * Implements hook_install().
+ */
+function simple_oauth_device_flow_install($is_syncing) {
+  if (!$is_syncing) {
+    // Set default configuration values.
+    $config = \Drupal::configFactory()->getEditable('simple_oauth_device_flow.settings');
+    $config->setData([
+      'device_code_lifetime' => 600,
+      'user_code_length' => 8,
+      'polling_interval' => 5,
+      'verification_uri_complete_enabled' => TRUE,
+    ]);
+    $config->save();
+
+    // Log successful installation.
+    \Drupal::logger('simple_oauth_device_flow')->info('Simple OAuth Device Flow module installed successfully.');
+  }
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function simple_oauth_device_flow_uninstall($is_syncing) {
+  if (!$is_syncing) {
+    // Remove configuration.
+    \Drupal::configFactory()->getEditable('simple_oauth_device_flow.settings')->delete();
+
+    // Clean up any remaining device codes in the database.
+    $connection = Database::getConnection();
+    if ($connection->schema()->tableExists('oauth2_device_code')) {
+      $connection->delete('oauth2_device_code')->execute();
+    }
+
+    // Log successful uninstallation.
+    \Drupal::logger('simple_oauth_device_flow')->info('Simple OAuth Device Flow module uninstalled successfully.');
+  }
+}
+
+/**
+ * Implements hook_requirements().
+ */
+function simple_oauth_device_flow_requirements($phase) {
+  $requirements = [];
+
+  if ($phase === 'install' || $phase === 'runtime') {
+    // Check if Simple OAuth is installed and enabled.
+    if (!\Drupal::moduleHandler()->moduleExists('simple_oauth')) {
+      $requirements['simple_oauth_device_flow_simple_oauth'] = [
+        'title' => t('Simple OAuth Device Flow'),
+        'description' => t('Simple OAuth Device Flow requires the Simple OAuth module to be installed and enabled.'),
+        'severity' => REQUIREMENT_ERROR,
+      ];
+    }
+
+    // Check if Consumers module is installed and enabled.
+    if (!\Drupal::moduleHandler()->moduleExists('consumers')) {
+      $requirements['simple_oauth_device_flow_consumers'] = [
+        'title' => t('Simple OAuth Device Flow'),
+        'description' => t('Simple OAuth Device Flow requires the Consumers module to be installed and enabled.'),
+        'severity' => REQUIREMENT_ERROR,
+      ];
+    }
+
+    // Check database schema during runtime.
+    if ($phase === 'runtime') {
+      $connection = Database::getConnection();
+      if (!$connection->schema()->tableExists('oauth2_device_code')) {
+        $requirements['simple_oauth_device_flow_schema'] = [
+          'title' => t('Simple OAuth Device Flow'),
+          'description' => t('The oauth2_device_code table is missing. Please reinstall the module.'),
+          'severity' => REQUIREMENT_ERROR,
+        ];
+      }
+      else {
+        $requirements['simple_oauth_device_flow_schema'] = [
+          'title' => t('Simple OAuth Device Flow'),
+          'description' => t('Database schema is properly installed.'),
+          'severity' => REQUIREMENT_OK,
+        ];
+      }
+
+      // Check configuration exists.
+      $config = \Drupal::config('simple_oauth_device_flow.settings');
+      if ($config->isNew()) {
+        $requirements['simple_oauth_device_flow_config'] = [
+          'title' => t('Simple OAuth Device Flow'),
+          'description' => t('Configuration is missing. Please reinstall the module.'),
+          'severity' => REQUIREMENT_WARNING,
+        ];
+      }
+      else {
+        $requirements['simple_oauth_device_flow_config'] = [
+          'title' => t('Simple OAuth Device Flow'),
+          'description' => t('Configuration is properly installed.'),
+          'severity' => REQUIREMENT_OK,
+        ];
+      }
+    }
+  }
+
+  return $requirements;
+}

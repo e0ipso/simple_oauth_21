@@ -3,12 +3,12 @@
 namespace Drupal\Tests\simple_oauth_pkce\Functional;
 
 use Drupal\Tests\BrowserTestBase;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Tests PKCE configuration functionality.
- *
- * @group simple_oauth_pkce
  */
+#[Group('simple_oauth_pkce')]
 class PkceConfigurationFunctionalTest extends BrowserTestBase {
 
   /**
