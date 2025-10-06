@@ -355,11 +355,6 @@ class OpenIdConfigurationFunctionalTest extends BrowserTestBase {
     $this->assertStringStartsWith('http', $metadata['jwks_uri']);
 
     // Test that issuer is a valid HTTPS URL.
-    // @todo Is this test necessary? Right now the issuer scheme depends on the
-    // URL the site is accessed from. There's nothing in the code that enforces
-    // this as https.
-    // See \Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService::getIssuer.
-    //$this->assertStringStartsWith('https://', $metadata['issuer']);
     $this->assertIsString($metadata['issuer']);
     $this->assertTrue(filter_var($metadata['issuer'], FILTER_VALIDATE_URL) !== FALSE);
 
