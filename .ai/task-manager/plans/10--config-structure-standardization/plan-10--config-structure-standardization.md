@@ -414,11 +414,11 @@ graph TD
 
 - Reference: `.ai/task-manager/config/hooks/POST_PHASE.md`
 
-### Phase 1: Foundation - Schema Verification
+### ✅ Phase 1: Foundation - Schema Verification
 
 **Parallel Tasks:**
 
-- Task 001: Verify and Clean Configuration Schema
+- ✔️ Task 001: Verify and Clean Configuration Schema (status: `completed`)
 
 **Phase Objective**: Establish the canonical nested configuration structure in the schema, which serves as the source of truth for all downstream changes.
 

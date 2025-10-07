@@ -702,7 +702,7 @@ class RedirectUriValidator {
 
     // Handle HTTP/HTTPS schemes.
     if (in_array($scheme, ['http', 'https'])) {
-      if (!$config->get('allow_loopback_redirects')) {
+      if (!$config->get('allow.loopback_redirects')) {
         return 'Loopback redirects are disabled';
       }
       if (!$this->validateLoopbackInterface($uri)) {
@@ -713,7 +713,7 @@ class RedirectUriValidator {
     }
 
     // Handle custom schemes.
-    if (!$config->get('allow_custom_uri_schemes')) {
+    if (!$config->get('allow.custom_uri_schemes')) {
       return 'Custom URI schemes are disabled';
     }
 

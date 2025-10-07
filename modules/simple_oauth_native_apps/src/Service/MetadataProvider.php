@@ -147,16 +147,16 @@ class MetadataProvider implements CacheableDependencyInterface {
    */
   protected function addRedirectUriSupport(array &$metadata, $config): void {
     // Custom URI schemes support.
-    $metadata['custom_uri_schemes_supported'] = (bool) $config->get('allow_custom_uri_schemes');
+    $metadata['custom_uri_schemes_supported'] = (bool) $config->get('allow.custom_uri_schemes');
 
     // Loopback interface support (RFC 8252)
-    $metadata['loopback_redirects_supported'] = (bool) $config->get('allow_loopback_redirects');
+    $metadata['loopback_redirects_supported'] = (bool) $config->get('allow.loopback_redirects');
 
     // Terminal applications support.
-    $metadata['terminal_applications_supported'] = (bool) $config->get('allow_loopback_redirects');
+    $metadata['terminal_applications_supported'] = (bool) $config->get('allow.loopback_redirects');
 
     // Private-use URI scheme registration.
-    if ($config->get('allow_custom_uri_schemes')) {
+    if ($config->get('allow.custom_uri_schemes')) {
       $metadata['private_use_uri_schemes_allowed'] = TRUE;
     }
   }

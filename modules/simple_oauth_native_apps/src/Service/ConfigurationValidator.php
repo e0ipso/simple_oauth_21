@@ -8,6 +8,16 @@ use Drupal\Core\StringTranslation\TranslationInterface;
 
 /**
  * Configuration validator for native apps settings.
+ *
+ * This validator expects configuration in nested array structure matching
+ * the canonical schema definition. Configuration should be organized as:
+ * - webview.detection, webview.whitelist, webview.patterns
+ * - allow.custom_uri_schemes, allow.loopback_redirects
+ * - native.enhanced_pkce, native.enforce
+ * - log.pkce_validations, log.detection_decisions
+ *
+ * All validation methods accept nested configuration arrays directly without
+ * requiring transformation or mapping from form structures.
  */
 class ConfigurationValidator {
 
@@ -72,7 +82,7 @@ class ConfigurationValidator {
 
     // Validate detection policy.
     $valid_policies = ['off', 'warn', 'block'];
-    $detection_policy = $config['webview_detection'] ?? '';
+    $detection_policy = $config['webview']['detection'] ?? '';
     if (!in_array($detection_policy, $valid_policies, TRUE)) {
       $errors[] = $this->t('Invalid WebView detection policy. Must be one of: @policies', [
         '@policies' => implode(', ', $valid_policies),
@@ -113,8 +123,8 @@ class ConfigurationValidator {
     // Check for logical conflicts.
     // Consider 'web' as not allowing the feature, 'native' and 'auto-detect'
     // as allowing it.
-    $custom_uri_disabled = isset($config['allow_custom_uri_schemes']) && $config['allow_custom_uri_schemes'] === 'web';
-    $loopback_disabled = isset($config['allow_loopback_redirects']) && $config['allow_loopback_redirects'] === 'web';
+    $custom_uri_disabled = isset($config['allow']['custom_uri_schemes']) && $config['allow']['custom_uri_schemes'] === 'web';
+    $loopback_disabled = isset($config['allow']['loopback_redirects']) && $config['allow']['loopback_redirects'] === 'web';
 
     if (
       !empty($config['require_exact_redirect_match'])
@@ -235,12 +245,14 @@ class ConfigurationValidator {
   protected function validateLoggingConfig(array $config): array {
     $errors = [];
 
-    // Validate logging level.
-    $valid_levels = ['emergency', 'alert', 'critical', 'error', 'warning', 'notice', 'info', 'debug'];
-    if (isset($config['logging_level']) && !in_array($config['logging_level'], $valid_levels, TRUE)) {
-      $errors[] = $this->t('Invalid logging level. Must be one of: @levels', [
-        '@levels' => implode(', ', $valid_levels),
-      ]);
+    // Validate log.pkce_validations is boolean if present.
+    if (isset($config['log']['pkce_validations']) && !is_bool($config['log']['pkce_validations'])) {
+      $errors[] = $this->t('Log PKCE validations setting must be a boolean value.');
+    }
+
+    // Validate log.detection_decisions is boolean if present.
+    if (isset($config['log']['detection_decisions']) && !is_bool($config['log']['detection_decisions'])) {
+      $errors[] = $this->t('Log detection decisions setting must be a boolean value.');
     }
 
     return $errors;

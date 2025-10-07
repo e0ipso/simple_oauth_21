@@ -114,7 +114,7 @@ class NativeAppRedirectUriValidator extends ConstraintValidator implements Conta
     if (!$this->redirectUriValidator->validateLoopbackInterface($uri)) {
       // Check if loopbacks are disabled.
       $config = $this->configFactory->get('simple_oauth_native_apps.settings');
-      if (!$config->get('allow_loopback_redirects')) {
+      if (!$config->get('allow.loopback_redirects')) {
         $this->context->addViolation($constraint->loopbackDisallowedMessage, ['%uri' => $uri]);
         return;
       }
@@ -139,7 +139,7 @@ class NativeAppRedirectUriValidator extends ConstraintValidator implements Conta
 
       // Check if custom schemes are disabled.
       $config = $this->configFactory->get('simple_oauth_native_apps.settings');
-      if (!$config->get('allow_custom_uri_schemes')) {
+      if (!$config->get('allow.custom_uri_schemes')) {
         $this->context->addViolation($constraint->customSchemeDisallowedMessage, ['%uri' => $uri]);
         return;
       }
