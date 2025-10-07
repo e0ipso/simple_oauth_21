@@ -113,7 +113,7 @@ class ConfigurationValidator {
     // Check for logical conflicts.
     // Consider 'web' as not allowing the feature, 'native' and 'auto-detect'
     // as allowing it.
-    $custom_uri_disabled = isset($config['allow_custom_uri_schemes']) && $config['allow']['allow_custom_uri_schemes'] === 'web';
+    $custom_uri_disabled = isset($config['allow_custom_uri_schemes']) && $config['allow_custom_uri_schemes'] === 'web';
     $loopback_disabled = isset($config['allow_loopback_redirects']) && $config['allow_loopback_redirects'] === 'web';
 
     if (

@@ -22,12 +22,12 @@ class ConfigStructureMapper {
   public function mapFormToValidatorStructure(array $form_config): array {
     $validator_config = [];
 
-    // Map webview detection - validator expects nested structure.
+    // Map webview detection - validator expects FLAT structure.
     if (isset($form_config['webview_detection'])) {
-      $validator_config['webview']['detection'] = $form_config['webview_detection'];
+      $validator_config['webview_detection'] = $form_config['webview_detection'];
     }
 
-    // Map webview whitelist and patterns - validator expects nested structure.
+    // Map webview whitelist and patterns - validator expects NESTED structure.
     if (isset($form_config['webview_whitelist'])) {
       $validator_config['webview']['whitelist'] = $form_config['webview_whitelist'];
     }
@@ -35,12 +35,12 @@ class ConfigStructureMapper {
       $validator_config['webview']['patterns'] = $form_config['webview_patterns'];
     }
 
-    // Map redirect URI settings - validator expects nested 'allow' structure.
+    // Map redirect URI settings - validator expects FLAT structure.
     if (isset($form_config['allow_custom_uri_schemes'])) {
-      $validator_config['allow']['custom_uri_schemes'] = $form_config['allow_custom_uri_schemes'];
+      $validator_config['allow_custom_uri_schemes'] = $form_config['allow_custom_uri_schemes'];
     }
     if (isset($form_config['allow_loopback_redirects'])) {
-      $validator_config['allow']['loopback_redirects'] = $form_config['allow_loopback_redirects'];
+      $validator_config['allow_loopback_redirects'] = $form_config['allow_loopback_redirects'];
     }
     if (isset($form_config['require_exact_redirect_match'])) {
       $validator_config['require_exact_redirect_match'] = $form_config['require_exact_redirect_match'];
@@ -76,33 +76,33 @@ class ConfigStructureMapper {
   public function mapValidatorToFormStructure(array $validator_config): array {
     $form_config = [];
 
-    // Map webview detection from nested to flat.
-    if (isset($validator_config['webview']['detection'])) {
-      $form_config['webview_detection'] = $validator_config['webview']['detection'];
+    // Map webview detection - validator uses FLAT structure.
+    if (isset($validator_config['webview_detection'])) {
+      $form_config['webview_detection'] = $validator_config['webview_detection'];
     }
 
-    // Map webview whitelist and patterns.
-    if (isset($validator_config['webview_whitelist'])) {
-      $form_config['webview_whitelist'] = $validator_config['webview_whitelist'];
+    // Map webview whitelist and patterns - validator uses NESTED structure.
+    if (isset($validator_config['webview']['whitelist'])) {
+      $form_config['webview_whitelist'] = $validator_config['webview']['whitelist'];
     }
-    if (isset($validator_config['webview_patterns'])) {
-      $form_config['webview_patterns'] = $validator_config['webview_patterns'];
+    if (isset($validator_config['webview']['patterns'])) {
+      $form_config['webview_patterns'] = $validator_config['webview']['patterns'];
     }
 
-    // Map redirect URI settings from nested to flat.
-    if (isset($validator_config['allow']['custom_uri_schemes'])) {
-      $form_config['allow_custom_uri_schemes'] = $validator_config['allow']['custom_uri_schemes'];
+    // Map redirect URI settings - validator uses FLAT structure.
+    if (isset($validator_config['allow_custom_uri_schemes'])) {
+      $form_config['allow_custom_uri_schemes'] = $validator_config['allow_custom_uri_schemes'];
     }
-    if (isset($validator_config['allow']['loopback_redirects'])) {
-      $form_config['allow_loopback_redirects'] = $validator_config['allow']['loopback_redirects'];
+    if (isset($validator_config['allow_loopback_redirects'])) {
+      $form_config['allow_loopback_redirects'] = $validator_config['allow_loopback_redirects'];
     }
     if (isset($validator_config['require_exact_redirect_match'])) {
       $form_config['require_exact_redirect_match'] = $validator_config['require_exact_redirect_match'];
     }
 
-    // Map PKCE settings.
-    if (isset($validator_config['enhanced_pkce_for_native'])) {
-      $form_config['enhanced_pkce_for_native'] = $validator_config['enhanced_pkce_for_native'];
+    // Map PKCE settings - validator uses NESTED structure.
+    if (isset($validator_config['native']['enhanced_pkce'])) {
+      $form_config['enhanced_pkce_for_native'] = $validator_config['native']['enhanced_pkce'];
     }
 
     // Map logging settings.

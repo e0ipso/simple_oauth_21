@@ -47,16 +47,16 @@ class ConfigStructureMappingTest extends UnitTestCase {
     ];
 
     $expected_validator_config = [
+      'webview_detection' => 'block',
       'webview' => [
-        'detection' => 'block',
+        'whitelist' => ['TrustedApp/1.0'],
+        'patterns' => ['CustomPattern.*'],
       ],
-      'allow' => [
-        'custom_uri_schemes' => TRUE,
-        'loopback_redirects' => FALSE,
+      'allow_custom_uri_schemes' => TRUE,
+      'allow_loopback_redirects' => FALSE,
+      'native' => [
+        'enhanced_pkce' => TRUE,
       ],
-      'enhanced_pkce_for_native' => TRUE,
-      'webview_whitelist' => ['TrustedApp/1.0'],
-      'webview_patterns' => ['CustomPattern.*'],
       'require_exact_redirect_match' => TRUE,
       'logging_level' => 'warning',
     ];
@@ -72,16 +72,16 @@ class ConfigStructureMappingTest extends UnitTestCase {
    */
   public function testMapValidatorToFormStructure(): void {
     $validator_config = [
+      'webview_detection' => 'warn',
       'webview' => [
-        'detection' => 'warn',
+        'whitelist' => ['TrustedApp/2.0'],
+        'patterns' => ['AnotherPattern.*'],
       ],
-      'allow' => [
-        'custom_uri_schemes' => FALSE,
-        'loopback_redirects' => TRUE,
+      'allow_custom_uri_schemes' => FALSE,
+      'allow_loopback_redirects' => TRUE,
+      'native' => [
+        'enhanced_pkce' => FALSE,
       ],
-      'enhanced_pkce_for_native' => FALSE,
-      'webview_whitelist' => ['TrustedApp/2.0'],
-      'webview_patterns' => ['AnotherPattern.*'],
       'require_exact_redirect_match' => FALSE,
       'logging_level' => 'debug',
     ];
@@ -114,12 +114,8 @@ class ConfigStructureMappingTest extends UnitTestCase {
     ];
 
     $expected_validator_config = [
-      'webview' => [
-        'detection' => 'off',
-      ],
-      'allow' => [
-        'custom_uri_schemes' => TRUE,
-      ],
+      'webview_detection' => 'off',
+      'allow_custom_uri_schemes' => TRUE,
     ];
 
     $actual = $this->mapper->mapFormToValidatorStructure($partial_form_config);
