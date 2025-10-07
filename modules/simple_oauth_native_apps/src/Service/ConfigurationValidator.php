@@ -72,7 +72,7 @@ class ConfigurationValidator {
 
     // Validate detection policy.
     $valid_policies = ['off', 'warn', 'block'];
-    $detection_policy = $config['webview']['detection'] ?? '';
+    $detection_policy = $config['webview_detection'] ?? '';
     if (!in_array($detection_policy, $valid_policies, TRUE)) {
       $errors[] = $this->t('Invalid WebView detection policy. Must be one of: @policies', [
         '@policies' => implode(', ', $valid_policies),
@@ -113,11 +113,14 @@ class ConfigurationValidator {
     // Check for logical conflicts.
     // Consider 'web' as not allowing the feature, 'native' and 'auto-detect'
     // as allowing it.
-    $custom_uri_disabled = isset($config['allow']['custom_uri_schemes']) && $config['allow']['custom_uri_schemes'] === 'web';
-    $loopback_disabled = isset($config['allow']['loopback_redirects']) && $config['allow']['loopback_redirects'] === 'web';
+    $custom_uri_disabled = isset($config['allow_custom_uri_schemes']) && $config['allow']['allow_custom_uri_schemes'] === 'web';
+    $loopback_disabled = isset($config['allow_loopback_redirects']) && $config['allow_loopback_redirects'] === 'web';
 
-    if (!empty($config['require_exact_redirect_match']) &&
-        ($custom_uri_disabled && $loopback_disabled)) {
+    if (
+      !empty($config['require_exact_redirect_match'])
+      && $custom_uri_disabled
+      && $loopback_disabled
+    ) {
       $errors[] = $this->t('Requiring exact redirect match without allowing custom schemes or loopback redirects may prevent native apps from functioning properly.');
     }
 
