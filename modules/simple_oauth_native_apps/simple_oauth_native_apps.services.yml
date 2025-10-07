@@ -31,7 +31,6 @@ services:
       - '@entity_type.manager'
       - '@simple_oauth_native_apps.configuration_validator'
       - '@simple_oauth_native_apps.native_client_detector'
-      - '@simple_oauth_native_apps.config_structure_mapper'
 
   simple_oauth_native_apps.native_client_detector:
     class: Drupal\simple_oauth_native_apps\Service\NativeClientDetector

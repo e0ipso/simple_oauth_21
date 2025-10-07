@@ -8,7 +8,6 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
-use Drupal\simple_oauth_native_apps\Service\ConfigStructureMapper;
 use Drupal\simple_oauth_native_apps\Service\ConfigurationValidator;
 use Drupal\simple_oauth_native_apps\Service\NativeClientDetector;
 
@@ -47,13 +46,6 @@ class ConsumerNativeAppsFormAlter {
   protected NativeClientDetector $clientDetector;
 
   /**
-   * The config structure mapper.
-   *
-   * @var \Drupal\simple_oauth_native_apps\Service\ConfigStructureMapper
-   */
-  protected ConfigStructureMapper $configMapper;
-
-  /**
    * Constructs a new ConsumerNativeAppsFormAlter.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
@@ -64,21 +56,17 @@ class ConsumerNativeAppsFormAlter {
    *   The configuration validator.
    * @param \Drupal\simple_oauth_native_apps\Service\NativeClientDetector $client_detector
    *   The native client detector.
-   * @param \Drupal\simple_oauth_native_apps\Service\ConfigStructureMapper $config_mapper
-   *   The config structure mapper.
    */
   public function __construct(
     ConfigFactoryInterface $config_factory,
     EntityTypeManagerInterface $entity_type_manager,
     ConfigurationValidator $configuration_validator,
     NativeClientDetector $client_detector,
-    ConfigStructureMapper $config_mapper,
   ) {
     $this->configFactory = $config_factory;
     $this->entityTypeManager = $entity_type_manager;
     $this->configurationValidator = $configuration_validator;
     $this->clientDetector = $client_detector;
-    $this->configMapper = $config_mapper;
   }
 
   /**
@@ -256,29 +244,28 @@ class ConsumerNativeAppsFormAlter {
   public function validateConsumerNativeAppsSettings(array $form, FormStateInterface $form_state): void {
     $values = $form_state->getValue('native_apps', []);
 
-    // Build configuration for validation using the structure mapper.
-    $form_config = [];
+    // Build configuration in nested structure directly for validation.
+    $validator_config = [];
 
-    // Only include non-empty overrides in flat structure.
+    // Only include non-empty overrides in nested structure.
     if (!empty($values['webview_detection_override'])) {
-      $form_config['webview_detection'] = $values['webview_detection_override'];
+      $validator_config['webview']['detection'] = $values['webview_detection_override'];
     }
 
     if ($values['allow_custom_schemes_override'] !== '') {
-      $form_config['allow_custom_uri_schemes'] = $values['allow_custom_schemes_override'];
+      $validator_config['allow']['custom_uri_schemes'] = $values['allow_custom_schemes_override'];
     }
 
     if ($values['allow_loopback_override'] !== '') {
-      $form_config['allow_loopback_redirects'] = $values['allow_loopback_override'];
+      $validator_config['allow']['loopback_redirects'] = $values['allow_loopback_override'];
     }
 
     if ($values['enhanced_pkce_override'] !== '') {
-      $form_config['enhanced_pkce_for_native'] = $values['enhanced_pkce_override'];
+      $validator_config['native']['enhanced_pkce'] = $values['enhanced_pkce_override'];
     }
 
-    // Convert to validator structure and validate if we have any overrides.
-    if (!empty($form_config)) {
-      $validator_config = $this->configMapper->mapFormToValidatorStructure($form_config);
+    // Validate directly if we have any overrides.
+    if (!empty($validator_config)) {
       $errors = $this->configurationValidator->validateConfiguration($validator_config);
       foreach ($errors as $error) {
         $form_state->setErrorByName('native_apps', $error);

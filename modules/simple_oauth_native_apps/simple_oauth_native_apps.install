@@ -95,3 +95,80 @@ function simple_oauth_native_apps_uninstall($is_syncing) {
     }
   }
 }
+
+/**
+ * Migrate configuration from flat structure to nested structure.
+ */
+function simple_oauth_native_apps_update_10001() {
+  $config_factory = \Drupal::configFactory();
+  $config = $config_factory->getEditable('simple_oauth_native_apps.settings');
+
+  // Check if migration is needed by looking for new nested structure.
+  if ($config->get('webview.detection') !== NULL) {
+    // Already migrated.
+    \Drupal::logger('simple_oauth_native_apps')->info('Configuration already uses nested structure. Skipping migration.');
+    return t('Configuration already migrated. No changes needed.');
+  }
+
+  $migrated = [];
+  $missing = [];
+
+  // Define migration mapping from flat keys to nested structure.
+  $migrations = [
+    'webview_detection' => 'webview.detection',
+    'webview_custom_message' => 'webview.custom_message',
+    'webview_whitelist' => 'webview.whitelist',
+    'webview_patterns' => 'webview.patterns',
+    'allow_custom_uri_schemes' => 'allow.custom_uri_schemes',
+    'allow_loopback_redirects' => 'allow.loopback_redirects',
+    'enhanced_pkce_for_native' => 'native.enhanced_pkce',
+    'enforce_method' => 'native.enforce',
+  ];
+
+  // Migrate each flat key to nested equivalent.
+  foreach ($migrations as $old_key => $new_key) {
+    $value = $config->get($old_key);
+
+    if ($value !== NULL) {
+      // Handle boolean to enum conversions.
+      if ($old_key === 'allow_custom_uri_schemes' && is_bool($value)) {
+        $value = $value ? 'native' : 'web';
+      }
+      elseif ($old_key === 'allow_loopback_redirects' && is_bool($value)) {
+        $value = $value ? 'native' : 'web';
+      }
+      elseif ($old_key === 'enhanced_pkce_for_native' && is_bool($value)) {
+        $value = $value ? 'enhanced' : 'not-enhanced';
+      }
+
+      $config->set($new_key, $value);
+      $config->clear($old_key);
+      $migrated[] = "$old_key → $new_key";
+    }
+    else {
+      $missing[] = $old_key;
+    }
+  }
+
+  // Save migrated configuration.
+  $config->save();
+
+  // Log migration summary.
+  $logger = \Drupal::logger('simple_oauth_native_apps');
+  if (!empty($migrated)) {
+    $logger->info('Configuration migration completed. Migrated: @migrated', [
+      '@migrated' => implode(', ', $migrated),
+    ]);
+  }
+  if (!empty($missing)) {
+    $logger->info('Keys not found during migration (likely not set): @missing', [
+      '@missing' => implode(', ', $missing),
+    ]);
+  }
+
+  $message = t('Migrated @count configuration keys from flat to nested structure.', [
+    '@count' => count($migrated),
+  ]);
+
+  return $message;
+}

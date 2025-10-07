@@ -166,7 +166,7 @@ class NativeAppsSettingsForm extends ConfigFormBase {
       '#type' => 'textarea',
       '#title' => $this->t('Additional WebView whitelist patterns'),
       '#description' => $this->t('<strong>Additional</strong> user-agent patterns to whitelist (bypass WebView detection). These patterns will override the built-in detection above. Enter one pattern per line. Use regular expressions.'),
-      '#default_value' => implode("\n", $config->get('webview.advanced.whitelist') ?? []),
+      '#default_value' => implode("\n", $config->get('webview.whitelist') ?? []),
       '#rows' => 4,
       '#placeholder' => "MyTrustedApp/.*\nCompanyApp/[0-9.]+",
     ];
@@ -175,7 +175,7 @@ class NativeAppsSettingsForm extends ConfigFormBase {
       '#type' => 'textarea',
       '#title' => $this->t('Additional WebView detection patterns'),
       '#description' => $this->t('<strong>Additional</strong> user-agent patterns to detect as embedded WebViews beyond the built-in patterns shown above. Enter one pattern per line. Use regular expressions.'),
-      '#default_value' => implode("\n", $config->get('webview.advanced.patterns') ?? []),
+      '#default_value' => implode("\n", $config->get('webview.patterns') ?? []),
       '#rows' => 4,
       '#placeholder' => "SuspiciousWebView/.*\nEmbeddedBrowser/.*",
     ];
@@ -338,14 +338,12 @@ class NativeAppsSettingsForm extends ConfigFormBase {
       'webview' => [
         'detection' => $values['webview']['detection'] ?? 'warn',
         'custom_message' => $values['webview']['custom_message'] ?? '',
-        'advanced' => [
-          'whitelist' => !empty($values['webview']['advanced']['whitelist'])
-            ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['whitelist'])))
-            : [],
-          'patterns' => !empty($values['webview']['advanced']['patterns'])
-            ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['patterns'])))
-            : [],
-        ],
+        'whitelist' => !empty($values['webview']['advanced']['whitelist'])
+          ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['whitelist'])))
+          : [],
+        'patterns' => !empty($values['webview']['advanced']['patterns'])
+          ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['patterns'])))
+          : [],
       ],
       'require_exact_redirect_match' => $values['require_exact_redirect_match'] ?? TRUE,
       'allow' => $values['allow'] ?? [],
@@ -421,12 +419,12 @@ class NativeAppsSettingsForm extends ConfigFormBase {
     $webview_whitelist = !empty($values['webview']['advanced']['whitelist'])
       ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['whitelist'])))
       : [];
-    $config->set('webview.advanced.whitelist', $webview_whitelist);
+    $config->set('webview.whitelist', $webview_whitelist);
 
     $webview_patterns = !empty($values['webview']['advanced']['patterns'])
       ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['patterns'])))
       : [];
-    $config->set('webview.advanced.patterns', $webview_patterns);
+    $config->set('webview.patterns', $webview_patterns);
 
     // Save redirect URI settings.
     $config->set('require_exact_redirect_match', (bool) $values['require_exact_redirect_match']);
