@@ -1,3 +1,15 @@
+# Configuration schema for Simple OAuth Native Apps module.
+#
+# This schema defines the canonical nested structure used throughout the
+# module: configuration storage, form elements, validation, and services.
+# All configuration uses nested arrays (e.g., webview.detection,
+# allow.custom_uri_schemes, native.enhanced_pkce) consistently.
+#
+# Structure groups:
+# - webview.*: WebView detection and handling settings
+# - allow.*: Redirect URI type permissions
+# - native.*: Native app specific security settings
+# - log.*: Logging and debugging options
 simple_oauth_native_apps.settings:
   type: config_object
   label: 'Simple OAuth Native Apps Settings'
@@ -82,19 +94,6 @@ simple_oauth_native_apps.settings:
             Choice:
               choices: ['off', 'S256', 'plain']
             NotBlank: ~
-    # Legacy fields for backward compatibility
-    enhanced_pkce_for_native:
-      type: boolean
-      label: 'Enhanced PKCE for native apps (legacy)'
-      description: 'Legacy boolean setting for enhanced PKCE'
-    allow_custom_uri_schemes:
-      type: boolean
-      label: 'Allow custom URI schemes (legacy)'
-      description: 'Legacy boolean setting for custom URI schemes'
-    allow_loopback_redirects:
-      type: boolean
-      label: 'Allow loopback redirects (legacy)'
-      description: 'Legacy boolean setting for loopback redirects'
     log:
       type: mapping
       label: 'Logging settings'
