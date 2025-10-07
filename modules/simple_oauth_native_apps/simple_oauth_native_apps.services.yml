@@ -21,9 +21,6 @@ services:
       - '@logger.factory'
       - '@string_translation'
 
-  simple_oauth_native_apps.config_structure_mapper:
-    class: Drupal\simple_oauth_native_apps\Service\ConfigStructureMapper
-
   simple_oauth_native_apps.consumer_form_alter:
     class: Drupal\simple_oauth_native_apps\Form\ConsumerNativeAppsFormAlter
     arguments:

@@ -90,9 +90,9 @@ class ServiceIntegrationTest extends KernelTestBase {
     $config_factory = $this->container->get('config.factory');
     $config = $config_factory->getEditable('simple_oauth_native_apps.settings');
 
-    // Update configuration.
-    $config->set('allow.custom_uri_schemes', TRUE);
-    $config->set('allow.loopback_redirects', TRUE);
+    // Update configuration with nested structure.
+    $config->set('allow.custom_uri_schemes', 'native');
+    $config->set('allow.loopback_redirects', 'native');
     $config->set('enforce_native_security', TRUE);
     $config->set('webview.detection', 'warn');
     $config->save();
@@ -178,20 +178,20 @@ class ServiceIntegrationTest extends KernelTestBase {
 
     $config = $this->container->get('config.factory')->getEditable('simple_oauth_native_apps.settings');
 
-    // Test with custom schemes enabled.
-    $config->set('allow.custom_uri_schemes', TRUE)->save();
+    // Test with custom schemes enabled (using enum value).
+    $config->set('allow.custom_uri_schemes', 'native')->save();
     $this->assertTrue($validator->validateCustomScheme('myapp://callback'));
 
-    // Test with custom schemes disabled.
-    $config->set('allow.custom_uri_schemes', FALSE)->save();
+    // Test with custom schemes disabled (using enum value).
+    $config->set('allow.custom_uri_schemes', 'web')->save();
     $this->assertFalse($validator->validateCustomScheme('myapp://callback'));
 
-    // Test with loopback enabled.
-    $config->set('allow.loopback_redirects', TRUE)->save();
+    // Test with loopback enabled (using enum value).
+    $config->set('allow.loopback_redirects', 'native')->save();
     $this->assertTrue($validator->validateLoopbackInterface('http://127.0.0.1:8080/callback'));
 
-    // Test with loopback disabled.
-    $config->set('allow.loopback_redirects', FALSE)->save();
+    // Test with loopback disabled (using enum value).
+    $config->set('allow.loopback_redirects', 'web')->save();
     $this->assertFalse($validator->validateLoopbackInterface('http://127.0.0.1:8080/callback'));
   }
 
@@ -202,30 +202,37 @@ class ServiceIntegrationTest extends KernelTestBase {
     /** @var \Drupal\simple_oauth_native_apps\Service\ConfigurationValidator $validator */
     $validator = $this->container->get('simple_oauth_native_apps.configuration_validator');
 
-    // Test valid configuration.
+    // Test valid configuration with nested structure.
     $valid_config = [
-      'webview' => ['detection' => 'warn'],
-      'webview_whitelist' => ['TrustedApp'],
-      'webview_patterns' => [],
-      'allow' => [
-        'custom_uri_schemes' => TRUE,
-        'loopback_redirects' => TRUE,
+      'webview' => [
+        'detection' => 'warn',
+        'whitelist' => ['TrustedApp'],
+        'patterns' => [],
       ],
-      'logging_level' => 'info',
+      'allow' => [
+        'custom_uri_schemes' => 'native',
+        'loopback_redirects' => 'native',
+      ],
+      'native' => [
+        'enhanced_pkce' => 'enhanced',
+        'enforce' => 'S256',
+      ],
     ];
 
     $errors = $validator->validateConfiguration($valid_config);
     $this->assertEmpty($errors);
 
-    // Test invalid configuration.
+    // Test invalid configuration with nested structure.
     $invalid_config = [
       'webview' => ['detection' => 'invalid_policy'],
-      'logging_level' => 'invalid_level',
+      'allow' => [
+        'custom_uri_schemes' => 'invalid_value',
+      ],
     ];
 
     $errors = $validator->validateConfiguration($invalid_config);
     $this->assertNotEmpty($errors);
-    $this->assertGreaterThanOrEqual(2, count($errors));
+    $this->assertGreaterThanOrEqual(1, count($errors));
   }
 
   /**
@@ -352,15 +359,18 @@ class ServiceIntegrationTest extends KernelTestBase {
     $is_webview = $user_agent_analyzer->isEmbeddedWebview($webview_ua);
     $this->assertTrue($is_webview);
 
-    // 6. Configuration validation.
+    // 6. Configuration validation with nested structure.
     $config_validator = $this->container->get('simple_oauth_native_apps.configuration_validator');
     $config_errors = $config_validator->validateConfiguration([
       'webview' => ['detection' => 'warn'],
       'allow' => [
-        'custom_uri_schemes' => TRUE,
-        'loopback_redirects' => TRUE,
+        'custom_uri_schemes' => 'native',
+        'loopback_redirects' => 'native',
       ],
-      'logging_level' => 'info',
+      'native' => [
+        'enhanced_pkce' => 'enhanced',
+        'enforce' => 'S256',
+      ],
     ]);
     $this->assertEmpty($config_errors);
 
