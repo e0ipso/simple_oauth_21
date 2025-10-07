@@ -422,12 +422,12 @@ graph TD
 
 **Phase Objective**: Establish the canonical nested configuration structure in the schema, which serves as the source of truth for all downstream changes.
 
-### Phase 2: Validator and Service Updates
+### ✅ Phase 2: Validator and Service Updates
 
 **Parallel Tasks:**
 
-- Task 002: Update ConfigurationValidator to Use Full Nested Structure (depends on: 001)
-- Task 005: Update All Service Consumers to Use Nested Configuration Paths (depends on: 001)
+- ✔️ Task 002: Update ConfigurationValidator to Use Full Nested Structure (status: `completed`)
+- ✔️ Task 005: Update All Service Consumers to Use Nested Configuration Paths (status: `completed`)
 
 **Phase Objective**: Update validation and service layers to work with nested structure, preparing the foundation for form updates.
 

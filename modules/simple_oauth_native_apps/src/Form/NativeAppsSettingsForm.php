@@ -118,7 +118,7 @@ class NativeAppsSettingsForm extends ConfigFormBase {
       '#open' => TRUE,
     ];
 
-    $form['webview']['webview_detection'] = [
+    $form['webview']['detection'] = [
       '#type' => 'radios',
       '#title' => $this->t('WebView detection policy'),
       '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Set to "Block" to prevent WebView-based attacks in native applications. RFC 8252 explicitly recommends against embedded WebViews for OAuth flows due to security vulnerabilities. (<a href="https://datatracker.ietf.org/doc/html/rfc8252#section-8.12" target="_blank">RFC 8252 Section 8.12</a>)'),
@@ -131,7 +131,7 @@ class NativeAppsSettingsForm extends ConfigFormBase {
       '#required' => TRUE,
     ];
 
-    $form['webview']['webview_custom_message'] = [
+    $form['webview']['custom_message'] = [
       '#type' => 'textarea',
       '#title' => $this->t('Custom WebView warning message'),
       '#description' => $this->t('Custom message to display when embedded WebView is detected. Leave empty to use the default message.'),
@@ -139,7 +139,7 @@ class NativeAppsSettingsForm extends ConfigFormBase {
       '#rows' => 3,
       '#states' => [
         'visible' => [
-          ':input[name="webview[webview_detection]"]' => ['!value' => 'off'],
+          ':input[name="webview[detection]"]' => ['!value' => 'off'],
         ],
       ],
     ];
@@ -162,20 +162,20 @@ class NativeAppsSettingsForm extends ConfigFormBase {
       '#markup' => $this->getBuiltinPatternsMarkup(),
     ];
 
-    $form['webview']['advanced']['webview_whitelist'] = [
+    $form['webview']['advanced']['whitelist'] = [
       '#type' => 'textarea',
       '#title' => $this->t('Additional WebView whitelist patterns'),
       '#description' => $this->t('<strong>Additional</strong> user-agent patterns to whitelist (bypass WebView detection). These patterns will override the built-in detection above. Enter one pattern per line. Use regular expressions.'),
-      '#default_value' => implode("\n", $config->get('webview.whitelist') ?? []),
+      '#default_value' => implode("\n", $config->get('webview.advanced.whitelist') ?? []),
       '#rows' => 4,
       '#placeholder' => "MyTrustedApp/.*\nCompanyApp/[0-9.]+",
     ];
 
-    $form['webview']['advanced']['webview_patterns'] = [
+    $form['webview']['advanced']['patterns'] = [
       '#type' => 'textarea',
       '#title' => $this->t('Additional WebView detection patterns'),
       '#description' => $this->t('<strong>Additional</strong> user-agent patterns to detect as embedded WebViews beyond the built-in patterns shown above. Enter one pattern per line. Use regular expressions.'),
-      '#default_value' => implode("\n", $config->get('webview.patterns') ?? []),
+      '#default_value' => implode("\n", $config->get('webview.advanced.patterns') ?? []),
       '#rows' => 4,
       '#placeholder' => "SuspiciousWebView/.*\nEmbeddedBrowser/.*",
     ];
@@ -188,14 +188,19 @@ class NativeAppsSettingsForm extends ConfigFormBase {
       '#open' => TRUE,
     ];
 
-    $form['redirect_uri']['require_exact_redirect_match'] = [
+    $form['require_exact_redirect_match'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Require exact redirect URI match'),
       '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Exact redirect URI matching prevents redirect manipulation attacks. This is essential for native app security and recommended for maximum protection. (<a href="https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/#section-4.1.3" target="_blank">OAuth 2.1 Draft Section 4.1.3</a>)'),
       '#default_value' => $config->get('require_exact_redirect_match'),
     ];
 
-    $form['redirect_uri']['allow_custom_uri_schemes'] = [
+    $form['allow'] = [
+      '#type' => 'container',
+      '#tree' => TRUE,
+    ];
+
+    $form['allow']['custom_uri_schemes'] = [
       '#type' => 'radios',
       '#title' => $this->t('Allow custom URI schemes'),
       '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Custom URI schemes (e.g., myapp://callback) are the preferred redirect method for native applications. This provides better security than web-based redirects for mobile and desktop apps. (<a href="https://datatracker.ietf.org/doc/html/rfc8252#section-7.1" target="_blank">RFC 8252 Section 7.1</a>)'),
@@ -208,7 +213,7 @@ class NativeAppsSettingsForm extends ConfigFormBase {
       '#required' => TRUE,
     ];
 
-    $form['redirect_uri']['allow_loopback_redirects'] = [
+    $form['allow']['loopback_redirects'] = [
       '#type' => 'radios',
       '#title' => $this->t('Allow loopback redirects'),
       '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Loopback redirects (e.g., http://127.0.0.1:8080/callback) are essential for command-line and desktop applications. RFC 8252 recommends this for native apps that cannot use custom URI schemes. (<a href="https://datatracker.ietf.org/doc/html/rfc8252#section-7.3" target="_blank">RFC 8252 Section 7.3</a>)'),
@@ -239,7 +244,12 @@ class NativeAppsSettingsForm extends ConfigFormBase {
       </ul>'),
     ];
 
-    $form['pkce']['enhanced_pkce_for_native'] = [
+    $form['native'] = [
+      '#type' => 'container',
+      '#tree' => TRUE,
+    ];
+
+    $form['native']['enhanced_pkce'] = [
       '#type' => 'radios',
       '#title' => $this->t('Enhanced PKCE for native apps'),
       '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Enhanced PKCE enforces mandatory S256 challenge method and stricter validation for native applications. This goes beyond basic PKCE to meet OAuth 2.1 security requirements for native apps. (<a href="https://datatracker.ietf.org/doc/html/rfc8252#section-8.1" target="_blank">RFC 8252 Section 8.1</a>)'),
@@ -252,7 +262,7 @@ class NativeAppsSettingsForm extends ConfigFormBase {
       '#required' => TRUE,
     ];
 
-    $form['pkce']['enforce_method'] = [
+    $form['native']['enforce'] = [
       '#type' => 'radios',
       '#title' => $this->t('Enforce challenge method for native apps'),
       '#description' => $this->t('🔒 <strong>Critical Security Setting:</strong> Specifies which PKCE challenge method native clients must use. S256 is strongly recommended for security. This setting prevents the configuration errors that can cause OAuth validation failures.'),
@@ -313,6 +323,9 @@ class NativeAppsSettingsForm extends ConfigFormBase {
   /**
    * Converts form values to configuration format.
    *
+   * Form structure now matches config structure, only textarea arrays need
+   * conversion.
+   *
    * @param array $values
    *   Form values.
    *
@@ -320,28 +333,26 @@ class NativeAppsSettingsForm extends ConfigFormBase {
    *   Configuration array.
    */
   protected function convertFormValuesToConfig(array $values): array {
-    return [
+    $config = [
       'enforce_native_security' => $values['security']['enforce_native_security'] ?? FALSE,
       'webview' => [
-        'detection' => $values['webview']['webview_detection'] ?? 'warn',
-        'custom_message' => $values['webview']['webview_custom_message'] ?? '',
-        'whitelist' => !empty($values['webview']['advanced']['webview_whitelist'])
-          ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['webview_whitelist'])))
-          : [],
-        'patterns' => !empty($values['webview']['advanced']['webview_patterns'])
-          ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['webview_patterns'])))
-          : [],
+        'detection' => $values['webview']['detection'] ?? 'warn',
+        'custom_message' => $values['webview']['custom_message'] ?? '',
+        'advanced' => [
+          'whitelist' => !empty($values['webview']['advanced']['whitelist'])
+            ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['whitelist'])))
+            : [],
+          'patterns' => !empty($values['webview']['advanced']['patterns'])
+            ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['patterns'])))
+            : [],
+        ],
       ],
-      'require_exact_redirect_match' => $values['redirect_uri']['require_exact_redirect_match'] ?? TRUE,
-      'allow' => [
-        'custom_uri_schemes' => $values['redirect_uri']['allow_custom_uri_schemes'] ?? 'auto-detect',
-        'loopback_redirects' => $values['redirect_uri']['allow_loopback_redirects'] ?? 'auto-detect',
-      ],
-      'native' => [
-        'enhanced_pkce' => $values['pkce']['enhanced_pkce_for_native'] ?? 'auto-detect',
-        'enforce' => $values['pkce']['enforce_method'] ?? 'S256',
-      ],
+      'require_exact_redirect_match' => $values['require_exact_redirect_match'] ?? TRUE,
+      'allow' => $values['allow'] ?? [],
+      'native' => $values['native'] ?? [],
     ];
+
+    return $config;
   }
 
   /**
@@ -354,17 +365,17 @@ class NativeAppsSettingsForm extends ConfigFormBase {
    */
   protected function validateFormSpecificRules(array $values, FormStateInterface $form_state): void {
     // Critical validation: Ensure enforce method is set.
-    if (empty($values['pkce']['enforce_method'])) {
-      $form_state->setErrorByName('pkce][enforce_method', $this->t('PKCE challenge method enforcement is required. This prevents configuration errors that cause OAuth validation failures.'));
+    if (empty($values['native']['enforce'])) {
+      $form_state->setErrorByName('native][enforce', $this->t('PKCE challenge method enforcement is required. This prevents configuration errors that cause OAuth validation failures.'));
     }
 
     // Logical validation: Enhanced PKCE with enforce method.
-    if ($values['pkce']['enhanced_pkce_for_native'] === 'enhanced' && $values['pkce']['enforce_method'] === 'off') {
-      $form_state->setErrorByName('pkce][enforce_method', $this->t('Enhanced PKCE is enabled but challenge method enforcement is off. Enhanced PKCE requires method enforcement to function properly.'));
+    if ($values['native']['enhanced_pkce'] === 'enhanced' && $values['native']['enforce'] === 'off') {
+      $form_state->setErrorByName('native][enforce', $this->t('Enhanced PKCE is enabled but challenge method enforcement is off. Enhanced PKCE requires method enforcement to function properly.'));
     }
 
     // Security validation: Plain method warning.
-    if ($values['pkce']['enforce_method'] === 'plain') {
+    if ($values['native']['enforce'] === 'plain') {
       $this->messenger->addWarning($this->t('Plain PKCE method is not recommended for production use. S256 provides better security for native applications.'));
     }
 
@@ -374,20 +385,20 @@ class NativeAppsSettingsForm extends ConfigFormBase {
     }
 
     // Warning if WebView detection is off.
-    if ($values['webview']['webview_detection'] === 'off') {
+    if ($values['webview']['detection'] === 'off') {
       $this->messenger->addWarning($this->t('WebView detection is disabled. This is not recommended as it may allow insecure embedded WebView authorization flows.'));
     }
 
     // Information message for enhanced PKCE.
-    if ($values['pkce']['enhanced_pkce_for_native'] === 'enhanced') {
+    if ($values['native']['enhanced_pkce'] === 'enhanced') {
       $this->messenger->addMessage($this->t('Enhanced PKCE is enabled, providing additional security for native applications.'));
     }
-    elseif ($values['pkce']['enhanced_pkce_for_native'] === 'auto-detect') {
+    elseif ($values['native']['enhanced_pkce'] === 'auto-detect') {
       $this->messenger->addMessage($this->t('Enhanced PKCE is set to auto-detect mode, which will apply enhanced PKCE based on client type detection.'));
     }
 
     // Success message for secure configuration.
-    if ($values['pkce']['enforce_method'] === 'S256' && $values['pkce']['enhanced_pkce_for_native'] !== 'not-enhanced') {
+    if ($values['native']['enforce'] === 'S256' && $values['native']['enhanced_pkce'] !== 'not-enhanced') {
       $this->messenger->addMessage($this->t('Secure PKCE configuration detected: S256 method enforcement with enhanced validation.'));
     }
   }
@@ -403,28 +414,28 @@ class NativeAppsSettingsForm extends ConfigFormBase {
     $config->set('enforce_native_security', (bool) $values['security']['enforce_native_security']);
 
     // Save WebView settings.
-    $config->set('webview.detection', $values['webview']['webview_detection']);
-    $config->set('webview.custom_message', $values['webview']['webview_custom_message']);
+    $config->set('webview.detection', $values['webview']['detection']);
+    $config->set('webview.custom_message', $values['webview']['custom_message']);
 
     // Process and save WebView patterns.
-    $webview_whitelist = !empty($values['webview']['advanced']['webview_whitelist'])
-      ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['webview_whitelist'])))
+    $webview_whitelist = !empty($values['webview']['advanced']['whitelist'])
+      ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['whitelist'])))
       : [];
-    $config->set('webview.whitelist', $webview_whitelist);
+    $config->set('webview.advanced.whitelist', $webview_whitelist);
 
-    $webview_patterns = !empty($values['webview']['advanced']['webview_patterns'])
-      ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['webview_patterns'])))
+    $webview_patterns = !empty($values['webview']['advanced']['patterns'])
+      ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['patterns'])))
       : [];
-    $config->set('webview.patterns', $webview_patterns);
+    $config->set('webview.advanced.patterns', $webview_patterns);
 
     // Save redirect URI settings.
-    $config->set('require_exact_redirect_match', (bool) $values['redirect_uri']['require_exact_redirect_match']);
-    $config->set('allow.custom_uri_schemes', $values['redirect_uri']['allow_custom_uri_schemes']);
-    $config->set('allow.loopback_redirects', $values['redirect_uri']['allow_loopback_redirects']);
+    $config->set('require_exact_redirect_match', (bool) $values['require_exact_redirect_match']);
+    $config->set('allow.custom_uri_schemes', $values['allow']['custom_uri_schemes']);
+    $config->set('allow.loopback_redirects', $values['allow']['loopback_redirects']);
 
     // Save PKCE settings.
-    $config->set('native.enhanced_pkce', $values['pkce']['enhanced_pkce_for_native']);
-    $config->set('native.enforce', $values['pkce']['enforce_method']);
+    $config->set('native.enhanced_pkce', $values['native']['enhanced_pkce']);
+    $config->set('native.enforce', $values['native']['enforce']);
 
     $config->save();
 
