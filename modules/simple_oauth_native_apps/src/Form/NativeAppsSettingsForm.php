@@ -322,19 +322,25 @@ class NativeAppsSettingsForm extends ConfigFormBase {
   protected function convertFormValuesToConfig(array $values): array {
     return [
       'enforce_native_security' => $values['security']['enforce_native_security'] ?? FALSE,
-      'webview_detection' => $values['webview']['webview_detection'] ?? 'warn',
-      'webview_custom_message' => $values['webview']['webview_custom_message'] ?? '',
-      'webview_whitelist' => !empty($values['webview']['advanced']['webview_whitelist'])
-        ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['webview_whitelist'])))
-        : [],
-      'webview_patterns' => !empty($values['webview']['advanced']['webview_patterns'])
-        ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['webview_patterns'])))
-        : [],
+      'webview' => [
+        'detection' => $values['webview']['webview_detection'] ?? 'warn',
+        'custom_message' => $values['webview']['webview_custom_message'] ?? '',
+        'whitelist' => !empty($values['webview']['advanced']['webview_whitelist'])
+          ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['webview_whitelist'])))
+          : [],
+        'patterns' => !empty($values['webview']['advanced']['webview_patterns'])
+          ? array_filter(array_map('trim', explode("\n", $values['webview']['advanced']['webview_patterns'])))
+          : [],
+      ],
       'require_exact_redirect_match' => $values['redirect_uri']['require_exact_redirect_match'] ?? TRUE,
-      'allow_custom_uri_schemes' => $values['redirect_uri']['allow_custom_uri_schemes'] ?? 'auto-detect',
-      'allow_loopback_redirects' => $values['redirect_uri']['allow_loopback_redirects'] ?? 'auto-detect',
-      'enhanced_pkce_for_native' => $values['pkce']['enhanced_pkce_for_native'] ?? 'auto-detect',
-      'enforce_method' => $values['pkce']['enforce_method'] ?? 'S256',
+      'allow' => [
+        'custom_uri_schemes' => $values['redirect_uri']['allow_custom_uri_schemes'] ?? 'auto-detect',
+        'loopback_redirects' => $values['redirect_uri']['allow_loopback_redirects'] ?? 'auto-detect',
+      ],
+      'native' => [
+        'enhanced_pkce' => $values['pkce']['enhanced_pkce_for_native'] ?? 'auto-detect',
+        'enforce' => $values['pkce']['enforce_method'] ?? 'S256',
+      ],
     ];
   }
 

@@ -1,0 +1,50 @@
+<article
+  class="admin-item admin-item--module"
+  role="article"
+  aria-labelledby="module-{{ name|clean_class }}-title"
+>
+  <header class="admin-item-title">
+    <h4 id="module-{{ name|clean_class }}-title">
+      {{ name }}
+      {% include 'simple_oauth_21:status-indicator' with {
+        status: enabled ? 'enabled' : 'disabled',
+        label: enabled ? 'Enabled' : 'Disabled'
+      } %}
+    </h4>
+  </header>
+
+  {% if description %}
+    <div class="admin-item-description">
+      <p>{{ description }}</p>
+    </div>
+  {% endif %}
+
+  <footer class="admin-item-actions">
+    <div class="form-actions">
+      {% if enabled %}
+        <button
+          type="button"
+          class="button"
+          aria-label="Configure {{ name }}"
+        >
+          Configure
+        </button>
+        <button
+          type="button"
+          class="button button--danger"
+          aria-label="Disable {{ name }}"
+        >
+          Disable
+        </button>
+      {% else %}
+        <button
+          type="button"
+          class="button button--primary"
+          aria-label="Enable {{ name }}"
+        >
+          Enable
+        </button>
+      {% endif %}
+    </div>
+  </footer>
+</article>

@@ -1,0 +1,54 @@
+/**
+ * @file
+ * Compliance Tip Component Styling
+ */
+
+.messages {
+  padding: 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  border: 1px solid;
+}
+
+.messages-info {
+  background-color: #eff6ff;
+  border-color: #93c5fd;
+  color: #1e40af;
+}
+
+.messages-warning {
+  background-color: #fffbeb;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.messages-success {
+  background-color: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+
+.messages-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.messages-icon {
+  font-size: 1.125rem;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+.messages-text {
+  flex: 1;
+  line-height: 1.5;
+}
+
+/* High Contrast Mode */
+@media (prefers-contrast: more) {
+  .messages {
+    border-width: 2px;
+  }
+}

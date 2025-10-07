@@ -27,12 +27,12 @@ class ConfigStructureMapper {
       $validator_config['webview']['detection'] = $form_config['webview_detection'];
     }
 
-    // Map webview whitelist and patterns.
+    // Map webview whitelist and patterns - validator expects nested structure.
     if (isset($form_config['webview_whitelist'])) {
-      $validator_config['webview_whitelist'] = $form_config['webview_whitelist'];
+      $validator_config['webview']['whitelist'] = $form_config['webview_whitelist'];
     }
     if (isset($form_config['webview_patterns'])) {
-      $validator_config['webview_patterns'] = $form_config['webview_patterns'];
+      $validator_config['webview']['patterns'] = $form_config['webview_patterns'];
     }
 
     // Map redirect URI settings - validator expects nested 'allow' structure.
@@ -46,9 +46,12 @@ class ConfigStructureMapper {
       $validator_config['require_exact_redirect_match'] = $form_config['require_exact_redirect_match'];
     }
 
-    // Map PKCE settings.
+    // Map PKCE settings - validator expects nested 'native' structure.
     if (isset($form_config['enhanced_pkce_for_native'])) {
-      $validator_config['enhanced_pkce_for_native'] = $form_config['enhanced_pkce_for_native'];
+      $validator_config['native']['enhanced_pkce'] = $form_config['enhanced_pkce_for_native'];
+    }
+    if (isset($form_config['enforce_method'])) {
+      $validator_config['native']['enforce'] = $form_config['enforce_method'];
     }
 
     // Map logging settings.

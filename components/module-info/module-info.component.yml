@@ -1,0 +1,22 @@
+$schema: https://git.drupalcode.org/project/drupal/-/raw/10.1.x/core/modules/sdc/src/metadata.schema.json
+name: Module Info
+status: stable
+description: Displays compact module information card with name, description, and status
+props:
+  type: object
+  properties:
+    name:
+      type: string
+      title: Module Name
+      description: The name of the module
+    description:
+      type: string
+      title: Description
+      description: Module description text
+    enabled:
+      type: boolean
+      title: Enabled
+      description: Whether the module is currently enabled
+      default: false
+  required:
+    - name

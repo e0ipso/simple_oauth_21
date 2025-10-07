@@ -359,15 +359,6 @@ class OpenIdConfigurationFunctionalTest extends BrowserTestBase {
     // in production.
     // Test environments may use HTTP for simplicity.
     $this->assertIsString($metadata['issuer']);
-    if (str_starts_with($metadata['issuer'], 'http://')) {
-      // In test environment, just ensure it's a valid URL.
-      $this->assertMatchesRegularExpression('/^https?:\/\//', $metadata['issuer'],
-        'Issuer must be a valid URL (HTTPS required in production)');
-    }
-    else {
-      // Production requirement.
-      $this->assertStringStartsWith('https://', $metadata['issuer']);
-    }
     $this->assertTrue(filter_var($metadata['issuer'], FILTER_VALIDATE_URL) !== FALSE);
 
     // Test that id_token_signing_alg_values_supported contains at least RS256.

@@ -164,3 +164,9 @@ This project is a **6-module OAuth 2.1 compliance ecosystem**:
 - Use relative paths within the module structure
 - Reference other Drupal modules through proper dependency injection
 - All file paths in documentation must be relative to module root
+
+## Commands
+
+### Running tests
+
+cd /var/www/html && vendor/bin/phpunit web/modules/contrib/simple_oauth/tests web/modules/contrib/simple_oauth/modules && cd -

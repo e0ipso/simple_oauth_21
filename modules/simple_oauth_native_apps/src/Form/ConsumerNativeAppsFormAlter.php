@@ -134,7 +134,7 @@ class ConsumerNativeAppsFormAlter {
       '#type' => 'select',
       '#title' => $this->t('WebView detection policy override'),
       '#description' => $this->t('Override the global WebView detection policy for this consumer. <strong>Simple OAuth PKCE</strong> provides basic PKCE (RFC 7636) for all clients. <strong>Native Apps enhanced security</strong> adds RFC 8252 requirements including WebView detection. When disabled, native apps still get basic PKCE protection. Leave empty to use global setting (@global).', [
-        '@global' => $this->getWebViewDetectionLabel($global_config->get('webview_detection')),
+        '@global' => $this->getWebViewDetectionLabel($global_config->get('webview.detection')),
       ]),
       '#options' => [
         '' => $this->t('- Use global setting -'),
