@@ -37,6 +37,15 @@ simple_oauth_server_metadata.openid_configuration:
     _format: 'json'
     no_cache: FALSE
 
+simple_oauth_server_metadata.revoke:
+  path: '/oauth/revoke'
+  defaults:
+    _controller: '\Drupal\simple_oauth_server_metadata\Controller\TokenRevocationController::revoke'
+    _title: 'OAuth 2.0 Token Revocation'
+  methods: [POST]
+  requirements:
+    _access: 'TRUE'
+
 simple_oauth_server_metadata.settings:
   path: '/admin/config/people/simple_oauth/oauth-21/server-metadata'
   defaults:
