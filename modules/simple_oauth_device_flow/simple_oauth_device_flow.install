@@ -1,5 +1,10 @@
 <?php
 
+/**
+ * @file
+ * Module file.
+ */
+
 declare(strict_types=1);
 
 /**
@@ -7,6 +12,8 @@ declare(strict_types=1);
  * Install/uninstall functions for Simple OAuth Device Flow module.
  */
 
+use Drupal\Core\Field\FieldStorageDefinitionInterface;
+use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Database\Database;
 
 /**
@@ -203,10 +210,10 @@ function simple_oauth_device_flow_update_11001() {
 
   // Field storage definition doesn't exist yet - install it.
   if (!$field_storage_definition) {
-    $field_definition = \Drupal\Core\Field\BaseFieldDefinition::create('oauth2_scope_reference')
+    $field_definition = BaseFieldDefinition::create('oauth2_scope_reference')
       ->setLabel(t('Scopes'))
       ->setDescription(t('The scopes for this device code.'))
-      ->setCardinality(\Drupal\Core\Field\FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED)
+      ->setCardinality(FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED)
       ->setTranslatable(FALSE);
 
     $entity_definition_update_manager->installFieldStorageDefinition('scopes', 'oauth2_device_code', 'simple_oauth_device_flow', $field_definition);
@@ -215,10 +222,10 @@ function simple_oauth_device_flow_update_11001() {
   }
 
   // Field already exists but needs to be updated.
-  $field_definition = \Drupal\Core\Field\BaseFieldDefinition::create('oauth2_scope_reference')
+  $field_definition = BaseFieldDefinition::create('oauth2_scope_reference')
     ->setLabel(t('Scopes'))
     ->setDescription(t('The scopes for this device code.'))
-    ->setCardinality(\Drupal\Core\Field\FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED)
+    ->setCardinality(FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED)
     ->setTranslatable(FALSE);
 
   $entity_definition_update_manager->updateFieldStorageDefinition($field_definition);

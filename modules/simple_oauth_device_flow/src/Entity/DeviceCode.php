@@ -9,7 +9,6 @@ use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use Drupal\simple_oauth\Entities\ScopeEntity;
 use League\OAuth2\Server\Entities\ClientEntityInterface;
 use League\OAuth2\Server\Entities\DeviceCodeEntityInterface;
 use League\OAuth2\Server\Entities\ScopeEntityInterface;
@@ -342,7 +341,6 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
   public function setUserApproved(bool $userApproved): void {
     $this->set('authorized', $userApproved);
   }
-
 
   /**
    * {@inheritdoc}

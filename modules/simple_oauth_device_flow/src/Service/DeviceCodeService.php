@@ -327,9 +327,11 @@ class DeviceCodeService {
       $device_code_entity->setExpiryDateTime(new \DateTimeImmutable('@' . $expires_at));
 
       // Set additional properties.
-      // Parse and serialize scope string for storage.
+      // Parse scope string and add each scope to the field.
       $scope_array = !empty($scope) ? explode(' ', trim($scope)) : [];
-      $device_code_entity->set('scopes', serialize($scope_array));
+      foreach ($scope_array as $scope_id) {
+        $device_code_entity->get('scopes')->appendItem(['scope_id' => $scope_id]);
+      }
       $device_code_entity->set('created_at', $current_time);
       $device_code_entity->set('expires_at', $expires_at);
       $device_code_entity->set('authorized', FALSE);

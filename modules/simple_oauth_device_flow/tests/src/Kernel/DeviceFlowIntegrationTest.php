@@ -23,6 +23,9 @@ class DeviceFlowIntegrationTest extends KernelTestBase {
   protected static $modules = [
     'simple_oauth_21',
     'simple_oauth_device_flow',
+    'simple_oauth',
+    'consumers',
+    'serialization',
     'system',
     'user',
   ];
@@ -147,6 +150,87 @@ class DeviceFlowIntegrationTest extends KernelTestBase {
     $settings_route = $route_provider->getRouteByName('simple_oauth_device_flow.settings');
     $this->assertNotNull($settings_route);
     $this->assertEquals('/admin/config/people/simple_oauth/oauth-21/device-flow', $settings_route->getPath());
+  }
+
+  /**
+   * Tests device code scope field integration.
+   *
+   * This tests our custom business logic for multi-value scope storage
+   * using the oauth2_scope_reference field type.
+   */
+  public function testDeviceCodeScopeFieldIntegration(): void {
+    // Install required schemas.
+    $this->installEntitySchema('oauth2_device_code');
+    $this->installEntitySchema('user');
+    $this->installEntitySchema('consumer');
+    $this->installEntitySchema('oauth2_scope');
+    $this->installConfig(['simple_oauth_device_flow', 'simple_oauth']);
+
+    // Create test scopes.
+    $scope_storage = $this->container->get('entity_type.manager')->getStorage('oauth2_scope');
+    $scope1 = $scope_storage->create([
+      'id' => 'read',
+      'name' => 'Read Access',
+      'description' => 'Read access to resources',
+    ]);
+    $scope1->save();
+
+    $scope2 = $scope_storage->create([
+      'id' => 'write',
+      'name' => 'Write Access',
+      'description' => 'Write access to resources',
+    ]);
+    $scope2->save();
+
+    // Create a device code entity and test scope assignment.
+    $device_code_storage = $this->container->get('entity_type.manager')->getStorage('oauth2_device_code');
+    $device_code = $device_code_storage->create([
+      'device_code' => 'test_device_code_123',
+      'user_code' => 'ABC-DEF',
+      'client_id' => 'test_client',
+      'created_at' => time(),
+      'expires_at' => time() + 600,
+      'authorized' => FALSE,
+      'interval' => 5,
+    ]);
+
+    // Test adding multiple scopes via field API.
+    $device_code->get('scopes')->appendItem(['scope_id' => 'read']);
+    $device_code->get('scopes')->appendItem(['scope_id' => 'write']);
+    $device_code->save();
+
+    // Reload and verify scopes are persisted correctly.
+    $device_code_storage->resetCache([$device_code->id()]);
+    $loaded_device_code = $device_code_storage->load($device_code->id());
+
+    // Test getScopes() returns proper scope entities.
+    $scopes = $loaded_device_code->getScopes();
+    $this->assertCount(2, $scopes, 'Device code should have 2 scopes');
+
+    // Verify scope identifiers.
+    $scope_ids = array_map(fn($scope) => $scope->getIdentifier(), $scopes);
+    $this->assertContains('read', $scope_ids, 'Scope list should contain "read"');
+    $this->assertContains('write', $scope_ids, 'Scope list should contain "write"');
+
+    // Test adding scope via entity method (addScope).
+    $scope3 = $scope_storage->create([
+      'id' => 'admin',
+      'name' => 'Admin Access',
+      'description' => 'Administrative access',
+    ]);
+    $scope3->save();
+
+    $loaded_device_code->addScope($scope3);
+    $loaded_device_code->save();
+
+    // Reload and verify third scope is added.
+    $device_code_storage->resetCache([$device_code->id()]);
+    $reloaded_device_code = $device_code_storage->load($device_code->id());
+    $scopes_after = $reloaded_device_code->getScopes();
+    $this->assertCount(3, $scopes_after, 'Device code should now have 3 scopes');
+
+    $scope_ids_after = array_map(fn($scope) => $scope->getIdentifier(), $scopes_after);
+    $this->assertContains('admin', $scope_ids_after, 'Scope list should contain "admin"');
   }
 
 }

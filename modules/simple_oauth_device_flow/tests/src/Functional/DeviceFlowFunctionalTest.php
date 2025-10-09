@@ -384,8 +384,24 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
 
   /**
    * Tests device flow with scopes.
+   *
+   * Verifies that scopes are properly stored and persisted through
+   * the device authorization flow using the oauth2_scope_reference field.
    */
   public function testDeviceFlowWithScopes(): void {
+    // Create test scopes first.
+    $scope_storage = \Drupal::entityTypeManager()->getStorage('oauth2_scope');
+    $scope_storage->create([
+      'id' => 'read',
+      'name' => 'Read Access',
+      'description' => 'Read access to resources',
+    ])->save();
+    $scope_storage->create([
+      'id' => 'write',
+      'name' => 'Write Access',
+      'description' => 'Write access to resources',
+    ])->save();
+
     // Create consumer with specific scopes.
     $scoped_consumer = Consumer::create([
       'label' => 'Test Scoped Device Client',
@@ -413,9 +429,26 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     $response->getBody()->rewind();
     $data = Json::decode($response->getBody()->getContents());
 
-    // Verify scope is handled properly.
+    // Verify scope is handled properly in response.
     $this->assertArrayHasKey('device_code', $data);
     $this->assertArrayHasKey('user_code', $data);
+
+    // Verify scopes were stored correctly in the device code entity.
+    $device_code_storage = \Drupal::entityTypeManager()->getStorage('oauth2_device_code');
+    $device_codes = $device_code_storage->loadByProperties([
+      'device_code' => $data['device_code'],
+    ]);
+    $device_code_entity = reset($device_codes);
+
+    $this->assertNotNull($device_code_entity, 'Device code entity should exist');
+
+    // Verify scopes are stored using field API.
+    $scopes = $device_code_entity->getScopes();
+    $this->assertCount(2, $scopes, 'Device code should have 2 scopes');
+
+    $scope_ids = array_map(fn($scope) => $scope->getIdentifier(), $scopes);
+    $this->assertContains('read', $scope_ids, 'Scope list should contain "read"');
+    $this->assertContains('write', $scope_ids, 'Scope list should contain "write"');
   }
 
   /**

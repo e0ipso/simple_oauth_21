@@ -44,6 +44,7 @@ simple_oauth_server_metadata.revoke:
     _title: 'OAuth 2.0 Token Revocation'
   methods: [POST]
   requirements:
+    # Made accessible because there is custom authorization in the controller, as per RFC 7009.
     _access: 'TRUE'
 
 simple_oauth_server_metadata.settings:
