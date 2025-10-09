@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 /**
  * @file
  * Install/uninstall functions for Simple OAuth Device Flow module.
@@ -33,10 +35,6 @@ function simple_oauth_device_flow_schema() {
         'length' => 128,
         'not null' => TRUE,
         'description' => 'OAuth client identifier',
-      ],
-      'scopes' => [
-        'type' => 'text',
-        'description' => 'Serialized array of requested scopes',
       ],
       'user_id' => [
         'type' => 'int',
@@ -192,4 +190,179 @@ function simple_oauth_device_flow_requirements($phase) {
   }
 
   return $requirements;
+}
+
+/**
+ * Update device code scopes field to use oauth2_scope_reference type.
+ */
+function simple_oauth_device_flow_update_11001() {
+  $entity_definition_update_manager = \Drupal::entityDefinitionUpdateManager();
+
+  // Get the current field storage definition.
+  $field_storage_definition = $entity_definition_update_manager->getFieldStorageDefinition('scopes', 'oauth2_device_code');
+
+  // Field storage definition doesn't exist yet - install it.
+  if (!$field_storage_definition) {
+    $field_definition = \Drupal\Core\Field\BaseFieldDefinition::create('oauth2_scope_reference')
+      ->setLabel(t('Scopes'))
+      ->setDescription(t('The scopes for this device code.'))
+      ->setCardinality(\Drupal\Core\Field\FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED)
+      ->setTranslatable(FALSE);
+
+    $entity_definition_update_manager->installFieldStorageDefinition('scopes', 'oauth2_device_code', 'simple_oauth_device_flow', $field_definition);
+
+    return t('Installed new oauth2_scope_reference field storage for device code scopes.');
+  }
+
+  // Field already exists but needs to be updated.
+  $field_definition = \Drupal\Core\Field\BaseFieldDefinition::create('oauth2_scope_reference')
+    ->setLabel(t('Scopes'))
+    ->setDescription(t('The scopes for this device code.'))
+    ->setCardinality(\Drupal\Core\Field\FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED)
+    ->setTranslatable(FALSE);
+
+  $entity_definition_update_manager->updateFieldStorageDefinition($field_definition);
+
+  return t('Updated device code scopes field to use oauth2_scope_reference type.');
+}
+
+/**
+ * Migrate existing device code scope data to oauth2_scope_reference field.
+ */
+function simple_oauth_device_flow_update_11002(&$sandbox) {
+  $connection = \Drupal::database();
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('simple_oauth_device_flow');
+
+  // Initialize batch on first run.
+  if (!isset($sandbox['current'])) {
+    $sandbox['current'] = 0;
+    $sandbox['max'] = $connection->query('SELECT COUNT(*) FROM {oauth2_device_code}')->fetchField();
+    $sandbox['migrated'] = 0;
+    $sandbox['skipped'] = 0;
+    $sandbox['errors'] = 0;
+
+    // Only proceed if there are records to migrate.
+    if ($sandbox['max'] == 0) {
+      $sandbox['#finished'] = 1;
+      return t('No device codes to migrate.');
+    }
+  }
+
+  // Process 50 records per batch.
+  $batch_size = 50;
+
+  // Query for device codes that have serialized scope data in the base table.
+  $query = $connection->select('oauth2_device_code', 'd')
+    ->fields('d', ['device_code', 'scopes'])
+    ->range($sandbox['current'], $batch_size);
+
+  $results = $query->execute();
+
+  foreach ($results as $record) {
+    $sandbox['current']++;
+
+    // Skip if no scopes data.
+    if (empty($record->scopes)) {
+      $sandbox['skipped']++;
+      continue;
+    }
+
+    try {
+      // Unserialize the scope data safely.
+      $serialized_scopes = @unserialize($record->scopes, ['allowed_classes' => FALSE]);
+
+      // Skip if unserialization failed or result is not an array.
+      if ($serialized_scopes === FALSE || !is_array($serialized_scopes)) {
+        $logger->warning('Failed to unserialize scopes for device code @device_code', [
+          '@device_code' => $record->device_code,
+        ]);
+        $sandbox['skipped']++;
+        continue;
+      }
+
+      // Load the device code entity.
+      $device_code_entity = $entity_type_manager->getStorage('oauth2_device_code')->load($record->device_code);
+
+      if (!$device_code_entity) {
+        $logger->warning('Device code entity not found: @device_code', [
+          '@device_code' => $record->device_code,
+        ]);
+        $sandbox['skipped']++;
+        continue;
+      }
+
+      // Clear existing scope references.
+      $device_code_entity->set('scopes', []);
+
+      // Load scope provider to verify scopes exist.
+      $scope_provider = \Drupal::service('simple_oauth.oauth2_scope.provider');
+      $available_scopes = $scope_provider->loadMultiple();
+      $available_scope_ids = array_keys($available_scopes);
+
+      // Add each scope to the entity.
+      $added_scopes = 0;
+      foreach ($serialized_scopes as $scope_id) {
+        // Verify scope exists before adding.
+        if (!in_array($scope_id, $available_scope_ids)) {
+          $logger->warning('Scope @scope_id not found for device code @device_code. Skipping this scope.', [
+            '@scope_id' => $scope_id,
+            '@device_code' => $record->device_code,
+          ]);
+          continue;
+        }
+
+        // Add scope using appendItem.
+        $device_code_entity->get('scopes')->appendItem(['scope_id' => $scope_id]);
+        $added_scopes++;
+      }
+
+      // Save the entity.
+      $device_code_entity->save();
+
+      $sandbox['migrated']++;
+
+      if ($added_scopes > 0) {
+        $logger->info('Migrated @count scopes for device code @device_code', [
+          '@count' => $added_scopes,
+          '@device_code' => $record->device_code,
+        ]);
+      }
+    }
+    catch (\Exception $e) {
+      $sandbox['errors']++;
+      $logger->error('Error migrating device code @device_code: @message', [
+        '@device_code' => $record->device_code,
+        '@message' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  // Update progress.
+  $sandbox['#finished'] = $sandbox['current'] / $sandbox['max'];
+
+  // Final message when complete.
+  if ($sandbox['#finished'] >= 1) {
+    return t('Migrated @migrated device codes. Skipped: @skipped. Errors: @errors.', [
+      '@migrated' => $sandbox['migrated'],
+      '@skipped' => $sandbox['skipped'],
+      '@errors' => $sandbox['errors'],
+    ]);
+  }
+}
+
+/**
+ * Remove the old scopes column from oauth2_device_code table.
+ */
+function simple_oauth_device_flow_update_11003() {
+  $connection = \Drupal::database();
+  $schema = $connection->schema();
+
+  // Check if the scopes column exists before trying to drop it.
+  if ($schema->fieldExists('oauth2_device_code', 'scopes')) {
+    $schema->dropField('oauth2_device_code', 'scopes');
+    return t('Removed old scopes column from oauth2_device_code table.');
+  }
+
+  return t('Old scopes column does not exist. No action needed.');
 }
