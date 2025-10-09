@@ -20,7 +20,7 @@ services:
     arguments: ['@entity_type.manager']
   simple_oauth_server_metadata.endpoint_discovery:
     class: Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService
-    arguments: ['@request_stack']
+    arguments: ['@request_stack', '@module_handler']
   simple_oauth_server_metadata.grant_type_discovery:
     class: Drupal\simple_oauth_server_metadata\Service\GrantTypeDiscoveryService
     arguments: ['@plugin.manager.oauth2_grant.processor', '@config.factory']

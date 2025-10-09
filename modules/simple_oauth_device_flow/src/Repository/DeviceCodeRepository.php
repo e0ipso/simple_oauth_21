@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 
 namespace Drupal\simple_oauth_device_flow\Repository;
 
@@ -8,8 +9,10 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\simple_oauth_device_flow\Entity\DeviceCode;
 use Drupal\simple_oauth_device_flow\Service\DeviceFlowSettingsService;
+use League\OAuth2\Server\Entities\ClientEntityInterface;
 use League\OAuth2\Server\Entities\DeviceCodeEntityInterface;
 use League\OAuth2\Server\Exception\UniqueTokenIdentifierConstraintViolationException;
+use League\OAuth2\Server\Repositories\ClientRepositoryInterface;
 use League\OAuth2\Server\Repositories\DeviceCodeRepositoryInterface;
 use Psr\Log\LoggerInterface;
 
@@ -26,7 +29,7 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
    *
    * @var \Drupal\Core\Entity\EntityStorageInterface
    */
-  protected $deviceCodeStorage;
+  private EntityStorageInterface $deviceCodeStorage;
 
   /**
    * The logger instance.
@@ -34,6 +37,13 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
    * @var \Psr\Log\LoggerInterface
    */
   protected LoggerInterface $logger;
+
+  /**
+   * The client repository used to hydrate device codes.
+   *
+   * @var \League\OAuth2\Server\Repositories\ClientRepositoryInterface
+   */
+  private ClientRepositoryInterface $clientRepository;
 
   /**
    * Constructs a DeviceCodeRepository.
@@ -49,6 +59,7 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
     EntityTypeManagerInterface $entityTypeManager,
     protected DeviceFlowSettingsService $settings,
     LoggerChannelFactoryInterface $loggerFactory,
+    ?ClientRepositoryInterface $clientRepository = NULL,
   ) {
     try {
       $this->deviceCodeStorage = $entityTypeManager->getStorage('oauth2_device_code');
@@ -57,6 +68,7 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
       throw new \RuntimeException('Failed to initialize device code storage: ' . $e->getMessage(), 0, $e);
     }
     $this->logger = $loggerFactory->get('simple_oauth_device_flow');
+    $this->clientRepository = $this->resolveClientRepository($clientRepository);
   }
 
   /**
@@ -89,16 +101,19 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
     }
 
     try {
-      // Check for existing device code with same identifier.
-      $existing = $this->getDeviceCodeEntityByDeviceCode($deviceCodeEntity->getIdentifier());
-      if ($existing !== NULL) {
-        throw UniqueTokenIdentifierConstraintViolationException::create();
-      }
+      // Before creating a new device code verify it's not a duplicate.
+      if ($deviceCodeEntity->isNew()) {
+        // Check for existing device code with same identifier.
+        $existing = $this->getDeviceCodeEntityByDeviceCode($deviceCodeEntity->getIdentifier());
+        if ($existing !== NULL) {
+          throw UniqueTokenIdentifierConstraintViolationException::create();
+        }
 
-      // Check for existing user code.
-      $existing_user_code = $this->getDeviceCodeEntityByUserCode($deviceCodeEntity->getUserCode());
-      if ($existing_user_code !== NULL) {
-        throw UniqueTokenIdentifierConstraintViolationException::create();
+        // Check for existing user code.
+        $existing_user_code = $this->getDeviceCodeEntityByUserCode($deviceCodeEntity->getUserCode());
+        if ($existing_user_code !== NULL) {
+          throw UniqueTokenIdentifierConstraintViolationException::create();
+        }
       }
 
       $deviceCodeEntity->save();
@@ -149,6 +164,7 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
         return NULL;
       }
 
+      $this->attachClientToDeviceCode($entity);
       return $entity;
     }
     catch (\Exception $e) {
@@ -187,6 +203,7 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
         return NULL;
       }
 
+      $this->attachClientToDeviceCode($entity);
       return $entity;
     }
     catch (\Exception $e) {
@@ -263,9 +280,13 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
       $user_id = $entity->get('user_id')->target_id;
 
       // Device code is revoked if not authorized and has no user.
-      // Note: authorized can be FALSE during pending authorization, but having
-      // a user_id while not authorized might indicate revocation.
-      return !$authorized && empty($user_id);
+      // Note: authorized can be FALSE during pending authorization, but a
+      // missing user while still unauthorized indicates revocation. During
+      // initial authorization this can cause the code to appear revoked
+      // when someone visits a URL with the code in it, so we also check
+      // authorized_at to make sure we only revoke codes that have been
+      // previously authorized.
+      return !$authorized && !empty($authorized_at) && empty($user_id);
     }
     catch (\Exception $e) {
       $this->logger->error('Failed to check device code revocation status for @code_id: @message', [
@@ -353,6 +374,41 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
    */
   public function getStorage(): EntityStorageInterface {
     return $this->deviceCodeStorage;
+  }
+
+  /**
+   * Ensures the device code entity has a hydrated client entity.
+   */
+  private function attachClientToDeviceCode(DeviceCode $deviceCode): void {
+    $clientIdentifier = $deviceCode->get('client_id')->value;
+    if ($clientIdentifier === NULL || $clientIdentifier === '') {
+      return;
+    }
+
+    $client = $this->clientRepository->getClientEntity((string) $clientIdentifier);
+    if ($client instanceof ClientEntityInterface) {
+      $deviceCode->setClient($client);
+    }
+  }
+
+  /**
+   * Determines the repository instance used to resolve clients.
+   */
+  private function resolveClientRepository(?ClientRepositoryInterface $clientRepository): ClientRepositoryInterface {
+    if ($clientRepository instanceof ClientRepositoryInterface) {
+      return $clientRepository;
+    }
+
+    if (!\Drupal::hasService('simple_oauth.repositories.client')) {
+      throw new \RuntimeException('OAuth client repository service is unavailable.');
+    }
+
+    $resolved = \Drupal::service('simple_oauth.repositories.client');
+    if (!$resolved instanceof ClientRepositoryInterface) {
+      throw new \RuntimeException('Resolved OAuth client repository does not implement the expected interface.');
+    }
+
+    return $resolved;
   }
 
 }

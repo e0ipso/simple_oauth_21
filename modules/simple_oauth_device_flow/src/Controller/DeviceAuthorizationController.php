@@ -128,7 +128,7 @@ final class DeviceAuthorizationController extends ControllerBase {
 
       // Verify client is configured for device code grant.
       $grant_types = array_column($client_drupal_entity->get('grant_types')->getValue(), 'value');
-      if (!in_array('device_code', $grant_types, TRUE)) {
+      if (!in_array('urn:ietf:params:oauth:grant-type:device_code', $grant_types, TRUE)) {
         $this->logger->notice('Client @client_id not configured for device_code grant', [
           '@client_id' => $client_id,
         ]);

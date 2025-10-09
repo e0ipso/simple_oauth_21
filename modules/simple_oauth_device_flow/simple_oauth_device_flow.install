@@ -54,6 +54,11 @@ function simple_oauth_device_flow_schema() {
         'default' => 0,
         'description' => 'Authorization status',
       ],
+      'authorized_at' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'description' => 'Authorized timestamp',
+      ],
       'created_at' => [
         'type' => 'int',
         'not null' => TRUE,
