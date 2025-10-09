@@ -88,6 +88,22 @@ class EndpointDiscoveryService {
   }
 
   /**
+   * Gets the revocation endpoint URL if available.
+   *
+   * @return string|null
+   *   The revocation endpoint URL, or NULL if not available.
+   */
+  public function getRevocationEndpoint(): ?string {
+    try {
+      return Url::fromRoute('simple_oauth_server_metadata.revoke')->setAbsolute()->toString();
+    }
+    catch (\Exception $e) {
+      // Route doesn't exist, return NULL.
+      return NULL;
+    }
+  }
+
+  /**
    * Gets the OAuth server metadata endpoint URL.
    *
    * @return string
@@ -116,6 +132,11 @@ class EndpointDiscoveryService {
     $registration_endpoint = $this->getRegistrationEndpoint();
     if ($registration_endpoint !== NULL) {
       $endpoints['registration_endpoint'] = $registration_endpoint;
+    }
+
+    $revocation_endpoint = $this->getRevocationEndpoint();
+    if ($revocation_endpoint !== NULL) {
+      $endpoints['revocation_endpoint'] = $revocation_endpoint;
     }
 
     // Add OAuth server metadata endpoint.
