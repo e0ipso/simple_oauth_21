@@ -6,7 +6,6 @@
  */
 
 use Drupal\Core\Url;
-use Drupal\Core\Field\BaseFieldDefinition;
 
 /**
  * Implements hook_schema().
