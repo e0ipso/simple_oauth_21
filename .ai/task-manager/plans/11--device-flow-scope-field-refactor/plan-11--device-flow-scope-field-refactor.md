@@ -504,3 +504,56 @@ This approach ensures the Device Flow module becomes a first-class citizen withi
 - Field API is the recommended way to store multi-value entity data
 - Avoiding custom serialization reduces security surface area
 - Following simple_oauth patterns improves maintainability and reduces cognitive load for contributors
+
+## Task Dependencies
+
+```mermaid
+graph TD
+    001[Task 001: Update DeviceCode Entity Field Definition]
+    002[Task 002: Create Schema Update and Data Migration Hooks]
+    003[Task 003: Update DeviceCodeService for Field API]
+    004[Task 004: Update Tests for Field-Based Scope Storage]
+
+    001 --> 002
+    001 --> 003
+    002 --> 004
+    003 --> 004
+```
+
+## Execution Blueprint
+
+**Validation Gates:**
+
+- Reference: `.ai/task-manager/config/hooks/POST_PHASE.md`
+
+### Phase 1: Entity Refactoring
+
+**Parallel Tasks:**
+
+- Task 001: Update DeviceCode Entity Field Definition
+
+**Description:** Refactor the DeviceCode entity to use oauth2_scope_reference field type instead of serialized string storage.
+
+### Phase 2: Schema and Service Updates
+
+**Parallel Tasks:**
+
+- Task 002: Create Schema Update and Data Migration Hooks (depends on: 001)
+- Task 003: Update DeviceCodeService for Field API (depends on: 001)
+
+**Description:** Update database schema with migration hooks and refactor service layer to use Field API, both building on the updated entity definition.
+
+### Phase 3: Test Coverage
+
+**Parallel Tasks:**
+
+- Task 004: Update Tests for Field-Based Scope Storage (depends on: 002, 003)
+
+**Description:** Update all existing tests and create new migration tests to ensure comprehensive coverage of the refactored implementation.
+
+### Execution Summary
+
+- Total Phases: 3
+- Total Tasks: 4
+- Maximum Parallelism: 2 tasks (in Phase 2)
+- Critical Path Length: 3 phases

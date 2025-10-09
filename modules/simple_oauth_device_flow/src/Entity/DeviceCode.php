@@ -7,6 +7,7 @@ use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\ContentEntityBase;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\simple_oauth\Entities\ScopeEntity;
 use League\OAuth2\Server\Entities\ClientEntityInterface;
@@ -102,13 +103,18 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
         'weight' => 3,
       ]);
 
-    $fields['scopes'] = BaseFieldDefinition::create('string_long')
+    $fields['scopes'] = BaseFieldDefinition::create('oauth2_scope_reference')
       ->setLabel(t('Scopes'))
-      ->setDescription(t('Serialized array of requested scopes.'))
+      ->setDescription(t('The scopes for this device code.'))
+      ->setCardinality(FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED)
       ->setTranslatable(FALSE)
       ->setDisplayOptions('view', [
         'label' => 'inline',
-        'type' => 'string',
+        'type' => 'oauth2_scope_reference_label',
+        'weight' => 4,
+      ])
+      ->setDisplayOptions('form', [
+        'type' => 'oauth2_scope_reference',
         'weight' => 4,
       ]);
 
@@ -348,49 +354,12 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
     $this->set('authorized', $userApproved);
   }
 
-  /**
-   * Load scopes from the database field.
-   */
-  private function loadScopesFromDatabase(): void {
-    $scopes_data = $this->get('scopes')->value;
-    if ($scopes_data) {
-      $scope_identifiers = unserialize($scopes_data, ['allowed_classes' => FALSE]);
-      if (is_array($scope_identifiers)) {
-        foreach ($scope_identifiers as $scope_id) {
-          // Load the actual scope entity from storage.
-          $scope_storage = \Drupal::entityTypeManager()->getStorage('oauth2_scope');
-          $scope_entities = $scope_storage->loadByProperties(['name' => $scope_id]);
-          if (!empty($scope_entities)) {
-            $scope_entity_obj = reset($scope_entities);
-            $scope_entity = new ScopeEntity($scope_entity_obj);
-            $this->scopeEntities[] = $scope_entity;
-          }
-        }
-      }
-    }
-  }
-
-  /**
-   * Save scopes to the database field.
-   */
-  private function saveScopesToDatabase(): void {
-    $scope_identifiers = [];
-    foreach ($this->scopeEntities as $scope) {
-      $scope_identifiers[] = $scope->getIdentifier();
-    }
-    $this->set('scopes', serialize($scope_identifiers));
-  }
 
   /**
    * {@inheritdoc}
    */
   public function preSave(EntityStorageInterface $storage) {
     parent::preSave($storage);
-
-    // Ensure scopes are serialized before saving.
-    if (!empty($this->scopeEntities)) {
-      $this->saveScopesToDatabase();
-    }
 
     // Set created timestamp if not set.
     if ($this->isNew() && !$this->get('created_at')->value) {
