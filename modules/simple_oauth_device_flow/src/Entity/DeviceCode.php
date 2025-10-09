@@ -9,6 +9,7 @@ use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
+use Drupal\simple_oauth\Entities\ScopeEntity;
 use League\OAuth2\Server\Entities\ClientEntityInterface;
 use League\OAuth2\Server\Entities\DeviceCodeEntityInterface;
 use League\OAuth2\Server\Entities\ScopeEntityInterface;
@@ -17,6 +18,24 @@ use League\OAuth2\Server\Entities\ScopeEntityInterface;
  * Defines the Device Code entity for OAuth 2.0 Device Authorization Grant.
  *
  * @ingroup simple_oauth_device_flow
+ */
+/**
+ * Annotation for backwards compatibility with Drupal 10.x.
+ *
+ * @ContentEntityType(
+ *   id = "oauth2_device_code",
+ *   label = @Translation("OAuth2 Device Code"),
+ *   handlers = {
+ *     "views_data" = "Drupal\views\EntityViewsData",
+ *   },
+ *   base_table = "oauth2_device_code",
+ *   admin_permission = "administer simple_oauth entities",
+ *   entity_keys = {
+ *     "id" = "device_code",
+ *     "langcode" = "langcode",
+ *   },
+ *   list_cache_tags = {"oauth2_device_code"},
+ * )
  */
 #[ContentEntityType(
   id: 'oauth2_device_code',
@@ -133,6 +152,17 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
         'weight' => 6,
       ]);
 
+    $fields['authorized_at'] = BaseFieldDefinition::create('timestamp')
+      ->setLabel(t('Authorized at'))
+      ->setDescription(t('Authorization timestamp.'))
+      ->setRequired(TRUE)
+      ->setTranslatable(FALSE)
+      ->setDisplayOptions('view', [
+        'label' => 'inline',
+        'type' => 'timestamp',
+        'weight' => 7,
+      ]);
+
     $fields['created_at'] = BaseFieldDefinition::create('timestamp')
       ->setLabel(t('Created'))
       ->setDescription(t('Creation timestamp.'))
@@ -246,7 +276,11 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
    * {@inheritdoc}
    */
   public function getScopes(): array {
-    return $this->get('scopes')->getScopes();
+    $oauth2scopes = [];
+    foreach ($this->get('scopes') as $scope) {
+      $oauth2scopes[] = new ScopeEntity($scope->getScope());
+    }
+    return $oauth2scopes;
   }
 
   /**

@@ -10,6 +10,7 @@ services:
         '@entity_type.manager',
         '@simple_oauth_device_flow.settings',
         '@logger.factory',
+        '@simple_oauth.repositories.client',
       ]
 
   simple_oauth_device_flow.user_code_generator:

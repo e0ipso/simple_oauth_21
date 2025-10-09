@@ -2,6 +2,7 @@
 
 namespace Drupal\simple_oauth_server_metadata\Service;
 
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Url;
 use Symfony\Component\HttpFoundation\RequestStack;
 
@@ -15,9 +16,12 @@ class EndpointDiscoveryService {
    *
    * @param \Symfony\Component\HttpFoundation\RequestStack $requestStack
    *   The request stack service.
+   * @param \Drupal\Core\Extension\ModuleHandlerInterface $moduleHandler
+   *   The module handler service.
    */
   public function __construct(
     private readonly RequestStack $requestStack,
+    private readonly ModuleHandlerInterface $moduleHandler,
   ) {}
 
   /**
@@ -137,6 +141,17 @@ class EndpointDiscoveryService {
     $revocation_endpoint = $this->getRevocationEndpoint();
     if ($revocation_endpoint !== NULL) {
       $endpoints['revocation_endpoint'] = $revocation_endpoint;
+    }
+
+    // Check for Device Flow module.
+    if ($this->moduleHandler->moduleExists('simple_oauth_device_flow')) {
+      try {
+        $url = Url::fromRoute('simple_oauth_device_flow.device_authorization');
+        $endpoints['device_authorization_endpoint'] = $url->setAbsolute()
+          ->toString();
+      } catch (\Exception $e) {
+        // Route doesn't exist or error generating URL.
+      }
     }
 
     // Add OAuth server metadata endpoint.

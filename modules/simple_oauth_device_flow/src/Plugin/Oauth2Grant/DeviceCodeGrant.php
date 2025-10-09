@@ -20,7 +20,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * flow using device codes and user codes.
  *
  * @Oauth2Grant(
- *   id = "device_code",
+ *   id = "urn:ietf:params:oauth:grant-type:device_code",
  *   label = @Translation("Device Code"),
  * )
  */
