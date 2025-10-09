@@ -18,7 +18,7 @@ class RouteSubscriber extends RouteSubscriberBase {
     // version.
     if ($route = $collection->get('simple_oauth.server_metadata')) {
       // Replace the controller with our enhanced one.
-      $route->setDefault('_controller', '\Drupal\simple_oauth_server_metadata\Controller\ServerMetadataController::metadata');
+      $route->setDefault('_controller', '\Drupal\simple_oauth_server_metadata\Controller\ServerMetadataController');
       $route->setOption('no_cache', TRUE);
     }
   }

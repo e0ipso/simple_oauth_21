@@ -68,6 +68,13 @@ function simple_oauth_device_flow_schema() {
         'default' => 5,
         'description' => 'Polling interval in seconds',
       ],
+      'langcode' => [
+        'type' => 'varchar',
+        'length' => 12,
+        'not null' => TRUE,
+        'default' => 'en',
+        'description' => 'Language code',
+      ],
     ],
     'primary key' => ['device_code'],
     'unique keys' => [

@@ -45,6 +45,9 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     parent::setUp();
     $this->httpClient = new Client();
 
+    // Rebuild router to ensure simple_oauth routes are available.
+    $this->container->get('router.builder')->rebuild();
+
     // Perform comprehensive cache clearing for test isolation.
     $this->clearAllTestCaches();
 

@@ -28,6 +28,7 @@ use League\OAuth2\Server\Entities\ScopeEntityInterface;
   admin_permission: 'administer simple_oauth entities',
   entity_keys: [
     'id' => 'device_code',
+    'langcode' => 'langcode',
   ],
   list_cache_tags: ['oauth2_device_code'],
 )]
@@ -38,14 +39,14 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
    *
    * @var \League\OAuth2\Server\Entities\ClientEntityInterface|null
    */
-  private ?ClientEntityInterface $client = NULL;
+  private ?ClientEntityInterface $clientEntity = NULL;
 
   /**
    * Array of scope entities.
    *
    * @var \League\OAuth2\Server\Entities\ScopeEntityInterface[]
    */
-  private array $scopes = [];
+  private array $scopeEntities = [];
 
   /**
    * {@inheritdoc}
@@ -60,6 +61,7 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
       ->setLabel(t('Device Code'))
       ->setDescription(t('The device code identifier.'))
       ->setRequired(TRUE)
+      ->setTranslatable(FALSE)
       ->setSettings([
         'max_length' => 128,
         'text_processing' => 0,
@@ -74,6 +76,7 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
       ->setLabel(t('User Code'))
       ->setDescription(t('Human-readable user code.'))
       ->setRequired(TRUE)
+      ->setTranslatable(FALSE)
       ->setSettings([
         'max_length' => 32,
         'text_processing' => 0,
@@ -88,6 +91,7 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
       ->setLabel(t('Client ID'))
       ->setDescription(t('OAuth client identifier.'))
       ->setRequired(TRUE)
+      ->setTranslatable(FALSE)
       ->setSettings([
         'max_length' => 128,
         'text_processing' => 0,
@@ -101,6 +105,7 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
     $fields['scopes'] = BaseFieldDefinition::create('string_long')
       ->setLabel(t('Scopes'))
       ->setDescription(t('Serialized array of requested scopes.'))
+      ->setTranslatable(FALSE)
       ->setDisplayOptions('view', [
         'label' => 'inline',
         'type' => 'string',
@@ -112,6 +117,7 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
       ->setDescription(t('User ID once authorized.'))
       ->setSetting('target_type', 'user')
       ->setSetting('handler', 'default')
+      ->setTranslatable(FALSE)
       ->setDisplayOptions('view', [
         'label' => 'inline',
         'type' => 'entity_reference_label',
@@ -122,6 +128,7 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
       ->setLabel(t('Authorized'))
       ->setDescription(t('Authorization status.'))
       ->setDefaultValue(FALSE)
+      ->setTranslatable(FALSE)
       ->setDisplayOptions('view', [
         'label' => 'inline',
         'type' => 'boolean',
@@ -132,6 +139,7 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
       ->setLabel(t('Created'))
       ->setDescription(t('Creation timestamp.'))
       ->setRequired(TRUE)
+      ->setTranslatable(FALSE)
       ->setDisplayOptions('view', [
         'label' => 'inline',
         'type' => 'timestamp',
@@ -142,6 +150,7 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
       ->setLabel(t('Expires'))
       ->setDescription(t('Expiration timestamp.'))
       ->setRequired(TRUE)
+      ->setTranslatable(FALSE)
       ->setDisplayOptions('view', [
         'label' => 'inline',
         'type' => 'timestamp',
@@ -151,6 +160,7 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
     $fields['last_polled_at'] = BaseFieldDefinition::create('timestamp')
       ->setLabel(t('Last Polled'))
       ->setDescription(t('Last polling timestamp.'))
+      ->setTranslatable(FALSE)
       ->setDisplayOptions('view', [
         'label' => 'inline',
         'type' => 'timestamp',
@@ -161,6 +171,7 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
       ->setLabel(t('Interval'))
       ->setDescription(t('Polling interval in seconds.'))
       ->setDefaultValue(5)
+      ->setTranslatable(FALSE)
       ->setDisplayOptions('view', [
         'label' => 'inline',
         'type' => 'number_integer',
@@ -218,17 +229,17 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
    * {@inheritdoc}
    */
   public function getClient(): ClientEntityInterface {
-    if ($this->client === NULL) {
+    if ($this->clientEntity === NULL) {
       throw new \RuntimeException('Client entity has not been set.');
     }
-    return $this->client;
+    return $this->clientEntity;
   }
 
   /**
    * {@inheritdoc}
    */
   public function setClient(ClientEntityInterface $client): void {
-    $this->client = $client;
+    $this->clientEntity = $client;
     // Set the client_id field using the client's identifier.
     $this->set('client_id', $client->getIdentifier());
   }
@@ -237,17 +248,17 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
    * {@inheritdoc}
    */
   public function getScopes(): array {
-    if (empty($this->scopes)) {
+    if (empty($this->scopeEntities)) {
       $this->loadScopesFromDatabase();
     }
-    return $this->scopes;
+    return $this->scopeEntities;
   }
 
   /**
    * {@inheritdoc}
    */
   public function addScope(ScopeEntityInterface $scope): void {
-    $this->scopes[] = $scope;
+    $this->scopeEntities[] = $scope;
     $this->saveScopesToDatabase();
   }
 
@@ -321,7 +332,8 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
    * {@inheritdoc}
    */
   public function getUserApproved(): bool {
-    return (bool) $this->get('authorized')->value;
+    $value = $this->get('authorized')->first();
+    return $value ? (bool) $value->getValue()['value'] : FALSE;
   }
 
   /**
@@ -346,7 +358,7 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
           if (!empty($scope_entities)) {
             $scope_entity_obj = reset($scope_entities);
             $scope_entity = new ScopeEntity($scope_entity_obj);
-            $this->scopes[] = $scope_entity;
+            $this->scopeEntities[] = $scope_entity;
           }
         }
       }
@@ -358,7 +370,7 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
    */
   private function saveScopesToDatabase(): void {
     $scope_identifiers = [];
-    foreach ($this->scopes as $scope) {
+    foreach ($this->scopeEntities as $scope) {
       $scope_identifiers[] = $scope->getIdentifier();
     }
     $this->set('scopes', serialize($scope_identifiers));
@@ -371,7 +383,7 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
     parent::preSave($storage);
 
     // Ensure scopes are serialized before saving.
-    if (!empty($this->scopes)) {
+    if (!empty($this->scopeEntities)) {
       $this->saveScopesToDatabase();
     }
 

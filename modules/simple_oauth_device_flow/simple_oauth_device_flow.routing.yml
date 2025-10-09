@@ -15,6 +15,9 @@ simple_oauth_device_flow.device_authorization:
   requirements:
     # RFC 8628 device authorization endpoint must be publicly accessible for OAuth clients.
     _access: 'TRUE'
+  options:
+    # Skip OAuth authentication - devices need to access this endpoint to request authorization.
+    _oauth_skip_auth: TRUE
 simple_oauth_device_flow.device_verification_form:
   path: '/oauth/device'
   defaults:
@@ -24,6 +27,9 @@ simple_oauth_device_flow.device_verification_form:
   requirements:
     # Device verification page must be publicly accessible for users to enter codes.
     _access: 'TRUE'
+  options:
+    # Skip OAuth authentication - users need to access this page to authorize.
+    _oauth_skip_auth: TRUE
 
 simple_oauth_device_flow.device_verification_submit:
   path: '/oauth/device'
@@ -33,3 +39,6 @@ simple_oauth_device_flow.device_verification_submit:
   requirements:
     # Device verification submission must be publicly accessible for users to submit codes.
     _access: 'TRUE'
+  options:
+    # Skip OAuth authentication - users need to access this page to authorize.
+    _oauth_skip_auth: TRUE

@@ -314,7 +314,7 @@ class DeviceCodeService {
       $user_code = $this->userCodeGenerator->generateUserCode();
 
       // Get configuration values.
-      $expires_in = $this->settings->getDeviceCodeExpiry();
+      $expires_in = $this->settings->getDeviceCodeExpiration();
       $polling_interval = $this->settings->getPollingInterval();
       $current_time = $this->time->getCurrentTime();
       $expires_at = $current_time + $expires_in;
@@ -327,7 +327,9 @@ class DeviceCodeService {
       $device_code_entity->setExpiryDateTime(new \DateTimeImmutable('@' . $expires_at));
 
       // Set additional properties.
-      $device_code_entity->set('scope', $scope);
+      // Parse and serialize scope string for storage.
+      $scope_array = !empty($scope) ? explode(' ', trim($scope)) : [];
+      $device_code_entity->set('scopes', serialize($scope_array));
       $device_code_entity->set('created_at', $current_time);
       $device_code_entity->set('expires_at', $expires_at);
       $device_code_entity->set('authorized', FALSE);
@@ -336,7 +338,7 @@ class DeviceCodeService {
       $this->deviceCodeRepository->persistDeviceCode($device_code_entity);
 
       $this->logger->info('Device authorization generated for client @client_id: device_code=@device_code, user_code=@user_code', [
-        '@client_id' => $client_entity->getClientId(),
+        '@client_id' => $client_entity->getIdentifier(),
         '@device_code' => $device_code,
         '@user_code' => $user_code,
       ]);

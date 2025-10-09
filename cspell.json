@@ -85,7 +85,8 @@
     "CURLINFO",
     "VARCHAR",
     "microtime",
-    "Azko"
+    "Azko",
+    "langcode"
   ],
   "ignorePaths": [
     "node_modules/**",

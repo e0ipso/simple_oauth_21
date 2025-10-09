@@ -14,7 +14,7 @@ use Drupal\Core\StringTranslation\TranslationInterface;
  * - webview.detection, webview.whitelist, webview.patterns
  * - allow.custom_uri_schemes, allow.loopback_redirects
  * - native.enhanced_pkce, native.enforce
- * - log.pkce_validations, log.detection_decisions
+ * - log.pkce_validations, log.detection_decisions.
  *
  * All validation methods accept nested configuration arrays directly without
  * requiring transformation or mapping from form structures.

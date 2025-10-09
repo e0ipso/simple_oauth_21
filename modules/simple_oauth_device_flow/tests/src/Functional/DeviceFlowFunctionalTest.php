@@ -6,7 +6,6 @@ use Drupal\Component\Serialization\Json;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\user\Entity\User;
-use GuzzleHttp\Client;
 use GuzzleHttp\RequestOptions;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -67,10 +66,15 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
   protected function setUp(): void {
     parent::setUp();
 
-    $this->httpClient = new Client();
+    // Set up HTTP client with base URI for test environment.
+    $this->httpClient = $this->container->get('http_client_factory')
+      ->fromOptions(['base_uri' => $this->baseUrl]);
 
     // Clear caches to ensure entity types are properly discovered.
     drupal_flush_all_caches();
+
+    // Rebuild router to ensure device flow routes are registered.
+    $this->container->get('router.builder')->rebuild();
 
     // Create test user.
     $this->testUser = User::create([
@@ -118,6 +122,8 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     $this->assertEquals(200, $response->getStatusCode());
     $this->assertEquals('application/json', $response->getHeaderLine('Content-Type'));
 
+    // Rewind stream before reading to ensure we get the full content.
+    $response->getBody()->rewind();
     $data = Json::decode($response->getBody()->getContents());
 
     // Verify required RFC 8628 response fields.
@@ -142,7 +148,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     $this->assertGreaterThan(4, strlen($data['user_code']));
 
     // Verify verification URI points to our device endpoint.
-    $this->assertStringContains('/oauth/device', $data['verification_uri']);
+    $this->assertStringContainsString('/oauth/device', $data['verification_uri']);
 
     // Return for use in other tests.
     return $data;
@@ -163,6 +169,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     ]);
 
     $this->assertEquals(400, $response->getStatusCode());
+    $response->getBody()->rewind();
     $data = Json::decode($response->getBody()->getContents());
     $this->assertEquals('invalid_client', $data['error']);
   }
@@ -181,6 +188,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     ]);
 
     $this->assertEquals(400, $response->getStatusCode());
+    $response->getBody()->rewind();
     $data = Json::decode($response->getBody()->getContents());
     $this->assertEquals('invalid_request', $data['error']);
   }
@@ -191,22 +199,18 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
    * @covers \Drupal\simple_oauth_device_flow\Controller\DeviceVerificationController::form
    */
   public function testDeviceVerificationForm(): void {
-    $verification_url = $this->getAbsoluteUrl('/oauth/device');
+    // Device verification requires authentication, so log in first.
+    $this->drupalLogin($this->testUser);
 
-    // Test GET request to verification form.
-    $response = $this->httpClient->get($verification_url, [
-      RequestOptions::HTTP_ERRORS => FALSE,
-    ]);
+    // Access the verification form.
+    $this->drupalGet('/oauth/device');
 
-    $this->assertEquals(200, $response->getStatusCode());
-    $this->assertStringContains('text/html', $response->getHeaderLine('Content-Type'));
-
-    $body = $response->getBody()->getContents();
+    // Verify we get the form page.
+    $this->assertSession()->statusCodeEquals(200);
 
     // Verify form elements are present.
-    $this->assertStringContains('user_code', $body);
-    $this->assertStringContains('form', $body);
-    $this->assertStringContains('Device Authorization', $body);
+    $this->assertSession()->pageTextContains('Device Authorization');
+    $this->assertSession()->fieldExists('user_code');
   }
 
   /**
@@ -274,6 +278,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     ]);
 
     $this->assertEquals(400, $response->getStatusCode());
+    $response->getBody()->rewind();
     $data = Json::decode($response->getBody()->getContents());
     $this->assertEquals('authorization_pending', $data['error']);
 
@@ -296,6 +301,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     ]);
 
     $this->assertEquals(200, $response->getStatusCode());
+    $response->getBody()->rewind();
     $data = Json::decode($response->getBody()->getContents());
 
     // Verify token response structure.
@@ -323,6 +329,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     ]);
 
     $this->assertEquals(400, $response->getStatusCode());
+    $response->getBody()->rewind();
     $data = Json::decode($response->getBody()->getContents());
     $this->assertEquals('invalid_grant', $data['error']);
   }
@@ -359,6 +366,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     }
 
     // Last request might return slow_down if rate limiting is implemented.
+    $response->getBody()->rewind();
     $data = Json::decode($response->getBody()->getContents());
 
     // Accept either authorization_pending or slow_down as valid responses.
@@ -393,6 +401,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     ]);
 
     $this->assertEquals(200, $response->getStatusCode());
+    $response->getBody()->rewind();
     $data = Json::decode($response->getBody()->getContents());
 
     // Verify scope is handled properly.
@@ -441,6 +450,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     ]);
 
     $this->assertEquals(400, $response->getStatusCode());
+    $response->getBody()->rewind();
     $data = Json::decode($response->getBody()->getContents());
     $this->assertEquals('invalid_grant', $data['error']);
   }

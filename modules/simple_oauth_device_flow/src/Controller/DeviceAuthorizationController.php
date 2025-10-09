@@ -116,7 +116,12 @@ final class DeviceAuthorizationController extends ControllerBase {
         $this->logger->notice('Device authorization request with invalid client_id: @client_id', [
           '@client_id' => $client_id,
         ]);
-        throw OAuthServerException::invalidClient($server_request);
+        // For device flow, invalid client_id is a bad request (400), not auth
+        // failure (401). Use code 4 like invalidClient() but with 400 status
+        // code per RFC 8628.
+        $exception = new OAuthServerException('Client identifier is invalid', 4, 'invalid_client', 400);
+        $exception->setServerRequest($server_request);
+        throw $exception;
       }
 
       $client_drupal_entity = $client_entity->getDrupalEntity();
@@ -135,7 +140,7 @@ final class DeviceAuthorizationController extends ControllerBase {
 
       // Generate device and user codes using the service.
       $authorization_data = $this->deviceCodeService->generateDeviceAuthorization(
-        $client_drupal_entity,
+        $client_entity,
         $scope
       );
 
@@ -216,6 +221,8 @@ final class DeviceAuthorizationController extends ControllerBase {
 
     // Extract response data.
     $status_code = $psr_response->getStatusCode();
+    // Rewind the response body stream before reading.
+    $psr_response->getBody()->rewind();
     $response_body = $psr_response->getBody()->getContents();
     $error_data = json_decode($response_body, TRUE) ?: ['error' => 'server_error'];
 

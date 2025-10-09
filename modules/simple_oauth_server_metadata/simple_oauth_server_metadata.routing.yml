@@ -1,7 +1,7 @@
 simple_oauth_server_metadata.well_known:
   path: '/.well-known/oauth-authorization-server'
   defaults:
-    _controller: '\Drupal\simple_oauth_server_metadata\Controller\ServerMetadataController::metadata'
+    _controller: '\Drupal\simple_oauth_server_metadata\Controller\ServerMetadataController'
     _title: 'OAuth 2.0 Authorization Server Metadata'
   methods: [GET]
   requirements:

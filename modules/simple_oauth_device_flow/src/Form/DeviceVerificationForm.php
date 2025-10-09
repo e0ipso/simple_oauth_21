@@ -6,7 +6,6 @@ namespace Drupal\simple_oauth_device_flow\Form;
 
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
-use Drupal\Core\Messenger\MessengerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Url;
 use Drupal\simple_oauth_device_flow\Repository\DeviceCodeRepository;
@@ -45,11 +44,6 @@ final class DeviceVerificationForm extends FormBase {
   private AccountInterface $currentUser;
 
   /**
-   * The messenger service.
-   */
-  private MessengerInterface $messenger;
-
-  /**
    * The logger for device flow operations.
    */
   private LoggerInterface $logger;
@@ -65,8 +59,6 @@ final class DeviceVerificationForm extends FormBase {
    *   The user code generator.
    * @param \Drupal\Core\Session\AccountInterface $current_user
    *   The current user.
-   * @param \Drupal\Core\Messenger\MessengerInterface $messenger
-   *   The messenger service.
    * @param \Psr\Log\LoggerInterface $logger
    *   The logger for device flow operations.
    */
@@ -75,14 +67,12 @@ final class DeviceVerificationForm extends FormBase {
     DeviceCodeService $device_code_service,
     UserCodeGenerator $user_code_generator,
     AccountInterface $current_user,
-    MessengerInterface $messenger,
     LoggerInterface $logger,
   ) {
     $this->deviceCodeRepository = $device_code_repository;
     $this->deviceCodeService = $device_code_service;
     $this->userCodeGenerator = $user_code_generator;
     $this->currentUser = $current_user;
-    $this->messenger = $messenger;
     $this->logger = $logger;
   }
 
@@ -91,11 +81,10 @@ final class DeviceVerificationForm extends FormBase {
    */
   public static function create(ContainerInterface $container): static {
     return new static(
-      $container->get('simple_oauth_device_flow.repository.device_code'),
+      $container->get('simple_oauth_device_flow.device_code_repository'),
       $container->get('simple_oauth_device_flow.device_code_service'),
       $container->get('simple_oauth_device_flow.user_code_generator'),
       $container->get('current_user'),
-      $container->get('messenger'),
       $container->get('logger.channel.simple_oauth')
     );
   }
@@ -214,7 +203,7 @@ final class DeviceVerificationForm extends FormBase {
 
     // Validate user code format.
     if (!$this->userCodeGenerator->validateCodeFormat($user_code)) {
-      $form_state->setErrorByName('user_code', $this->t('Invalid device code format. Please check the code and try again.'));
+      $form_state->setErrorByName('user_code', $this->t('Invalid user code. Please check the code and try again.'));
       return;
     }
 
@@ -226,7 +215,7 @@ final class DeviceVerificationForm extends FormBase {
     $device_code_entity = $this->deviceCodeRepository->getDeviceCodeEntityByUserCode($formatted_code);
 
     if (empty($device_code_entity)) {
-      $form_state->setErrorByName('user_code', $this->t('Device code not found. Please check the code and try again.'));
+      $form_state->setErrorByName('user_code', $this->t('Invalid user code. Please check the code and try again.'));
       $this->logger->notice('Device verification failed: user code not found: @user_code', [
         '@user_code' => $formatted_code,
       ]);
@@ -243,7 +232,7 @@ final class DeviceVerificationForm extends FormBase {
     }
 
     // Check if device code is already authorized.
-    if ($device_code_entity->get('authorized')->value) {
+    if ($device_code_entity->getUserApproved()) {
       $form_state->setErrorByName('user_code', $this->t('This device has already been authorized.'));
       $this->logger->notice('Device verification failed: device already authorized: @user_code', [
         '@user_code' => $formatted_code,
@@ -262,7 +251,7 @@ final class DeviceVerificationForm extends FormBase {
     $device_code_entity = $form_state->getTemporaryValue('device_code_entity');
 
     if (empty($device_code_entity)) {
-      $this->messenger->addError($this->t('An error occurred during device authorization. Please try again.'));
+      $this->messenger()->addError($this->t('An error occurred during device authorization. Please try again.'));
       return;
     }
 
@@ -278,7 +267,7 @@ final class DeviceVerificationForm extends FormBase {
         '@device_code' => $device_code_entity->getIdentifier(),
       ]);
 
-      $this->messenger->addStatus($this->t('Device authorized successfully! You can now close this page and continue using your device.'));
+      $this->messenger()->addStatus($this->t('Device authorized successfully! You can now close this page and continue using your device.'));
 
       // Redirect to avoid resubmission.
       $form_state->setRedirect('simple_oauth_device_flow.device_verification_form');
@@ -288,7 +277,7 @@ final class DeviceVerificationForm extends FormBase {
         '@message' => $e->getMessage(),
       ]);
 
-      $this->messenger->addError($this->t('An error occurred while authorizing the device. Please try again.'));
+      $this->messenger()->addError($this->t('An error occurred while authorizing the device. Please try again.'));
     }
   }
 
@@ -310,7 +299,7 @@ final class DeviceVerificationForm extends FormBase {
       ]);
     }
 
-    $this->messenger->addMessage($this->t('Device authorization was denied. The device will not have access to your account.'));
+    $this->messenger()->addMessage($this->t('Device authorization was denied. The device will not have access to your account.'));
 
     // Redirect to avoid resubmission.
     $form_state->setRedirect('simple_oauth_device_flow.device_verification_form');
