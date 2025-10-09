@@ -2,7 +2,7 @@
 id: 3
 group: 'revocation'
 dependencies: [1, 2]
-status: 'pending'
+status: 'completed'
 created: 2025-10-09
 skills:
   - php
