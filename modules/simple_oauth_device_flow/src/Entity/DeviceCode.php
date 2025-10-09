@@ -280,8 +280,13 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
    * {@inheritdoc}
    */
   public function getVerificationUri(): string {
-    $base_url = \Drupal::request()->getSchemeAndHttpHost();
-    return $base_url . '/oauth/device/verify';
+    $request = \Drupal::request();
+    if ($request && $request->getSchemeAndHttpHost()) {
+      $base_url = $request->getSchemeAndHttpHost();
+      return $base_url . '/oauth/device/verify';
+    }
+    // Fallback for contexts where request is not available.
+    return 'http://localhost/oauth/device/verify';
   }
 
   /**

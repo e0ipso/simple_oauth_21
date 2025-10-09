@@ -93,7 +93,9 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
       'scopes' => [],
     // Device flow typically uses public clients.
       'confidential' => FALSE,
-      'redirect' => [],
+      // Device flow doesn't use redirects, but field is required by
+      // simple_oauth.
+      'redirect' => ['http://localhost'],
       'access_token_expiration' => 300,
       'refresh_token_expiration' => 1209600,
       'user_id' => $this->testUser->id(),
@@ -106,25 +108,8 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
    *
    * @covers \Drupal\simple_oauth_device_flow\Controller\DeviceAuthorizationController::authorize
    */
-  public function testDeviceAuthorizationEndpoint(): array {
-    $device_auth_url = $this->getAbsoluteUrl('/oauth/device_authorization');
-
-    // Test valid device authorization request.
-    $response = $this->httpClient->post($device_auth_url, [
-      RequestOptions::FORM_PARAMS => [
-        'client_id' => $this->consumer->getClientId(),
-    // Empty scope for basic test.
-        'scope' => '',
-      ],
-      RequestOptions::HTTP_ERRORS => FALSE,
-    ]);
-
-    $this->assertEquals(200, $response->getStatusCode());
-    $this->assertEquals('application/json', $response->getHeaderLine('Content-Type'));
-
-    // Rewind stream before reading to ensure we get the full content.
-    $response->getBody()->rewind();
-    $data = Json::decode($response->getBody()->getContents());
+  public function testDeviceAuthorizationEndpoint(): void {
+    $data = $this->requestDeviceAuthorization();
 
     // Verify required RFC 8628 response fields.
     $this->assertArrayHasKey('device_code', $data);
@@ -149,9 +134,33 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
 
     // Verify verification URI points to our device endpoint.
     $this->assertStringContainsString('/oauth/device', $data['verification_uri']);
+  }
 
-    // Return for use in other tests.
-    return $data;
+  /**
+   * Helper method to request device authorization.
+   *
+   * @return array
+   *   The device authorization response data.
+   */
+  protected function requestDeviceAuthorization(): array {
+    $device_auth_url = $this->getAbsoluteUrl('/oauth/device_authorization');
+
+    // Test valid device authorization request.
+    $response = $this->httpClient->post($device_auth_url, [
+      RequestOptions::FORM_PARAMS => [
+        'client_id' => $this->consumer->getClientId(),
+    // Empty scope for basic test.
+        'scope' => '',
+      ],
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertEquals('application/json', $response->getHeaderLine('Content-Type'));
+
+    // Rewind stream before reading to ensure we get the full content.
+    $response->getBody()->rewind();
+    return Json::decode($response->getBody()->getContents());
   }
 
   /**
@@ -220,7 +229,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
    */
   public function testDeviceVerificationFlow(): void {
     // First, get device authorization.
-    $device_data = $this->testDeviceAuthorizationEndpoint();
+    $device_data = $this->requestDeviceAuthorization();
 
     // Log in as test user.
     $this->drupalLogin($this->testUser);
@@ -262,7 +271,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
    */
   public function testTokenEndpointWithDeviceGrant(): void {
     // Get device authorization.
-    $device_data = $this->testDeviceAuthorizationEndpoint();
+    $device_data = $this->requestDeviceAuthorization();
     $device_code = $device_data['device_code'];
 
     $token_url = $this->getAbsoluteUrl('/oauth/token');
@@ -348,7 +357,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
    */
   public function testDeviceFlowRateLimiting(): void {
     // Get device authorization.
-    $device_data = $this->testDeviceAuthorizationEndpoint();
+    $device_data = $this->requestDeviceAuthorization();
     $device_code = $device_data['device_code'];
 
     $token_url = $this->getAbsoluteUrl('/oauth/token');
@@ -384,7 +393,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
       'grant_types' => ['device_code'],
       'scopes' => ['read', 'write'],
       'confidential' => FALSE,
-      'redirect' => [],
+      'redirect' => ['http://localhost'],
       'access_token_expiration' => 300,
       'user_id' => $this->testUser->id(),
     ]);
@@ -414,7 +423,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
    */
   public function testDeviceCodeSingleUse(): void {
     // Get device authorization and complete the flow.
-    $device_data = $this->testDeviceAuthorizationEndpoint();
+    $device_data = $this->requestDeviceAuthorization();
     $device_code = $device_data['device_code'];
 
     // Authorize the device.

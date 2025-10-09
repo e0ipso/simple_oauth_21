@@ -144,15 +144,14 @@ final class DeviceAuthorizationController extends ControllerBase {
         $scope
       );
 
-      // Build verification URIs.
-      $verification_uri = Url::fromRoute('simple_oauth_device_flow.device_verification_form', [], [
-        'absolute' => TRUE,
-      ])->toString();
+      // Build verification URIs using request to ensure proper base URL.
+      // This ensures proper URL generation in both regular and test
+      // environments.
+      $base_url = $request->getSchemeAndHttpHost();
+      $verification_path = Url::fromRoute('simple_oauth_device_flow.device_verification_form')->toString();
+      $verification_uri = $base_url . $verification_path;
 
-      $verification_uri_complete = Url::fromRoute('simple_oauth_device_flow.device_verification_form', [], [
-        'absolute' => TRUE,
-        'query' => ['user_code' => $authorization_data['user_code']],
-      ])->toString();
+      $verification_uri_complete = $base_url . $verification_path . '?user_code=' . urlencode($authorization_data['user_code']);
 
       // Build RFC 8628 compliant response.
       $response_data = [

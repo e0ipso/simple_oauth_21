@@ -126,7 +126,7 @@ class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryPluginI
 
     // Configure refresh token TTL if enabled.
     if ($refresh_token_enabled) {
-      $refresh_token_expiration = !$client->get('refresh_token_expiration')->isEmpty
+      $refresh_token_expiration = !$client->get('refresh_token_expiration')->isEmpty()
         ? $client->get('refresh_token_expiration')->value
       // 14 days default
         : 1209600;
