@@ -43,13 +43,6 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
   private ?ClientEntityInterface $clientEntity = NULL;
 
   /**
-   * Array of scope entities.
-   *
-   * @var \League\OAuth2\Server\Entities\ScopeEntityInterface[]
-   */
-  private array $scopeEntities = [];
-
-  /**
    * {@inheritdoc}
    */
   public static function baseFieldDefinitions(EntityTypeInterface $entity_type) {
@@ -254,18 +247,14 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
    * {@inheritdoc}
    */
   public function getScopes(): array {
-    if (empty($this->scopeEntities)) {
-      $this->loadScopesFromDatabase();
-    }
-    return $this->scopeEntities;
+    return $this->get('scopes')->getScopes();
   }
 
   /**
    * {@inheritdoc}
    */
   public function addScope(ScopeEntityInterface $scope): void {
-    $this->scopeEntities[] = $scope;
-    $this->saveScopesToDatabase();
+    $this->get('scopes')->appendItem(['scope_id' => $scope->getIdentifier()]);
   }
 
   /**
