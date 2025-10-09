@@ -61,51 +61,25 @@ function simple_oauth_client_registration_schema() {
  * Implements hook_install().
  */
 function simple_oauth_client_registration_install($is_syncing): void {
-  if (!$is_syncing) {
-    // Configure the registration endpoint in server metadata if server
-    // metadata module is enabled.
-    if (\Drupal::moduleHandler()->moduleExists('simple_oauth_server_metadata')) {
-      $config = \Drupal::configFactory()->getEditable('simple_oauth_server_metadata.settings');
-      if (empty($config->get('registration_endpoint'))) {
-        try {
-          $registration_url = Url::fromRoute('simple_oauth_client_registration.register')->setAbsolute()->toString();
-          $config->set('registration_endpoint', $registration_url);
-          $config->save();
-        }
-        catch (\Exception $e) {
-          // If route doesn't exist, don't set it.
-        }
+  if ($is_syncing) {
+    return;
+  }
+  // Configure the registration endpoint in server metadata if server metadata
+  // module is enabled.
+  if (\Drupal::moduleHandler()->moduleExists('simple_oauth_server_metadata')) {
+    $config = \Drupal::configFactory()->getEditable('simple_oauth_server_metadata.settings');
+    if (empty($config->get('registration_endpoint'))) {
+      try {
+        $registration_url = Url::fromRoute('simple_oauth_client_registration.register')->setAbsolute()->toString();
+        $config->set('registration_endpoint', $registration_url);
+        $config->save();
       }
-    }
-
-    // Install base field storage definitions for RFC 7591 client metadata.
-    $entity_definition_update_manager = \Drupal::entityDefinitionUpdateManager();
-    $entity_type_manager = \Drupal::entityTypeManager();
-
-    // Get the consumer entity type definition.
-    $consumer_entity_type = $entity_type_manager->getDefinition('consumer');
-
-    // Get base field definitions from hook_entity_base_field_info().
-    $base_fields = simple_oauth_client_registration_entity_base_field_info($consumer_entity_type);
-
-    // Install each base field storage definition.
-    foreach ($base_fields as $field_name => $storage_definition) {
-      if (!$entity_definition_update_manager->getFieldStorageDefinition($field_name, 'consumer')) {
-        $entity_definition_update_manager->installFieldStorageDefinition(
-          $field_name,
-          'consumer',
-          'simple_oauth_client_registration',
-          $storage_definition
-        );
+      catch (\Exception $e) {
+        // If route doesn't exist, don't set it.
       }
     }
   }
-}
 
-/**
- * Install base field storage definitions for RFC 7591 client metadata.
- */
-function simple_oauth_client_registration_update_10001() {
   // Install base field storage definitions for RFC 7591 client metadata.
   $entity_definition_update_manager = \Drupal::entityDefinitionUpdateManager();
   $entity_type_manager = \Drupal::entityTypeManager();
@@ -116,9 +90,6 @@ function simple_oauth_client_registration_update_10001() {
   // Get base field definitions from hook_entity_base_field_info().
   $base_fields = simple_oauth_client_registration_entity_base_field_info($consumer_entity_type);
 
-  $installed = [];
-  $skipped = [];
-
   // Install each base field storage definition.
   foreach ($base_fields as $field_name => $storage_definition) {
     if (!$entity_definition_update_manager->getFieldStorageDefinition($field_name, 'consumer')) {
@@ -128,31 +99,8 @@ function simple_oauth_client_registration_update_10001() {
         'simple_oauth_client_registration',
         $storage_definition
       );
-      $installed[] = $field_name;
-    }
-    else {
-      $skipped[] = $field_name;
     }
   }
-
-  // Log installation summary.
-  $logger = \Drupal::logger('simple_oauth_client_registration');
-  if (!empty($installed)) {
-    $logger->info('Base fields installed: @installed', [
-      '@installed' => implode(', ', $installed),
-    ]);
-  }
-  if (!empty($skipped)) {
-    $logger->info('Base fields already exist (skipped): @skipped', [
-      '@skipped' => implode(', ', $skipped),
-    ]);
-  }
-
-  $message = t('Installed @count base field storage definitions for RFC 7591 client metadata.', [
-    '@count' => count($installed),
-  ]);
-
-  return $message;
 }
 
 /**
@@ -170,9 +118,5 @@ function simple_oauth_client_registration_uninstall($is_syncing): void {
         $config->save();
       }
     }
-
-    // Base fields defined in hook_entity_base_field_info() are automatically
-    // managed by Drupal's entity definition system and will be uninstalled
-    // automatically. No manual field removal needed.
   }
 }
