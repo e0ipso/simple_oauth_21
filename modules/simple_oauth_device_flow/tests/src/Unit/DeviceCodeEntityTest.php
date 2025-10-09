@@ -13,14 +13,6 @@ use PHPUnit\Framework\Attributes\Group;
 class DeviceCodeEntityTest extends UnitTestCase {
 
   /**
-   * Tests basic DeviceCode entity functionality.
-   */
-  public function testDeviceCodeBasicFunctionality() {
-    // Mock the required services that would normally be injected.
-    $this->markTestSkipped('Unit test requires full Drupal bootstrap for entity system.');
-  }
-
-  /**
    * Tests League OAuth2 interface compliance.
    */
   public function testLeagueInterfaceCompliance() {
