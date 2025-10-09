@@ -14,6 +14,10 @@ simple_oauth_server_metadata.settings:
       type: uri
       label: 'Token Introspection Endpoint'
       description: 'URL of the OAuth 2.0 Token Introspection endpoint'
+    device_authorization_endpoint:
+      type: uri
+      label: 'Device Authorization Endpoint'
+      description: 'URL of the OAuth 2.0 Device Authorization endpoint'
     service_documentation:
       type: uri
       label: 'Service Documentation'
