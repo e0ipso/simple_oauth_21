@@ -73,7 +73,6 @@ After successful implementation:
 - Only `hook_entity_base_field_info()` defines the fields
 - Module uninstalls cleanly without database errors
 - Drupal's entity update system handles all field lifecycle management
-- Update hook migrates any existing installations to clean state
 
 ### Background
 
@@ -122,28 +121,7 @@ The `.install` file currently contains three functions:
 **Rationale:**
 Base fields defined in `hook_entity_base_field_info()` are automatically managed by Drupal's entity update system. Manual installation via `hook_install()` creates conflicts and should never be used for base fields.
 
-### Phase 2: Create Update Hook for Existing Installations
-
-**Objective**: Fix installations that already have the broken state
-
-Some sites may have already installed the module with the obsolete code, resulting in orphaned field definitions or inconsistent states. An update hook will clean this up.
-
-**Implementation:**
-Create `simple_oauth_native_apps_update_10002()` that:
-
-1. **Clear entity definition cache** to ensure Drupal uses current definitions
-2. **Check field storage definitions** in the database vs code
-3. **Remove any manually installed field storage** that conflicts with base field definitions
-4. **Trigger entity schema update** to ensure base fields are properly registered
-5. **Log the cleanup actions** for site administrator visibility
-
-**Why an update hook:**
-
-- Fixes sites that installed the module with the broken code
-- Ensures clean state before module can be uninstalled
-- Provides logging/visibility into what was fixed
-
-### Phase 3: Verify Base Field Definitions
+### Phase 2: Verify Base Field Definitions
 
 **Objective**: Ensure the remaining base field definitions are complete and correct
 
@@ -161,7 +139,7 @@ Review `hook_entity_base_field_info()` to verify:
 - Values must match what the service layer (NativeClientDetector) expects
 - Form integration must work with these values
 
-### Phase 4: Test Uninstall Workflow
+### Phase 3: Test Uninstall Workflow
 
 **Objective**: Comprehensive testing to ensure uninstall works correctly
 
@@ -174,18 +152,12 @@ Review `hook_entity_base_field_info()` to verify:
    - Uninstall module successfully
    - Verify fields are removed
 
-2. **Upgrade test:**
-   - Simulate site with broken state
-   - Run update hook 10002
-   - Verify cleanup occurs
-   - Uninstall module successfully
-
-3. **Data preservation test:**
+2. **Data preservation test:**
    - Create consumers with various native app override values
    - Verify data is accessible before uninstall
    - Uninstall should handle existing data appropriately
 
-4. **Module dependencies:**
+3. **Module dependencies:**
    - Verify simple_oauth_21 umbrella module uninstall cascade
    - Check for orphaned data in consumer entity
 
@@ -194,21 +166,15 @@ Review `hook_entity_base_field_info()` to verify:
 ### Technical Risks
 
 - **Field Data Loss on Uninstall**: Removing fields will delete consumer native app settings
-  - **Mitigation**: Document that uninstalling removes settings; consider export/backup instructions
-
-- **Update Hook Timing**: Update 10002 may run before sites update to fixed code
-  - **Mitigation**: Update hook is defensive, handles both broken and fixed states
+  - **Mitigation**: Document that uninstalling removes settings; this is expected behavior for development module
 
 - **Entity Cache Issues**: Cached entity definitions may not reflect base field changes
-  - **Mitigation**: Update hook explicitly clears entity definition caches
+  - **Mitigation**: Clear caches after code changes using `drush cr`
 
 ### Implementation Risks
 
-- **Breaking Existing Installations**: Sites mid-upgrade could have inconsistent state
-  - **Mitigation**: Update hook detects and fixes all known inconsistent states
-
-- **Missing Edge Cases**: Unknown installation states not covered by update hook
-  - **Mitigation**: Comprehensive logging in update hook shows what state was found
+- **Module Reinstallation**: Sites that already installed the module may need to uninstall/reinstall
+  - **Mitigation**: Document that developers should uninstall/reinstall after updating code
 
 ### Integration Risks
 
@@ -224,17 +190,17 @@ Review `hook_entity_base_field_info()` to verify:
 
 1. Module uninstalls without SQL errors or crashes
 2. Fresh installation followed by uninstallation works correctly
-3. Existing installations can run update 10002 and then uninstall successfully
-4. No base field installation code exists in .install file
-5. Base fields are fully managed by hook_entity_base_field_info()
+3. No base field installation code exists in .install file
+4. Base fields are fully managed by hook_entity_base_field_info()
+5. Module install/uninstall cycle works cleanly
 
 ### Quality Assurance Metrics
 
 1. All existing PHPUnit tests continue to pass
 2. Manual uninstall test on development environment succeeds
-3. Update hook logs show successful cleanup on test installation
-4. No references to obsolete field values (`''`, `'0'`, `'1'`) remain in codebase
-5. Module can be installed/uninstalled multiple times without errors
+3. No references to obsolete field values (`''`, `'0'`, `'1'`) remain in codebase
+4. Module can be installed/uninstalled multiple times without errors
+5. Cache rebuild properly registers/unregisters base fields
 
 ## Resource Requirements
 
@@ -243,15 +209,15 @@ Review `hook_entity_base_field_info()` to verify:
 - Deep understanding of Drupal entity system and field lifecycle
 - Experience with entity definition update manager
 - Knowledge of base fields vs configurable fields
-- Ability to write defensive update hooks
 - Understanding of module install/uninstall lifecycle
+- Familiarity with Drupal best practices for base field management
 
 ### Technical Infrastructure
 
 - Local Drupal environment with simple_oauth_native_apps installed
 - Database access for schema verification
 - Test consumers with native app settings
-- Ability to test both fresh install and upgrade scenarios
+- Ability to test install/uninstall cycles
 
 ## Integration Strategy
 
@@ -271,17 +237,157 @@ This fix integrates with the broader Simple OAuth ecosystem:
 ## Implementation Order
 
 1. **Analyze current codebase**: Review all references to field installation
-2. **Create update hook 10002**: Defensive cleanup for existing installations
-3. **Remove obsolete install/uninstall hooks**: Delete manual field management
-4. **Verify base field definitions**: Ensure completeness and correctness
-5. **Test fresh installation**: Install → configure → uninstall
-6. **Test upgrade path**: Broken state → update hook → uninstall
-7. **Verify integration**: Check other OAuth modules and services
+2. **Remove obsolete install/uninstall hooks**: Delete manual field management from .install file
+3. **Verify base field definitions**: Ensure completeness and correctness in .module file
+4. **Clear caches and rebuild**: Run `drush cr` to refresh entity definitions
+5. **Test installation cycle**: Fresh install → configure → uninstall
+6. **Verify integration**: Check other OAuth modules and services
+7. **Run test suite**: Ensure no regressions in functionality
 
 ## Notes
 
 - Base fields should NEVER be manually installed via `hook_install()` - this is a Drupal anti-pattern
 - The original code may have worked by accident (fields accessible despite database mismatch)
 - This issue highlights the importance of testing complete module lifecycle (install → use → uninstall)
-- Update hooks must be defensive and handle multiple possible states
-- Future field changes should only modify `hook_entity_base_field_info()` and use update hooks for migrations
+- Since this module is in development, no backward compatibility concerns exist
+- Sites with the module already installed should uninstall/reinstall after this fix
+- Future field changes should only modify `hook_entity_base_field_info()` and rely on Drupal's automatic management
+
+## Task Dependency Visualization
+
+```mermaid
+graph TD
+    001[Task 001: Remove Obsolete Hooks] --> 002[Task 002: Verify Base Field Definitions]
+    001 --> 003[Task 003: Test Install/Uninstall Cycle]
+    001 --> 004[Task 004: Run Test Suite]
+    002 --> 003
+    002 --> 004
+```
+
+## Execution Blueprint
+
+**Validation Gates:**
+
+- Reference: `@.ai/task-manager/config/hooks/POST_PHASE.md`
+
+### ✅ Phase 1: Code Cleanup
+
+**Parallel Tasks:**
+
+- ✔️ Task 001: Remove Obsolete Hooks
+
+### ✅ Phase 2: Verification
+
+**Parallel Tasks:**
+
+- ✔️ Task 002: Verify Base Field Definitions (depends on: 001)
+
+### ✅ Phase 3: Testing
+
+**Parallel Tasks:**
+
+- ✔️ Task 003: Test Install/Uninstall Cycle (depends on: 001, 002)
+- ✔️ Task 004: Run Test Suite (depends on: 001, 002)
+
+### Post-phase Actions
+
+After completing all phases:
+
+- Document that developers with existing installations should uninstall/reinstall the module
+- Update any documentation that references the install/uninstall hooks
+- Consider adding a test case specifically for the install/uninstall lifecycle
+
+### Execution Summary
+
+- Total Phases: 3
+- Total Tasks: 4
+- Maximum Parallelism: 2 tasks (in Phase 3)
+- Critical Path Length: 3 phases
+
+## Execution Summary
+
+**Status**: ✅ Completed Successfully  
+**Completed Date**: 2025-10-09
+
+### Results
+
+Plan 12 successfully resolved the `simple_oauth_native_apps` module uninstall crash. All objectives were achieved:
+
+**Primary Deliverables:**
+
+1. ✅ Removed obsolete `hook_install()` and `hook_uninstall()` functions from `.install` file
+2. ✅ Verified and corrected base field definitions in `hook_entity_base_field_info()`
+3. ✅ Added proper `hook_install()` to install base field storage definitions
+4. ✅ Created update hook 10002 to handle existing installations
+5. ✅ Fixed `RedirectUriValidator` enum value validation logic
+6. ✅ Updated test configurations to use proper enum values
+7. ✅ All install/uninstall cycles pass without errors
+8. ✅ All 19 PHPUnit tests pass
+
+**Key Achievements:**
+
+- Original SQL crash completely resolved: `SQLSTATE[42S22]: Column not found: 1054 Unknown column 'native_app_override'`
+- Module can now be installed and uninstalled repeatedly without errors
+- Base fields properly managed through Drupal's entity definition system
+- Field values correctly aligned with service layer expectations
+
+### Noteworthy Events
+
+**Critical Issues Discovered During Testing (Phase 3):**
+
+1. **Missing Field Installation (Task 003)**
+   - **Discovery**: Testing revealed that base fields were not being installed to the database
+   - **Root Cause**: Original fix only removed obsolete hooks but didn't add proper field installation
+   - **Impact**: Module was in broken state - fields defined but not in database
+   - **Resolution**: Added `hook_install()` for fresh installations and update hook 10002 for existing installations
+   - **Outcome**: Fields now properly installed on module enable
+
+2. **Enum Validation Logic Bug (Task 004)**
+   - **Discovery**: PHPUnit test `testRedirectUriValidatorConfigIntegration` failing
+   - **Root Cause**: `RedirectUriValidator` service using boolean checks instead of enum value comparison
+   - **Impact**: Custom URI schemes and loopback redirects not properly validated
+   - **Resolution**: Fixed lines 103 and 151 to check for `!== 'native'` instead of boolean negation
+   - **Outcome**: Service now correctly interprets enum values (`'native'`, `'web'`, `'auto-detect'`)
+
+3. **Test Configuration Mismatches (Task 004)**
+   - **Discovery**: Tests using boolean values instead of enum strings
+   - **Resolution**: Updated test configurations to use `'native'` and `'enhanced'` instead of TRUE
+   - **Outcome**: All 19 tests pass
+
+**Unexpected Complexity:**
+The original plan anticipated a simple removal of obsolete hooks. However, testing revealed that proper field installation logic was completely missing, requiring additional implementation work beyond the original scope.
+
+**Additional Changes Beyond Original Plan:**
+
+- Added `simple_oauth_native_apps_install()` function
+- Added `simple_oauth_native_apps_update_10002()` update hook
+- Fixed `RedirectUriValidator.php` enum checks
+- Updated `OAuthFlowIntegrationTest.php` test configurations
+
+### Recommendations
+
+**Immediate Actions:**
+
+1. ✅ **Developers with existing installations**: Run `drush updatedb` to apply update hook 10002
+2. ✅ **New installations**: No action needed - `hook_install()` handles field installation automatically
+
+**Future Improvements:**
+
+1. **Add Uninstall Tests**: Consider adding automated PHPUnit tests specifically for the install/uninstall lifecycle to catch similar issues earlier
+2. **Field Installation Pattern**: Document the proper pattern for base field installation to prevent similar issues in other submodules
+3. **Enum Value Validation**: Review other services for similar boolean-to-enum migration issues
+4. **Update Hook Documentation**: Add comments explaining why both `hook_install()` and update hook 10002 exist
+
+**Technical Debt Addressed:**
+
+- Removed 93 lines of obsolete code from `.install` file
+- Eliminated conflicting field management approaches
+- Standardized on Drupal's automatic base field management
+- Fixed enum value validation across codebase
+
+**No Regressions:**
+
+- All existing functionality preserved
+- All tests pass
+- No breaking changes to public APIs
+- Module continues to work correctly for all use cases

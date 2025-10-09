@@ -190,6 +190,12 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
    * Tests redirect URI validation in OAuth flow.
    */
   public function testRedirectUriValidationInOauthFlow(): void {
+    // Configure settings to allow native URIs.
+    $config = $this->container->get('config.factory')->getEditable('simple_oauth_native_apps.settings');
+    $config->set('allow.custom_uri_schemes', 'native');
+    $config->set('allow.loopback_redirects', 'native');
+    $config->save();
+
     $redirect_validator = $this->container->get('simple_oauth_native_apps.redirect_uri_validator');
 
     // Test various redirect URI types that would be used in OAuth flows.
@@ -265,8 +271,8 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
     $config = $this->container->get('config.factory')->getEditable('simple_oauth_native_apps.settings');
     $config->setData([
       'allow' => [
-        'custom_uri_schemes' => TRUE,
-        'loopback_redirects' => TRUE,
+        'custom_uri_schemes' => 'native',
+        'loopback_redirects' => 'native',
       ],
       'enforce_native_security' => TRUE,
       'require_exact_redirect_match' => TRUE,
@@ -274,7 +280,7 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
         'detection' => 'warn',
       ],
       'native' => [
-        'enhanced_pkce' => TRUE,
+        'enhanced_pkce' => 'enhanced',
         'enforce' => 'S256',
       ],
       'log' => [

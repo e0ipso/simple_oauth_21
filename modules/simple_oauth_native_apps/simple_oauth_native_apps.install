@@ -2,96 +2,32 @@
 
 /**
  * @file
- * Install/uninstall functions for Simple OAuth Native Apps module.
+ * Update functions for Simple OAuth Native Apps module.
  */
-
-use Drupal\Core\Field\BaseFieldDefinition;
 
 /**
  * Implements hook_install().
  */
-function simple_oauth_native_apps_install($is_syncing) {
-  if (!$is_syncing) {
-    // Update the entity definition to include the new base fields.
-    $entity_type_manager = \Drupal::entityTypeManager();
-    $entity_type_manager->clearCachedDefinitions();
+function simple_oauth_native_apps_install(): void {
+  // Install base field storage definitions for native app fields.
+  $entity_definition_update_manager = \Drupal::entityDefinitionUpdateManager();
+  $entity_type_manager = \Drupal::entityTypeManager();
 
-    // Update the Consumer entity type definition.
-    $definition_update_manager = \Drupal::entityDefinitionUpdateManager();
+  // Get the consumer entity type definition.
+  $consumer_entity_type = $entity_type_manager->getDefinition('consumer');
 
-    // Install the native_app_override field.
-    if (!$definition_update_manager->getFieldStorageDefinition('native_app_override', 'consumer')) {
-      $native_app_override = BaseFieldDefinition::create('list_string')
-        ->setLabel(t('Native App Override'))
-        ->setDescription(t('Manual override for native client detection. Leave empty for automatic detection.'))
-        ->setRequired(FALSE)
-        ->setSetting('allowed_values', [
-          '' => '- Automatic detection -',
-          '0' => 'Force as Web Client',
-          '1' => 'Force as Native App',
-        ])
-        ->setDefaultValue('')
-        ->setDisplayOptions('form', [
-          'type' => 'options_select',
-          'weight' => 10,
-          'settings' => [],
-        ])
-        ->setDisplayOptions('view', [
-          'type' => 'list_default',
-          'label' => 'above',
-          'weight' => 10,
-        ])
-        ->setDisplayConfigurable('form', TRUE)
-        ->setDisplayConfigurable('view', TRUE);
+  // Get base field definitions from hook_entity_base_field_info().
+  $base_fields = simple_oauth_native_apps_entity_base_field_info($consumer_entity_type);
 
-      $definition_update_manager->installFieldStorageDefinition('native_app_override', 'consumer', 'simple_oauth_native_apps', $native_app_override);
-    }
-
-    // Install the native_app_enhanced_pkce field.
-    if (!$definition_update_manager->getFieldStorageDefinition('native_app_enhanced_pkce', 'consumer')) {
-      $native_app_enhanced_pkce = BaseFieldDefinition::create('list_string')
-        ->setLabel(t('Enhanced PKCE'))
-        ->setDescription(t('Override enhanced PKCE requirements for this client. Leave empty for automatic determination.'))
-        ->setRequired(FALSE)
-        ->setSetting('allowed_values', [
-          '' => '- Automatic determination -',
-          '0' => 'Disable Enhanced PKCE',
-          '1' => 'Require Enhanced PKCE',
-        ])
-        ->setDefaultValue('')
-        ->setDisplayOptions('form', [
-          'type' => 'options_select',
-          'weight' => 11,
-          'settings' => [],
-        ])
-        ->setDisplayOptions('view', [
-          'type' => 'list_default',
-          'label' => 'above',
-          'weight' => 11,
-        ])
-        ->setDisplayConfigurable('form', TRUE)
-        ->setDisplayConfigurable('view', TRUE);
-
-      $definition_update_manager->installFieldStorageDefinition('native_app_enhanced_pkce', 'consumer', 'simple_oauth_native_apps', $native_app_enhanced_pkce);
-    }
-  }
-}
-
-/**
- * Implements hook_uninstall().
- */
-function simple_oauth_native_apps_uninstall($is_syncing) {
-  if (!$is_syncing) {
-    $definition_update_manager = \Drupal::entityDefinitionUpdateManager();
-
-    // Remove the native app override field.
-    if ($field_storage_definition = $definition_update_manager->getFieldStorageDefinition('native_app_override', 'consumer')) {
-      $definition_update_manager->uninstallFieldStorageDefinition($field_storage_definition);
-    }
-
-    // Remove the enhanced PKCE field.
-    if ($field_storage_definition = $definition_update_manager->getFieldStorageDefinition('native_app_enhanced_pkce', 'consumer')) {
-      $definition_update_manager->uninstallFieldStorageDefinition($field_storage_definition);
+  // Install each base field storage definition.
+  foreach ($base_fields as $field_name => $storage_definition) {
+    if (!$entity_definition_update_manager->getFieldStorageDefinition($field_name, 'consumer')) {
+      $entity_definition_update_manager->installFieldStorageDefinition(
+        $field_name,
+        'consumer',
+        'simple_oauth_native_apps',
+        $storage_definition
+      );
     }
   }
 }
@@ -168,6 +104,59 @@ function simple_oauth_native_apps_update_10001() {
 
   $message = t('Migrated @count configuration keys from flat to nested structure.', [
     '@count' => count($migrated),
+  ]);
+
+  return $message;
+}
+
+/**
+ * Install base field storage definitions for native app fields.
+ */
+function simple_oauth_native_apps_update_10002() {
+  // Install base field storage definitions for native app fields.
+  $entity_definition_update_manager = \Drupal::entityDefinitionUpdateManager();
+  $entity_type_manager = \Drupal::entityTypeManager();
+
+  // Get the consumer entity type definition.
+  $consumer_entity_type = $entity_type_manager->getDefinition('consumer');
+
+  // Get base field definitions from hook_entity_base_field_info().
+  $base_fields = simple_oauth_native_apps_entity_base_field_info($consumer_entity_type);
+
+  $installed = [];
+  $skipped = [];
+
+  // Install each base field storage definition.
+  foreach ($base_fields as $field_name => $storage_definition) {
+    if (!$entity_definition_update_manager->getFieldStorageDefinition($field_name, 'consumer')) {
+      $entity_definition_update_manager->installFieldStorageDefinition(
+        $field_name,
+        'consumer',
+        'simple_oauth_native_apps',
+        $storage_definition
+      );
+      $installed[] = $field_name;
+    }
+    else {
+      $skipped[] = $field_name;
+    }
+  }
+
+  // Log installation summary.
+  $logger = \Drupal::logger('simple_oauth_native_apps');
+  if (!empty($installed)) {
+    $logger->info('Base fields installed: @installed', [
+      '@installed' => implode(', ', $installed),
+    ]);
+  }
+  if (!empty($skipped)) {
+    $logger->info('Base fields already exist (skipped): @skipped', [
+      '@skipped' => implode(', ', $skipped),
+    ]);
+  }
+
+  $message = t('Installed @count base field storage definitions.', [
+    '@count' => count($installed),
   ]);
 
   return $message;

@@ -100,7 +100,7 @@ class RedirectUriValidator {
   public function validateCustomScheme(string $uri): bool {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
-    if (!$config->get('allow.custom_uri_schemes')) {
+    if ($config->get('allow.custom_uri_schemes') !== 'native') {
       $this->logger->warning('Custom URI schemes are disabled: @uri', ['@uri' => $uri]);
       return FALSE;
     }
@@ -148,7 +148,7 @@ class RedirectUriValidator {
   public function validateLoopbackInterface(string $uri): bool {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
-    if (!$config->get('allow.loopback_redirects')) {
+    if ($config->get('allow.loopback_redirects') !== 'native') {
       $this->logger->warning('Loopback redirects are disabled: @uri', ['@uri' => $uri]);
       return FALSE;
     }
