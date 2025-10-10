@@ -6,7 +6,6 @@ use Drupal\Core\Cache\Cache;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\Component\Serialization\Json;
 use GuzzleHttp\RequestOptions;
-use GuzzleHttp\Client;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -43,13 +42,40 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->httpClient = new Client();
 
-    // Rebuild router to ensure simple_oauth routes are available.
-    $this->container->get('router.builder')->rebuild();
+    // Set up HTTP client with base URI for test environment.
+    // Must use http_client_factory from container, not new Client().
+    $this->httpClient = $this->container->get('http_client_factory')
+      ->fromOptions(['base_uri' => $this->baseUrl]);
+
+    // Install entity base field definitions that were added by the module.
+    // BrowserTestBase doesn't automatically install base fields from
+    // hook_entity_base_field_info().
+    $entity_definition_update_manager = \Drupal::entityDefinitionUpdateManager();
+    $entity_type_manager = \Drupal::entityTypeManager();
+    $consumer_entity_type = $entity_type_manager->getDefinition('consumer');
+    $base_fields = simple_oauth_client_registration_entity_base_field_info($consumer_entity_type);
+
+    foreach ($base_fields as $field_name => $storage_definition) {
+      if (!$entity_definition_update_manager->getFieldStorageDefinition($field_name, 'consumer')) {
+        $entity_definition_update_manager->installFieldStorageDefinition(
+          $field_name,
+          'consumer',
+          'simple_oauth_client_registration',
+          $storage_definition
+        );
+      }
+    }
 
     // Perform comprehensive cache clearing for test isolation.
     $this->clearAllTestCaches();
+
+    // Rebuild router to ensure simple_oauth routes are available.
+    // This must be done after cache clearing to pick up routes properly.
+    $this->container->get('router.builder')->rebuild();
+
+    // Ensure the container is rebuilt to pick up route changes.
+    $this->rebuildContainer();
 
     // Test and demonstrate the auto-detection mechanism.
     $config = $this->container->get('config.factory')->getEditable('simple_oauth_server_metadata.settings');
@@ -102,17 +128,26 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     ];
 
     // Make POST request to registration endpoint.
-    $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
-      RequestOptions::JSON => $client_metadata,
-      RequestOptions::HEADERS => [
-        'Content-Type' => 'application/json',
-        'Accept' => 'application/json',
-      ],
-    ]);
+    try {
+      $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
+        RequestOptions::JSON => $client_metadata,
+        RequestOptions::HEADERS => [
+          'Content-Type' => 'application/json',
+          'Accept' => 'application/json',
+        ],
+        RequestOptions::HTTP_ERRORS => TRUE,
+      ]);
+    }
+    catch (\Exception $e) {
+      // On error, try to get more details.
+      $this->fail('Registration request failed: ' . $e->getMessage() . "\nURL: " . $this->buildUrl('/oauth/register'));
+    }
 
     // Validate RFC 7591 response.
     $this->assertEquals(200, $response->getStatusCode(), 'Client registration succeeded');
 
+    // Rewind stream before reading to ensure we get the full content.
+    $response->getBody()->rewind();
     $response_data = Json::decode($response->getBody()->getContents());
 
     // Check RFC 7591 required response fields.
@@ -216,6 +251,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     ]);
 
     $this->assertEquals(200, $get_response->getStatusCode(), 'GET client metadata succeeded');
+    $get_response->getBody()->rewind();
     $get_data = Json::decode($get_response->getBody()->getContents());
     $this->assertEquals('Test OAuth Client', $get_data['client_name'], 'Retrieved client name matches');
 
@@ -236,6 +272,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     ]);
 
     $this->assertEquals(200, $put_response->getStatusCode(), 'PUT client metadata succeeded');
+    $put_response->getBody()->rewind();
     $put_data = Json::decode($put_response->getBody()->getContents());
     $this->assertEquals('Updated OAuth Client', $put_data['client_name'], 'Client name was updated');
     $this->assertEquals(['https://newexample.com/callback'], $put_data['redirect_uris'], 'Redirect URIs were updated');
@@ -255,6 +292,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     ]);
 
     $this->assertEquals(400, $response->getStatusCode(), 'Empty request returns 400');
+    $response->getBody()->rewind();
     $error_data = Json::decode($response->getBody()->getContents());
     $this->assertEquals('invalid_client_metadata', $error_data['error'], 'Correct error code for empty request');
 
@@ -269,6 +307,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     ]);
 
     $this->assertEquals(400, $response->getStatusCode(), 'Invalid JSON returns 400');
+    $response->getBody()->rewind();
     $error_data = Json::decode($response->getBody()->getContents());
     $this->assertEquals('invalid_client_metadata', $error_data['error'], 'Correct error code for invalid JSON');
 
@@ -288,6 +327,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     ]);
 
     $this->assertEquals(400, $response->getStatusCode(), 'Invalid redirect URI returns 400');
+    $response->getBody()->rewind();
     $error_data = Json::decode($response->getBody()->getContents());
     $this->assertEquals('invalid_client_metadata', $error_data['error'], 'Correct error code for invalid redirect URI');
   }
