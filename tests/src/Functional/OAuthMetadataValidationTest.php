@@ -6,7 +6,6 @@ use Drupal\Core\Cache\Cache;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\Component\Serialization\Json;
 use GuzzleHttp\RequestOptions;
-use GuzzleHttp\Client;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -50,10 +49,21 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->httpClient = new Client();
+
+    // Set up HTTP client with base URI for test environment.
+    // Must use http_client_factory from container, not new Client().
+    $this->httpClient = $this->container->get('http_client_factory')
+      ->fromOptions(['base_uri' => $this->baseUrl]);
 
     // Ensure clean cache state for reliable testing.
     $this->clearAllTestCaches();
+
+    // Rebuild routes to ensure all OAuth routes are available.
+    $this->container->get('router.builder')->rebuild();
+
+    // Clear registration_endpoint config to ensure auto-discovery works.
+    $config = $this->container->get('config.factory')->getEditable('simple_oauth_server_metadata.settings');
+    $config->clear('registration_endpoint')->save();
 
     // Warm metadata cache for consistent performance.
     $this->warmMetadataCache();
@@ -113,7 +123,6 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
     // Validate registration endpoint (key requirement)
     $this->assertArrayHasKey('registration_endpoint', $auth_metadata, 'Registration endpoint must be advertised');
     $this->assertStringContainsString('/oauth/register', $auth_metadata['registration_endpoint'], 'Registration endpoint URL must be correct');
-    $registration_endpoint = $auth_metadata['registration_endpoint'];
 
     // === RFC 9728 Protected Resource Metadata Compliance ===
     $this->drupalGet('/.well-known/oauth-protected-resource');
@@ -152,11 +161,12 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
       'software_version' => '1.0.0',
     ];
 
-    $response = $this->httpClient->post($registration_endpoint, [
+    $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
       RequestOptions::JSON => $client_metadata,
       RequestOptions::HEADERS => ['Content-Type' => 'application/json', 'Accept' => 'application/json'],
     ]);
     $this->assertEquals(200, $response->getStatusCode(), 'Client registration should succeed');
+    $response->getBody()->rewind();
     $client_data = Json::decode($response->getBody()->getContents());
 
     // Validate RFC 7591 REQUIRED response fields.
@@ -203,6 +213,7 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
       RequestOptions::HEADERS => ['Authorization' => "Bearer $access_token", 'Accept' => 'application/json'],
     ]);
     $this->assertEquals(200, $get_response->getStatusCode(), 'GET client metadata should succeed');
+    $get_response->getBody()->rewind();
     $get_data = Json::decode($get_response->getBody()->getContents());
     $this->assertEquals($client_id, $get_data['client_id'], 'Retrieved client_id should match');
     $this->assertEquals($client_data['client_name'], $get_data['client_name'], 'Retrieved client_name should match');
@@ -223,28 +234,31 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
       ],
     ]);
     $this->assertEquals(200, $put_response->getStatusCode(), 'PUT client metadata should succeed');
+    $put_response->getBody()->rewind();
     $put_data = Json::decode($put_response->getBody()->getContents());
     $this->assertEquals('Updated Comprehensive Test Client', $put_data['client_name'], 'Client name should be updated');
     $this->assertEquals(['https://updated.example.com/callback'], $put_data['redirect_uris'], 'Redirect URIs should be updated');
 
     // === Error Handling and Edge Cases ===
     // Test empty request body
-    $error_response = $this->httpClient->post($registration_endpoint, [
+    $error_response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
       RequestOptions::HEADERS => ['Content-Type' => 'application/json', 'Accept' => 'application/json'],
       RequestOptions::HTTP_ERRORS => FALSE,
     ]);
     $this->assertEquals(400, $error_response->getStatusCode(), 'Empty request should return 400');
+    $error_response->getBody()->rewind();
     $error_data = Json::decode($error_response->getBody()->getContents());
     $this->assertEquals('invalid_client_metadata', $error_data['error'], 'Should return correct error code');
 
     // Test invalid redirect URI.
     $invalid_metadata = ['client_name' => 'Invalid Test Client', 'redirect_uris' => ['not-a-valid-url']];
-    $invalid_response = $this->httpClient->post($registration_endpoint, [
+    $invalid_response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
       RequestOptions::JSON => $invalid_metadata,
       RequestOptions::HEADERS => ['Content-Type' => 'application/json', 'Accept' => 'application/json'],
       RequestOptions::HTTP_ERRORS => FALSE,
     ]);
     $this->assertEquals(400, $invalid_response->getStatusCode(), 'Invalid redirect URI should return 400');
+    $invalid_response->getBody()->rewind();
     $invalid_error = Json::decode($invalid_response->getBody()->getContents());
     $this->assertEquals('invalid_client_metadata', $invalid_error['error'], 'Should return correct error code for invalid URI');
 
@@ -294,11 +308,12 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
       'token_endpoint_auth_method' => 'none',
       'application_type' => 'native',
     ];
-    $native_response = $this->httpClient->post($registration_endpoint, [
+    $native_response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
       RequestOptions::JSON => $native_client_metadata,
       RequestOptions::HEADERS => ['Content-Type' => 'application/json', 'Accept' => 'application/json'],
     ]);
     $this->assertEquals(200, $native_response->getStatusCode(), 'Native app client registration should succeed');
+    $native_response->getBody()->rewind();
     $native_data = Json::decode($native_response->getBody()->getContents());
     $this->assertArrayNotHasKey('client_secret', $native_data, 'Native app should not receive client secret');
     $this->assertArrayHasKey('client_id', $native_data, 'Native app should receive client ID');

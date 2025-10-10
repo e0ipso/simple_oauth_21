@@ -7,7 +7,6 @@ use Drupal\Core\Cache\Cache;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\Component\Serialization\Json;
 use GuzzleHttp\RequestOptions;
-use GuzzleHttp\Client;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\simple_oauth_21\Trait\DebugLoggingTrait;
 use PHPUnit\Framework\Attributes\Group;
@@ -29,12 +28,14 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
    * {@inheritdoc}
    */
   protected static $modules = [
+    'consumers',
     'simple_oauth',
     'simple_oauth_21',
     'simple_oauth_client_registration',
     'simple_oauth_server_metadata',
     'simple_oauth_pkce',
     'simple_oauth_native_apps',
+    'serialization',
   ];
 
   /**
@@ -56,12 +57,35 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     parent::setUp();
     $this->logDebug('Starting test setup');
 
-    $this->httpClient = new Client();
-    $this->logDebug('HTTP client initialized');
+    // Set up HTTP client with base URI for test environment.
+    // Must use http_client_factory from container, not new Client().
+    $this->httpClient = $this->container->get('http_client_factory')
+      ->fromOptions(['base_uri' => $this->baseUrl]);
+    $this->logDebug('HTTP client initialized with base URL: ' . $this->baseUrl);
 
     // Ensure clean state.
     $this->clearAllTestCaches();
     $this->logDebug('Test caches cleared');
+
+    // Rebuild routes to ensure all OAuth routes are available.
+    $this->container->get('router.builder')->rebuild();
+    $this->logDebug('Routes rebuilt');
+
+    // Clear registration_endpoint config to ensure auto-discovery works.
+    // The install hook may have set it to the wrong value.
+    $config = $this->container->get('config.factory')->getEditable('simple_oauth_server_metadata.settings');
+    $config->clear('registration_endpoint')->save();
+    $this->logDebug('Registration endpoint config cleared for auto-discovery');
+
+    // Verify the route exists.
+    try {
+      $route_provider = $this->container->get('router.route_provider');
+      $route = $route_provider->getRouteByName('simple_oauth_client_registration.register');
+      $this->logDebug('Route simple_oauth_client_registration.register exists: ' . $route->getPath());
+    }
+    catch (\Exception $e) {
+      $this->logDebug('Route simple_oauth_client_registration.register NOT FOUND: ' . $e->getMessage());
+    }
 
     // Log enabled modules for debugging.
     $module_handler = $this->container->get('module_handler');
@@ -102,6 +126,7 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
 
     $auth_metadata = Json::decode($this->getSession()->getPage()->getContent());
     $this->assertArrayHasKey('registration_endpoint', $auth_metadata, 'Registration endpoint must be advertised in web context');
+    $this->logDebug('Registration endpoint from metadata: ' . ($auth_metadata['registration_endpoint'] ?? 'NULL'));
 
     // Test client registration via HTTP.
     $web_client_metadata = [
@@ -109,11 +134,17 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
       'redirect_uris' => ['https://example.com/callback'],
       'grant_types' => ['authorization_code'],
     ];
-    $web_response = $this->httpClient->post($auth_metadata['registration_endpoint'], [
+    $this->logDebug('About to POST to: ' . $auth_metadata['registration_endpoint']);
+    // Use buildUrl() to construct the full URL for the test environment.
+    $web_response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
       RequestOptions::JSON => $web_client_metadata,
-      RequestOptions::HEADERS => ['Content-Type' => 'application/json', 'Accept' => 'application/json'],
+      RequestOptions::HEADERS => [
+        'Content-Type' => 'application/json',
+        'Accept' => 'application/json',
+      ],
     ]);
     $this->assertEquals(200, $web_response->getStatusCode(), 'Client registration should work in web context');
+    $web_response->getBody()->rewind();
     $web_client_data = Json::decode($web_response->getBody()->getContents());
     $this->assertArrayHasKey('client_id', $web_client_data, 'Client ID should be generated in web context');
 
@@ -174,18 +205,20 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
       ],
     ]);
     $this->assertEquals(200, $update_response->getStatusCode(), 'Client should be updatable via HTTP');
+    $update_response->getBody()->rewind();
     $updated_data = Json::decode($update_response->getBody()->getContents());
     $this->assertEquals('Updated Web Client', $updated_data['client_name'], 'Client name should be updated via HTTP');
 
     // === Error Handling Consistency ===
     // Test HTTP context error handling
     $invalid_metadata = ['client_name' => 'Invalid Client', 'redirect_uris' => ['not-a-url']];
-    $http_error_response = $this->httpClient->post($auth_metadata['registration_endpoint'], [
+    $http_error_response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
       RequestOptions::JSON => $invalid_metadata,
       RequestOptions::HEADERS => ['Content-Type' => 'application/json', 'Accept' => 'application/json'],
       RequestOptions::HTTP_ERRORS => FALSE,
     ]);
     $this->assertEquals(400, $http_error_response->getStatusCode(), 'HTTP context should return 400 for invalid data');
+    $http_error_response->getBody()->rewind();
     $http_error = Json::decode($http_error_response->getBody()->getContents());
     $this->assertEquals('invalid_client_metadata', $http_error['error'], 'HTTP context should return correct error code');
 

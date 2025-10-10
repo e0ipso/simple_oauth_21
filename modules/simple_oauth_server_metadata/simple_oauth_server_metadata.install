@@ -41,17 +41,19 @@ function simple_oauth_server_metadata_install() {
     $config->set('additional_claims_supported', $merged_claims);
   }
 
-  // Set default registration endpoint to absolute URL if not already set.
+  // Set default registration endpoint to RFC 7591 route if available.
+  // If simple_oauth_client_registration module is enabled, use its route.
+  // Otherwise, leave it empty (auto-discovery will handle it).
   if (empty($config->get('registration_endpoint'))) {
     try {
-      $registration_url = Url::fromRoute('entity.consumer.add_form')->setAbsolute()->toString();
+      // Try the RFC 7591 compliant endpoint first.
+      $registration_url = Url::fromRoute('simple_oauth_client_registration.register')->setAbsolute()->toString();
       $config->set('registration_endpoint', $registration_url);
     }
     catch (\Exception $e) {
-      // If route doesn't exist, don't set it.
-      \Drupal::logger('simple_oauth_server_metadata')->warning('Could not set default registration endpoint: @message', [
-        '@message' => $e->getMessage(),
-      ]);
+      // Route doesn't exist, leave empty for auto-discovery.
+      // Do not fall back to entity.consumer.add_form as it's not RFC 7591
+      // compliant.
     }
   }
 
