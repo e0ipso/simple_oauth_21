@@ -29,14 +29,48 @@ class PkceConfigurationFunctionalTest extends BrowserTestBase {
   protected $defaultTheme = 'stark';
 
   /**
-   * Tests PKCE configuration and validation.
+   * Comprehensive PKCE functionality test.
+   *
+   * Tests all PKCE configuration and validation scenarios sequentially,
+   * reusing the Drupal instance for performance optimization.
+   *
+   * This consolidated test includes:
+   * - Module installation and configuration defaults
+   * - Configuration form access and permissions
+   * - Configuration validation and saving
+   * - Configuration schema validation
+   * - Form help text and documentation
+   * - Field validation
    */
-  public function testPkceConfiguration(): void {
-    // Test 1: Module installation and configuration defaults.
+  public function testComprehensivePkceFunctionality(): void {
+    $this->helperConfigurationDefaults();
+    $admin_user = $this->helperConfigurationFormAccess();
+    $this->helperConfigurationSaving($admin_user);
+    $this->helperConfigurationSchemaValidation();
+    $this->helperFormDocumentation();
+    $this->helperFieldValidation();
+  }
+
+  /**
+   * Helper: Tests module installation and configuration defaults.
+   *
+   * Validates that PKCE module configuration is properly initialized.
+   */
+  protected function helperConfigurationDefaults(): void {
     $config = $this->config('simple_oauth_pkce.settings');
     $this->assertNotNull($config);
+  }
 
-    // Test 2: Configuration form access and permissions.
+  /**
+   * Helper: Tests configuration form access and permissions.
+   *
+   * Validates that anonymous users cannot access the configuration form
+   * and that admin users with proper permissions can access it.
+   *
+   * @return \Drupal\user\UserInterface
+   *   The created admin user for use in subsequent helpers.
+   */
+  protected function helperConfigurationFormAccess() {
     $admin_user = $this->drupalCreateUser([
       'administer simple_oauth entities',
     ]);
@@ -49,7 +83,19 @@ class PkceConfigurationFunctionalTest extends BrowserTestBase {
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->pageTextContains('PKCE enforcement');
 
-    // Test 3: Configuration validation and saving.
+    return $admin_user;
+  }
+
+  /**
+   * Helper: Tests configuration validation and saving.
+   *
+   * Validates that PKCE configuration can be saved and that values
+   * are properly persisted.
+   *
+   * @param \Drupal\user\UserInterface $admin_user
+   *   The admin user created in previous helper.
+   */
+  protected function helperConfigurationSaving($admin_user): void {
     $form_data = [
       'enforcement' => 'mandatory',
       's256_enabled' => TRUE,
@@ -64,18 +110,37 @@ class PkceConfigurationFunctionalTest extends BrowserTestBase {
     $this->assertEquals('mandatory', $saved_config->get('enforcement'));
     $this->assertTrue($saved_config->get('s256_enabled'));
     $this->assertFalse($saved_config->get('plain_enabled'));
+  }
 
-    // Test 4: Configuration schema validation.
+  /**
+   * Helper: Tests configuration schema validation.
+   *
+   * Validates that the configuration schema is properly defined.
+   */
+  protected function helperConfigurationSchemaValidation(): void {
     $config_schema = $this->container->get('config.typed')->get('simple_oauth_pkce.settings');
     $this->assertNotNull($config_schema);
+  }
 
-    // Test 5: Form help text and documentation.
+  /**
+   * Helper: Tests form help text and documentation.
+   *
+   * Validates that the configuration form displays proper RFC references
+   * and PKCE documentation.
+   */
+  protected function helperFormDocumentation(): void {
     $this->drupalGet('/admin/config/people/simple_oauth/oauth-21/pkce');
     $this->assertSession()->pageTextContains('RFC 7636');
     $this->assertSession()->pageTextContains('OAuth 2.1');
     $this->assertSession()->pageTextContains('PKCE');
+  }
 
-    // Test 6: Field validation.
+  /**
+   * Helper: Tests field validation.
+   *
+   * Validates that all expected form fields exist.
+   */
+  protected function helperFieldValidation(): void {
     $this->assertSession()->fieldExists('enforcement');
     $this->assertSession()->fieldExists('s256_enabled');
     $this->assertSession()->fieldExists('plain_enabled');

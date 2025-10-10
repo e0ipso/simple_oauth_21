@@ -111,11 +111,49 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Tests device authorization endpoint functionality.
+   * Comprehensive RFC 8628 Device Authorization Grant test.
+   *
+   * Tests the complete device flow including:
+   * - Device authorization endpoint (valid and error cases)
+   * - User verification flow
+   * - Token endpoint with device grant
+   * - Device polling and rate limiting
+   * - Security validations (single-use codes, expiration)
+   * - Scope handling.
+   *
+   * All scenarios execute sequentially using a shared Drupal instance
+   * for optimal performance.
+   */
+  public function testComprehensiveDeviceFlowFunctionality(): void {
+    // Happy path flow.
+    $this->helperDeviceAuthorizationEndpoint();
+    $this->helperDeviceVerificationForm();
+    $this->helperDeviceVerificationFlow();
+    $this->helperTokenEndpointWithDeviceGrant();
+
+    // Error handling.
+    $this->helperDeviceAuthorizationWithInvalidClient();
+    $this->helperDeviceAuthorizationWithMissingClientId();
+    $this->helperDeviceVerificationWithInvalidCode();
+    $this->helperTokenEndpointWithInvalidDeviceCode();
+
+    // Advanced scenarios.
+    $this->helperTokenEndpointWithExpiredDeviceCode();
+    $this->helperDeviceFlowRateLimiting();
+    $this->helperDeviceFlowWithScopes();
+    $this->helperDeviceCodeSingleUse();
+  }
+
+  /**
+   * Helper: Tests device authorization endpoint functionality.
+   *
+   * Validates RFC 8628 device authorization endpoint returns proper
+   * response structure with device_code, user_code, verification_uri,
+   * expires_in, and interval fields.
    *
    * @covers \Drupal\simple_oauth_device_flow\Controller\DeviceAuthorizationController::authorize
    */
-  public function testDeviceAuthorizationEndpoint(): void {
+  protected function helperDeviceAuthorizationEndpoint(): void {
     $data = $this->requestDeviceAuthorization();
 
     // Verify required RFC 8628 response fields.
@@ -171,9 +209,11 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Tests device authorization endpoint with invalid client.
+   * Helper: Tests device authorization endpoint with invalid client.
+   *
+   * Validates that requests with invalid client_id return proper error.
    */
-  public function testDeviceAuthorizationWithInvalidClient(): void {
+  protected function helperDeviceAuthorizationWithInvalidClient(): void {
     $device_auth_url = $this->buildUrl('/oauth/device_authorization');
 
     $response = $this->httpClient->post($device_auth_url, [
@@ -191,9 +231,11 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Tests device authorization endpoint with missing client_id.
+   * Helper: Tests device authorization endpoint with missing client_id.
+   *
+   * Validates that requests without client_id return proper error.
    */
-  public function testDeviceAuthorizationWithMissingClientId(): void {
+  protected function helperDeviceAuthorizationWithMissingClientId(): void {
     $device_auth_url = $this->buildUrl('/oauth/device_authorization');
 
     $response = $this->httpClient->post($device_auth_url, [
@@ -210,11 +252,14 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Tests device verification form display.
+   * Helper: Tests device verification form display.
+   *
+   * Validates that the device verification form is accessible and
+   * displays proper form elements.
    *
    * @covers \Drupal\simple_oauth_device_flow\Controller\DeviceVerificationController::form
    */
-  public function testDeviceVerificationForm(): void {
+  protected function helperDeviceVerificationForm(): void {
     // Device verification requires authentication, so log in first.
     $this->drupalLogin($this->testUser);
 
@@ -230,11 +275,14 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Tests complete device verification flow.
+   * Helper: Tests complete device verification flow.
+   *
+   * Validates that users can successfully authorize a device using
+   * the verification form.
    *
    * @covers \Drupal\simple_oauth_device_flow\Controller\DeviceVerificationController::verify
    */
-  public function testDeviceVerificationFlow(): void {
+  protected function helperDeviceVerificationFlow(): void {
     // First, get device authorization.
     $device_data = $this->requestDeviceAuthorization();
 
@@ -255,9 +303,11 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Tests device verification with invalid user code.
+   * Helper: Tests device verification with invalid user code.
+   *
+   * Validates that invalid user codes are properly rejected.
    */
-  public function testDeviceVerificationWithInvalidCode(): void {
+  protected function helperDeviceVerificationWithInvalidCode(): void {
     $this->drupalLogin($this->testUser);
 
     $verification_url = $this->buildUrl('/oauth/device');
@@ -272,11 +322,12 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Tests token endpoint with device code grant.
+   * Helper: Tests token endpoint with device code grant.
    *
-   * This test covers the polling mechanism that devices use to get tokens.
+   * This test covers the polling mechanism that devices use to get tokens,
+   * including authorization_pending state and successful token retrieval.
    */
-  public function testTokenEndpointWithDeviceGrant(): void {
+  protected function helperTokenEndpointWithDeviceGrant(): void {
     // Get device authorization.
     $device_data = $this->requestDeviceAuthorization();
     $device_code = $device_data['device_code'];
@@ -330,9 +381,11 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Tests token endpoint with invalid device code.
+   * Helper: Tests token endpoint with invalid device code.
+   *
+   * Validates that invalid device codes are properly rejected.
    */
-  public function testTokenEndpointWithInvalidDeviceCode(): void {
+  protected function helperTokenEndpointWithInvalidDeviceCode(): void {
     $token_url = $this->buildUrl('/oauth/token');
 
     $response = $this->httpClient->post($token_url, [
@@ -351,18 +404,22 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Tests token endpoint with expired device code.
+   * Helper: Tests token endpoint with expired device code.
+   *
+   * Placeholder for expired device code testing.
    */
-  public function testTokenEndpointWithExpiredDeviceCode(): void {
+  protected function helperTokenEndpointWithExpiredDeviceCode(): void {
     // This test would require manipulating the device code expiration
     // For now, we'll test the basic structure.
     $this->assertTrue(TRUE, 'Expired device code test placeholder');
   }
 
   /**
-   * Tests device flow rate limiting (slow_down error).
+   * Helper: Tests device flow rate limiting (slow_down error).
+   *
+   * Validates that rapid polling triggers rate limiting responses.
    */
-  public function testDeviceFlowRateLimiting(): void {
+  protected function helperDeviceFlowRateLimiting(): void {
     // Get device authorization.
     $device_data = $this->requestDeviceAuthorization();
     $device_code = $device_data['device_code'];
@@ -390,12 +447,12 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Tests device flow with scopes.
+   * Helper: Tests device flow with scopes.
    *
    * Verifies that scopes are properly stored and persisted through
    * the device authorization flow using the oauth2_scope_reference field.
    */
-  public function testDeviceFlowWithScopes(): void {
+  protected function helperDeviceFlowWithScopes(): void {
     // Create test scopes first.
     $scope_storage = \Drupal::entityTypeManager()->getStorage('oauth2_scope');
     $scope_storage->create([
@@ -459,9 +516,11 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Tests device flow security - device code should be single use.
+   * Helper: Tests device flow security - device code should be single use.
+   *
+   * Validates that device codes can only be used once for security.
    */
-  public function testDeviceCodeSingleUse(): void {
+  protected function helperDeviceCodeSingleUse(): void {
     // Get device authorization and complete the flow.
     $device_data = $this->requestDeviceAuthorization();
     $device_code = $device_data['device_code'];

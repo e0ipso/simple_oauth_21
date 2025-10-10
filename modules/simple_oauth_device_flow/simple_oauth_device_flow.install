@@ -12,8 +12,6 @@ declare(strict_types=1);
  * Install/uninstall functions for Simple OAuth Device Flow module.
  */
 
-use Drupal\Core\Field\FieldStorageDefinitionInterface;
-use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Database\Database;
 
 /**

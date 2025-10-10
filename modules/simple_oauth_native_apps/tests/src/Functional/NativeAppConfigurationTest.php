@@ -28,18 +28,52 @@ class NativeAppConfigurationTest extends TokenBearerFunctionalTestBase {
   ];
 
   /**
-   * Tests native app configuration and services.
+   * Comprehensive native app OAuth functionality test.
+   *
+   * Tests RFC 8252 OAuth 2.0 for Native Apps implementation including:
+   * - Module installation and configuration defaults
+   * - Configuration form access and permissions
+   * - Service validation and dependency injection
+   * - Configuration schema validation
+   * - Form help text and documentation
+   * - Module dependencies verification.
+   *
+   * All scenarios execute sequentially using a shared Drupal instance
+   * for optimal performance.
    */
-  public function testNativeAppConfiguration(): void {
-    $this->logDebug('Starting native app configuration test');
+  public function testComprehensiveNativeAppFunctionality(): void {
+    $this->logDebug('Starting comprehensive native app configuration test');
 
-    // Test 1: Module installation and configuration defaults.
+    $this->helperConfigurationDefaults();
+    $this->helperConfigurationFormAccess();
+    $this->helperServiceValidation();
+    $this->helperConfigurationSchemaValidation();
+    $this->helperFormDocumentation();
+    $this->helperModuleDependencies();
+  }
+
+  /**
+   * Helper: Tests module installation and configuration defaults.
+   *
+   * Validates that native apps module configuration is properly initialized.
+   */
+  protected function helperConfigurationDefaults(): void {
     $this->logDebug('Testing module installation and configuration defaults');
     $config = $this->config('simple_oauth_native_apps.settings');
     $this->logDebug('Got native apps config');
     $this->assertNotNull($config);
+  }
 
-    // Test 2: Configuration form access and permissions.
+  /**
+   * Helper: Tests configuration form access and permissions.
+   *
+   * Validates that anonymous users cannot access the configuration form
+   * and that admin users with proper permissions can access it.
+   *
+   * @return \Drupal\user\UserInterface
+   *   The created admin user for use in subsequent helpers.
+   */
+  protected function helperConfigurationFormAccess() {
     $admin_user = $this->drupalCreateUser([
       'administer simple_oauth entities',
     ]);
@@ -52,7 +86,16 @@ class NativeAppConfigurationTest extends TokenBearerFunctionalTestBase {
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->pageTextContains('Enforce native app security');
 
-    // Test 3: Service validation and dependency injection.
+    return $admin_user;
+  }
+
+  /**
+   * Helper: Tests service validation and dependency injection.
+   *
+   * Validates that all RFC 8252 native app services are properly registered
+   * and can be instantiated from the container.
+   */
+  protected function helperServiceValidation(): void {
     $redirect_validator = $this->container->get('simple_oauth_native_apps.redirect_uri_validator');
     $this->assertNotNull($redirect_validator);
 
@@ -64,18 +107,38 @@ class NativeAppConfigurationTest extends TokenBearerFunctionalTestBase {
 
     $pkce_enhancement = $this->container->get('simple_oauth_native_apps.pkce_enhancement');
     $this->assertNotNull($pkce_enhancement);
+  }
 
-    // Test 4: Configuration schema validation.
+  /**
+   * Helper: Tests configuration schema validation.
+   *
+   * Validates that the configuration schema is properly defined.
+   */
+  protected function helperConfigurationSchemaValidation(): void {
     $config_schema = $this->container->get('config.typed')->get('simple_oauth_native_apps.settings');
     $this->assertNotNull($config_schema);
+  }
 
-    // Test 5: Form help text and documentation.
+  /**
+   * Helper: Tests form help text and documentation.
+   *
+   * Validates that the configuration form displays proper RFC 8252 references
+   * and OAuth 2.1/PKCE documentation for native apps.
+   */
+  protected function helperFormDocumentation(): void {
     $this->drupalGet('/admin/config/people/simple_oauth/oauth-21/native-apps');
     $this->assertSession()->pageTextContains('RFC 8252');
     $this->assertSession()->pageTextContains('OAuth 2.1');
     $this->assertSession()->pageTextContains('PKCE');
+  }
 
-    // Test 6: Verify module info and dependencies.
+  /**
+   * Helper: Tests module dependencies verification.
+   *
+   * Validates that the native apps module is properly installed
+   * and dependencies are met.
+   */
+  protected function helperModuleDependencies(): void {
     $module_handler = $this->container->get('module_handler');
     $this->assertTrue($module_handler->moduleExists('simple_oauth_native_apps'));
   }

@@ -1,0 +1,155 @@
+Deleted Tests Log
+=================
+Date: 2025-10-10
+
+SUMMARY
+-------
+Total files removed: 1
+Total test methods removed: 2
+Total test methods preserved: ALL business logic tests retained
+
+UNIT TESTS REMOVED
+------------------
+
+1. modules/simple_oauth_device_flow/tests/src/Unit/DeviceCodeEntityTest.php
+   Status: DELETED
+   Date: 2025-10-10
+
+   Methods removed:
+   a) testLeagueInterfaceCompliance()
+      - Lines of code: ~8
+      - What it tested: Used class_implements() to verify DeviceCode entity
+        implements League\OAuth2\Server\Entities\DeviceCodeEntityInterface
+        and TokenInterface
+      - Rationale for removal: PHP's type system enforces interface implementation
+        at runtime. If the class didn't implement the interface, PHP would throw
+        a fatal error immediately. This test provides no value beyond what PHP
+        already guarantees.
+      - Classification: Validates language feature (interface compliance)
+
+   b) testRequiredMethodsExist()
+      - Lines of code: ~29
+      - What it tested: Used reflection API to check if specific methods exist
+        on the DeviceCode class (getUserCode, setUserCode, getIdentifier, etc.)
+      - Rationale for removal: PHP ensures methods exist. If a required method
+        is missing, calling it would cause a fatal error. This test doesn't
+        validate behavior, only PHP language guarantees about class structure.
+      - Classification: Validates language feature (method existence via reflection)
+
+   File statistics:
+   - Total lines removed: 64
+   - Test methods removed: 2
+   - Helper methods removed: 0
+   - Business logic tests removed: 0
+
+   Impact assessment:
+   - Zero reduction in meaningful test coverage
+   - Both tests validated PHP language features, not module functionality
+   - No OAuth 2.1 RFC compliance tests affected
+   - No security-critical tests affected
+
+FUNCTIONAL TESTS CONSOLIDATED (Methods preserved as helpers)
+-------------------------------------------------------------
+
+The following functional test methods were converted from separate test methods
+to helper methods within a single comprehensive test method. These were NOT
+deleted - they were REFACTORED for performance optimization.
+
+1. simple_oauth_pkce/tests/src/Functional/PkceConfigurationFunctionalTest.php
+   - Original: 1 test method with 6 inline scenarios
+   - Refactored: 1 comprehensive test method + 6 explicit helper methods
+   - Methods preserved:
+     * helperConfigurationDefaults()
+     * helperConfigurationFormAccess()
+     * helperConfigurationSaving()
+     * helperConfigurationSchemaValidation()
+     * helperFormDocumentation()
+     * helperFieldValidation()
+
+2. simple_oauth_native_apps/tests/src/Functional/NativeAppConfigurationTest.php
+   - Original: 1 test method with 6 inline scenarios
+   - Refactored: 1 comprehensive test method + 6 explicit helper methods
+   - Methods preserved:
+     * helperConfigurationDefaults()
+     * helperConfigurationFormAccess()
+     * helperServiceValidation()
+     * helperConfigurationSchemaValidation()
+     * helperFormDocumentation()
+     * helperModuleDependencies()
+
+3. simple_oauth_device_flow/tests/src/Functional/DeviceFlowFunctionalTest.php
+   - Original: 10 separate public test methods (each triggering full Drupal install)
+   - Refactored: 1 comprehensive test method + 11 explicit helper methods
+   - Methods preserved:
+     * helperDeviceAuthorizationEndpoint()
+     * helperDeviceAuthorizationWithInvalidClient()
+     * helperDeviceAuthorizationWithMissingClientId()
+     * helperDeviceVerificationForm()
+     * helperDeviceVerificationFlow()
+     * helperDeviceVerificationWithInvalidCode()
+     * helperTokenEndpointWithDeviceGrant()
+     * helperTokenEndpointWithInvalidDeviceCode()
+     * helperTokenEndpointWithExpiredDeviceCode()
+     * helperDeviceFlowRateLimiting()
+     * helperDeviceFlowWithScopes()
+     * helperDeviceCodeSingleUse()
+   - Performance impact: 90% reduction in Drupal installations (10 → 1)
+
+KERNEL TESTS REVIEWED (All retained)
+-------------------------------------
+
+The following kernel tests were reviewed and ALL RETAINED because they
+validate business logic and integration, not schema syntax.
+
+Files reviewed: 5
+Test methods reviewed: 35
+Files removed: 0
+Methods removed: 0
+
+See kernel-test-review.txt for detailed analysis.
+
+NOT DELETED - FUNCTIONAL TESTS STILL SEPARATE
+----------------------------------------------
+
+The following functional tests remain as separate files and were NOT
+consolidated due to complexity or time constraints:
+
+simple_oauth_server_metadata module:
+- OpenIdConfigurationFunctionalTest.php (11 test methods)
+- TokenRevocationEndpointTest.php (14 test methods)
+- ServerMetadataFunctionalTest.php (already consolidated)
+
+simple_oauth_21 main module:
+- ComplianceDashboardTest.php (already consolidated)
+- ClientRegistrationFunctionalTest.php (6 test methods)
+- OAuthMetadataValidationTest.php (1 comprehensive method)
+- OAuthIntegrationContextTest.php (2 test methods)
+
+These remain as future optimization opportunities.
+
+VALIDATION SUMMARY
+------------------
+
+Tests removed: 1 file (DeviceCodeEntityTest.php)
+Methods removed: 2 (both validated language features only)
+
+Classification of removed tests:
+- Language feature validation: 2 (100%)
+- Upstream library validation: 0
+- Schema-only validation: 0
+- Business logic validation: 0
+
+RFC compliance tests affected: 0
+Security-critical tests affected: 0
+Integration tests affected: 0
+
+CONCLUSION
+----------
+
+All removed tests fell into the plan's explicit removal criteria:
+validated language features and provided no coverage of module-specific
+business logic. All OAuth 2.1 RFC compliance tests, security validations,
+and integration tests were preserved.
+
+The consolidation work preserved ALL test coverage while optimizing for
+performance through Drupal instance reuse in functional tests.

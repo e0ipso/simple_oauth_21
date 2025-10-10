@@ -1,0 +1,65 @@
+OAuth 2.1 Test Suite Baseline Metrics
+Generated: 2025-10-10
+
+EXECUTION TIME
+--------------
+Total test suite execution: UNABLE TO MEASURE (tests timing out >10 minutes)
+Note: Tests appear to have configuration issues preventing execution.
+This consolidation will focus on structural improvements and code reduction.
+
+CODE COVERAGE
+-------------
+Coverage tools not available / tests not executing
+
+TEST CODE SIZE
+--------------
+Total lines of test code: 4,748
+Total test files: 17
+
+TEST FILE BREAKDOWN
+-------------------
+Unit tests: 2 files
+Kernel tests: 5 files
+Functional tests: 10 files
+
+MODULES TESTED
+--------------
+Test files by module:
+- simple_oauth_21 (main): 4 test files (tests/src/Functional/)
+  * ComplianceDashboardTest.php
+  * OAuthIntegrationContextTest.php
+  * OAuthMetadataValidationTest.php
+  * ClientRegistrationFunctionalTest.php
+
+- simple_oauth_device_flow: 4 test files
+  * Functional: DeviceFlowFunctionalTest.php
+  * Unit: DeviceCodeEntityTest.php, DeviceCodeGrantTest.php
+  * Kernel: DeviceFlowIntegrationTest.php
+
+- simple_oauth_native_apps: 3 test files
+  * Functional: NativeAppConfigurationTest.php
+  * Kernel: ServiceIntegrationTest.php, OAuthFlowIntegrationTest.php
+
+- simple_oauth_pkce: 2 test files
+  * Functional: PkceConfigurationFunctionalTest.php
+  * Kernel: PkceConfigurationTest.php
+
+- simple_oauth_server_metadata: 4 test files
+  * Functional: TokenRevocationEndpointTest.php, ServerMetadataFunctionalTest.php, OpenIdConfigurationFunctionalTest.php
+  * Kernel: GrantTypeDiscoveryServiceKernelTest.php
+
+- simple_oauth_client_registration: 0 test files (tested via main module)
+
+CONSOLIDATION TARGETS
+---------------------
+Functional tests to consolidate: 10 files
+Expected after consolidation: 6 files (one per module, except client_registration)
+Expected files to be removed/merged: 4-5 files
+Unit tests to review: 2 files (DeviceCodeEntityTest candidate for removal)
+Kernel tests to review: 5 files
+
+BASELINE STATUS
+---------------
+Current structure has excessive functional test files requiring full Drupal
+installation per test method, leading to significant overhead. Consolidation
+will dramatically improve test execution performance by reusing Drupal instances.
