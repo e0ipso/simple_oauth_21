@@ -26,6 +26,7 @@ use League\OAuth2\Server\Entities\ScopeEntityInterface;
  *   id = "oauth2_device_code",
  *   label = @Translation("OAuth2 Device Code"),
  *   handlers = {
+ *     "storage" = "Drupal\Core\Entity\Sql\SqlContentEntityStorage",
  *     "views_data" = "Drupal\views\EntityViewsData",
  *   },
  *   base_table = "oauth2_device_code",
@@ -41,6 +42,7 @@ use League\OAuth2\Server\Entities\ScopeEntityInterface;
   id: 'oauth2_device_code',
   label: new TranslatableMarkup('OAuth2 Device Code'),
   handlers: [
+    'storage' => 'Drupal\Core\Entity\Sql\SqlContentEntityStorage',
     'views_data' => 'Drupal\views\EntityViewsData',
   ],
   base_table: 'oauth2_device_code',
@@ -155,7 +157,6 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
     $fields['authorized_at'] = BaseFieldDefinition::create('timestamp')
       ->setLabel(t('Authorized at'))
       ->setDescription(t('Authorization timestamp.'))
-      ->setRequired(TRUE)
       ->setTranslatable(FALSE)
       ->setDisplayOptions('view', [
         'label' => 'inline',
@@ -278,7 +279,10 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
   public function getScopes(): array {
     $oauth2scopes = [];
     foreach ($this->get('scopes') as $scope) {
-      $oauth2scopes[] = new ScopeEntity($scope->getScope());
+      $scope_entity = $scope->getScope();
+      if ($scope_entity !== NULL) {
+        $oauth2scopes[] = new ScopeEntity($scope_entity);
+      }
     }
     return $oauth2scopes;
   }

@@ -32,6 +32,9 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     'consumers',
     'simple_oauth_21',
     'simple_oauth_device_flow',
+    'options',
+    'field',
+    'text',
   ];
 
   /**
@@ -89,7 +92,6 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     $this->consumer = Consumer::create([
       'label' => 'Test Device Client',
       'client_id' => 'test_device_client',
-      'grant_types' => ['device_code', 'refresh_token'],
       'scopes' => [],
     // Device flow typically uses public clients.
       'confidential' => FALSE,
@@ -100,6 +102,11 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
       'refresh_token_expiration' => 1209600,
       'user_id' => $this->testUser->id(),
     ]);
+
+    // Add grant types using appendItem with explicit value structure.
+    // Use full URN format per RFC 8628.
+    $this->consumer->get('grant_types')->appendItem(['value' => 'urn:ietf:params:oauth:grant-type:device_code']);
+    $this->consumer->get('grant_types')->appendItem(['value' => 'refresh_token']);
     $this->consumer->save();
   }
 

@@ -548,7 +548,6 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
   private function postRevocationRequest(array $formData = [], array $headers = []): object {
     $url = $this->getAbsoluteUrl('/oauth/revoke');
     $session = $this->getSession();
-    $session->setCookie('SIMPLETEST_USER_AGENT', drupal_generate_test_ua($this->databasePrefix));
 
     $httpClient = $this->container->get('http_client');
 
@@ -559,6 +558,18 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
 
     if (!empty($headers)) {
       $options['headers'] = $headers;
+    }
+
+    // Include session cookies to maintain user authentication state.
+    $cookies = [];
+    foreach ($session->getDriver()->getCookies() as $name => $value) {
+      $cookies[] = "$name=$value";
+    }
+    if (!empty($cookies)) {
+      if (!isset($options['headers'])) {
+        $options['headers'] = [];
+      }
+      $options['headers']['Cookie'] = implode('; ', $cookies);
     }
 
     return $httpClient->request('POST', $url, $options);

@@ -28,6 +28,9 @@ class DeviceFlowIntegrationTest extends KernelTestBase {
     'serialization',
     'system',
     'user',
+    'image',
+    'file',
+    'options',
   ];
 
   /**

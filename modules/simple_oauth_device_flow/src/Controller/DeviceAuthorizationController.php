@@ -127,6 +127,7 @@ final class DeviceAuthorizationController extends ControllerBase {
       $client_drupal_entity = $client_entity->getDrupalEntity();
 
       // Verify client is configured for device code grant.
+      // RFC 8628 requires the full URN for the grant type identifier.
       $grant_types = array_column($client_drupal_entity->get('grant_types')->getValue(), 'value');
       if (!in_array('urn:ietf:params:oauth:grant-type:device_code', $grant_types, TRUE)) {
         $this->logger->notice('Client @client_id not configured for device_code grant', [

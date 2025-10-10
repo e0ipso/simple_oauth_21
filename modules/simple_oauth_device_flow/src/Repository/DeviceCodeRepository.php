@@ -281,6 +281,7 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
       // Check if explicitly revoked (authorized = FALSE and no user_id).
       $authorized = $entity->get('authorized')->value;
       $user_id = $entity->get('user_id')->target_id;
+      $authorized_at = $entity->get('authorized_at')->value;
 
       // Device code is revoked if not authorized and has no user.
       // Note: authorized can be FALSE during pending authorization, but a
