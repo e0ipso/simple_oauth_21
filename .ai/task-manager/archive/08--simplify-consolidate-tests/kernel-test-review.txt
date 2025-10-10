@@ -1,0 +1,113 @@
+Kernel Test Review Results
+==========================
+Date: 2025-10-10
+
+REVIEW SUMMARY
+--------------
+All 5 kernel test files reviewed. ALL TESTS RETAINED - no schema-only tests found.
+All kernel tests validate business logic, service integration, or functional behavior.
+
+KEPT TESTS (5 files, 35 test methods total)
+--------------------------------------------
+
+1. DeviceFlowIntegrationTest (modules/simple_oauth_device_flow/)
+   Status: KEEP
+   Test methods: 8
+   Rationale: Tests device code service instantiation, user code generation,
+              device flow settings, routing, services, configuration, and
+              scope field integration. All validate OAuth device flow business logic.
+   Methods:
+   - testDeviceCodeServiceInstantiation
+   - testUserCodeGenerator
+   - testDeviceFlowSettingsService
+   - testDeviceFlowRouting
+   - testDeviceFlowServices
+   - testDeviceFlowConfiguration
+   - testDeviceFlowConfigurationRoute
+   - testDeviceCodeScopeFieldIntegration
+
+2. PkceConfigurationTest (modules/simple_oauth_pkce/)
+   Status: KEEP
+   Test methods: 3
+   Rationale: Tests PKCE settings service and configuration changes with
+              functional impact, not just schema validation.
+   Methods:
+   - testDefaultConfiguration
+   - testPkceSettingsService
+   - testConfigurationChanges
+
+3. ServiceIntegrationTest (modules/simple_oauth_native_apps/)
+   Status: KEEP
+   Test methods: 10
+   Rationale: Comprehensive service integration testing for RFC 8252 native
+              apps including service registration, dependency injection,
+              configuration integration, and complete service chain validation.
+   Methods:
+   - testServiceRegistration
+   - testServiceConfigurationIntegration
+   - testNativeDetectorPkceIntegration
+   - testUserAgentAnalyzerIntegration
+   - testRedirectUriValidatorConfigIntegration
+   - testConfigurationValidatorIntegration
+   - testMetadataProviderIntegration
+   - testServiceDependencyInjection
+   - testServiceLoggingIntegration
+   - testCompleteServiceChainIntegration
+
+4. OAuthFlowIntegrationTest (modules/simple_oauth_native_apps/)
+   Status: KEEP
+   Test methods: 8
+   Rationale: Tests OAuth authorization flow integration, event subscribers,
+              PKCE validation, redirect URI validation, native client detection,
+              and webview detection - all critical OAuth flow mechanics.
+   Methods:
+   - testAuthorizationRequestSubscriberIntegration
+   - testPkceValidationSubscriberIntegration
+   - testOauthAuthorizationRequestDetection
+   - testNativeClientDetectionInOauthFlow
+   - testPkceValidationInAuthorizationFlow
+   - testRedirectUriValidationInOauthFlow
+   - testWebviewDetectionInOauthFlow
+   - testCompleteOauthFlowIntegration
+
+5. GrantTypeDiscoveryServiceKernelTest (modules/simple_oauth_server_metadata/)
+   Status: KEEP
+   Test methods: 5
+   Rationale: Tests grant type discovery service functionality, response type
+              discovery, and integration with OpenID Connect and different
+              grant configurations - business logic, not schema.
+   Methods:
+   - testServiceInstantiation
+   - testGetGrantTypesSupportedDefault
+   - testGetResponseTypesSupportedDefault
+   - testWithImplicitGrantEnabled
+   - testWithOpenIdConnectDisabled
+
+REMOVED TESTS
+-------------
+None. No kernel tests were found to be schema-only validation tests.
+
+SUMMARY
+-------
+Total kernel test files: 5
+Total test methods reviewed: 35
+Files removed: 0
+Methods removed: 0
+Files kept: 5
+Methods kept: 35
+
+CONCLUSION
+----------
+All kernel tests in the OAuth 2.1 module ecosystem validate meaningful
+business logic and integration scenarios. No schema-only tests were found.
+Kernel tests provide valuable lightweight integration testing and should
+all be retained.
+
+The distinction between these kernel tests and removable schema-only tests:
+- These tests verify SERVICE BEHAVIOR and INTEGRATION, not just config syntax
+- They test how configuration AFFECTS functionality, not just that it parses
+- They validate OAuth flow mechanics, not just that fields exist
+- They test dependency injection and service wiring, not just class structure
+
+All kernel tests align with the plan's goal: testing module-specific business
+logic and integration, not upstream dependencies or language features.
