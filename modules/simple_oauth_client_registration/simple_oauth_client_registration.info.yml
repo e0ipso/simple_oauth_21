@@ -5,6 +5,7 @@ core_version_requirement: ^10 || ^11
 package: Authentication
 dependencies:
   - simple_oauth_21:simple_oauth_21
+  - simple_oauth_21:simple_oauth_server_metadata
   - simple_oauth:simple_oauth
   - consumers:consumers
   - serialization:serialization

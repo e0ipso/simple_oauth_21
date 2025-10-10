@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Drupal\simple_oauth_device_flow\Repository;
@@ -54,12 +55,14 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
    *   The device flow settings service.
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $loggerFactory
    *   The logger channel factory.
+   * @param \League\OAuth2\Server\Repositories\ClientRepositoryInterface $clientRepository
+   *   The client repository.
    */
   public function __construct(
     EntityTypeManagerInterface $entityTypeManager,
     protected DeviceFlowSettingsService $settings,
     LoggerChannelFactoryInterface $loggerFactory,
-    ?ClientRepositoryInterface $clientRepository = NULL,
+    ClientRepositoryInterface $clientRepository,
   ) {
     try {
       $this->deviceCodeStorage = $entityTypeManager->getStorage('oauth2_device_code');
@@ -68,7 +71,7 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
       throw new \RuntimeException('Failed to initialize device code storage: ' . $e->getMessage(), 0, $e);
     }
     $this->logger = $loggerFactory->get('simple_oauth_device_flow');
-    $this->clientRepository = $this->resolveClientRepository($clientRepository);
+    $this->clientRepository = $clientRepository;
   }
 
   /**
@@ -389,26 +392,6 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
     if ($client instanceof ClientEntityInterface) {
       $deviceCode->setClient($client);
     }
-  }
-
-  /**
-   * Determines the repository instance used to resolve clients.
-   */
-  private function resolveClientRepository(?ClientRepositoryInterface $clientRepository): ClientRepositoryInterface {
-    if ($clientRepository instanceof ClientRepositoryInterface) {
-      return $clientRepository;
-    }
-
-    if (!\Drupal::hasService('simple_oauth.repositories.client')) {
-      throw new \RuntimeException('OAuth client repository service is unavailable.');
-    }
-
-    $resolved = \Drupal::service('simple_oauth.repositories.client');
-    if (!$resolved instanceof ClientRepositoryInterface) {
-      throw new \RuntimeException('Resolved OAuth client repository does not implement the expected interface.');
-    }
-
-    return $resolved;
   }
 
 }

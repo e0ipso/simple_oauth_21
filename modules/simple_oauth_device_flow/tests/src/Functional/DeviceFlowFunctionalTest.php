@@ -143,7 +143,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
    *   The device authorization response data.
    */
   protected function requestDeviceAuthorization(): array {
-    $device_auth_url = $this->getAbsoluteUrl('/oauth/device_authorization');
+    $device_auth_url = $this->buildUrl('/oauth/device_authorization');
 
     // Test valid device authorization request.
     $response = $this->httpClient->post($device_auth_url, [
@@ -167,7 +167,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
    * Tests device authorization endpoint with invalid client.
    */
   public function testDeviceAuthorizationWithInvalidClient(): void {
-    $device_auth_url = $this->getAbsoluteUrl('/oauth/device_authorization');
+    $device_auth_url = $this->buildUrl('/oauth/device_authorization');
 
     $response = $this->httpClient->post($device_auth_url, [
       RequestOptions::FORM_PARAMS => [
@@ -187,7 +187,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
    * Tests device authorization endpoint with missing client_id.
    */
   public function testDeviceAuthorizationWithMissingClientId(): void {
-    $device_auth_url = $this->getAbsoluteUrl('/oauth/device_authorization');
+    $device_auth_url = $this->buildUrl('/oauth/device_authorization');
 
     $response = $this->httpClient->post($device_auth_url, [
       RequestOptions::FORM_PARAMS => [
@@ -235,7 +235,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     $this->drupalLogin($this->testUser);
 
     // Access verification form with user code.
-    $verification_url = $this->getAbsoluteUrl('/oauth/device');
+    $verification_url = $this->buildUrl('/oauth/device');
     $this->drupalGet($verification_url);
 
     // Submit the verification form with the user code.
@@ -253,7 +253,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
   public function testDeviceVerificationWithInvalidCode(): void {
     $this->drupalLogin($this->testUser);
 
-    $verification_url = $this->getAbsoluteUrl('/oauth/device');
+    $verification_url = $this->buildUrl('/oauth/device');
     $this->drupalGet($verification_url);
 
     $this->submitForm([
@@ -274,7 +274,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     $device_data = $this->requestDeviceAuthorization();
     $device_code = $device_data['device_code'];
 
-    $token_url = $this->getAbsoluteUrl('/oauth/token');
+    $token_url = $this->buildUrl('/oauth/token');
 
     // Test polling before user authorization (returns authorization_pending).
     $response = $this->httpClient->post($token_url, [
@@ -293,7 +293,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
 
     // Now authorize the device.
     $this->drupalLogin($this->testUser);
-    $verification_url = $this->getAbsoluteUrl('/oauth/device');
+    $verification_url = $this->buildUrl('/oauth/device');
     $this->drupalGet($verification_url);
     $this->submitForm([
       'user_code' => $device_data['user_code'],
@@ -326,7 +326,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
    * Tests token endpoint with invalid device code.
    */
   public function testTokenEndpointWithInvalidDeviceCode(): void {
-    $token_url = $this->getAbsoluteUrl('/oauth/token');
+    $token_url = $this->buildUrl('/oauth/token');
 
     $response = $this->httpClient->post($token_url, [
       RequestOptions::FORM_PARAMS => [
@@ -360,7 +360,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     $device_data = $this->requestDeviceAuthorization();
     $device_code = $device_data['device_code'];
 
-    $token_url = $this->getAbsoluteUrl('/oauth/token');
+    $token_url = $this->buildUrl('/oauth/token');
 
     // Make rapid requests to trigger rate limiting.
     for ($i = 0; $i < 3; $i++) {
@@ -415,7 +415,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     ]);
     $scoped_consumer->save();
 
-    $device_auth_url = $this->getAbsoluteUrl('/oauth/device_authorization');
+    $device_auth_url = $this->buildUrl('/oauth/device_authorization');
 
     $response = $this->httpClient->post($device_auth_url, [
       RequestOptions::FORM_PARAMS => [
@@ -461,13 +461,13 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
 
     // Authorize the device.
     $this->drupalLogin($this->testUser);
-    $verification_url = $this->getAbsoluteUrl('/oauth/device');
+    $verification_url = $this->buildUrl('/oauth/device');
     $this->drupalGet($verification_url);
     $this->submitForm([
       'user_code' => $device_data['user_code'],
     ], 'Authorize');
 
-    $token_url = $this->getAbsoluteUrl('/oauth/token');
+    $token_url = $this->buildUrl('/oauth/token');
 
     // First token request should succeed.
     $response = $this->httpClient->post($token_url, [

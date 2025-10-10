@@ -149,7 +149,8 @@ class EndpointDiscoveryService {
         $url = Url::fromRoute('simple_oauth_device_flow.device_authorization');
         $endpoints['device_authorization_endpoint'] = $url->setAbsolute()
           ->toString();
-      } catch (\Exception $e) {
+      }
+      catch (\Exception $e) {
         // Route doesn't exist or error generating URL.
       }
     }

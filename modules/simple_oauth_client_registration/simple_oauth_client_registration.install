@@ -63,19 +63,16 @@ function simple_oauth_client_registration_install($is_syncing): void {
   if ($is_syncing) {
     return;
   }
-  // Configure the registration endpoint in server metadata if server metadata
-  // module is enabled.
-  if (\Drupal::moduleHandler()->moduleExists('simple_oauth_server_metadata')) {
-    $config = \Drupal::configFactory()->getEditable('simple_oauth_server_metadata.settings');
-    if (empty($config->get('registration_endpoint'))) {
-      try {
-        $registration_url = Url::fromRoute('simple_oauth_client_registration.register')->setAbsolute()->toString();
-        $config->set('registration_endpoint', $registration_url);
-        $config->save();
-      }
-      catch (\Exception $e) {
-        // If route doesn't exist, don't set it.
-      }
+  // Configure the registration endpoint in server metadata.
+  $config = \Drupal::configFactory()->getEditable('simple_oauth_server_metadata.settings');
+  if (empty($config->get('registration_endpoint'))) {
+    try {
+      $registration_url = Url::fromRoute('simple_oauth_client_registration.register')->setAbsolute()->toString();
+      $config->set('registration_endpoint', $registration_url);
+      $config->save();
+    }
+    catch (\Exception $e) {
+      // If route doesn't exist, don't set it.
     }
   }
 
@@ -106,16 +103,15 @@ function simple_oauth_client_registration_install($is_syncing): void {
  * Implements hook_uninstall().
  */
 function simple_oauth_client_registration_uninstall($is_syncing): void {
-  if (!$is_syncing) {
-    // Clear the registration endpoint from server metadata if it points to
-    // our endpoint.
-    if (\Drupal::moduleHandler()->moduleExists('simple_oauth_server_metadata')) {
-      $config = \Drupal::configFactory()->getEditable('simple_oauth_server_metadata.settings');
-      $registration_endpoint = $config->get('registration_endpoint');
-      if (!empty($registration_endpoint) && strpos($registration_endpoint, '/oauth/register') !== FALSE) {
-        $config->set('registration_endpoint', '');
-        $config->save();
-      }
-    }
+  if ($is_syncing) {
+    return;
+  }
+  // Clear the registration endpoint from server metadata if it points to
+  // our endpoint.
+  $config = \Drupal::configFactory()->getEditable('simple_oauth_server_metadata.settings');
+  $registration_endpoint = $config->get('registration_endpoint');
+  if (!empty($registration_endpoint) && strpos($registration_endpoint, '/oauth/register') !== FALSE) {
+    $config->set('registration_endpoint', '');
+    $config->save();
   }
 }
