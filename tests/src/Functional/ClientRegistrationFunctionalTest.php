@@ -43,10 +43,6 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   protected function setUp(): void {
     parent::setUp();
 
-    // Ensure router is rebuilt after module installation.
-    // This is critical for CI environments where timing may differ.
-    \Drupal::service('router.builder')->rebuild();
-
     // Set up HTTP client with base URI for test environment.
     // Must use http_client_factory from container, not new Client().
     $this->httpClient = $this->container->get('http_client_factory')
@@ -73,10 +69,6 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
 
     // Perform comprehensive cache clearing for test isolation.
     $this->clearAllTestCaches();
-
-    // Rebuild router to ensure simple_oauth routes are available.
-    // This must be done after cache clearing to pick up routes properly.
-    $this->container->get('router.builder')->rebuild();
 
     // Ensure the container is rebuilt to pick up route changes.
     $this->rebuildContainer();
@@ -110,10 +102,6 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
 
     // Rebuild container to ensure service definitions are fresh.
     $this->rebuildContainer();
-
-    // Rebuild router after container rebuild to ensure routes are available.
-    // Must use \Drupal to get fresh container after rebuildContainer().
-    \Drupal::service('router.builder')->rebuild();
   }
 
   /**
@@ -346,10 +334,6 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   public function testMetadataEndpoints(): void {
     // Ensure cache isolation for HTTP-based metadata endpoint testing.
     $this->ensureCacheIsolation();
-
-    // Rebuild router to ensure routes are available after cache clearing.
-    // This is critical for CI environments.
-    \Drupal::service('router.builder')->rebuild();
 
     // Test authorization server metadata (RFC 8414)
     $this->drupalGet('/.well-known/oauth-authorization-server');
