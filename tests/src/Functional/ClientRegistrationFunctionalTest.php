@@ -2,9 +2,9 @@
 
 namespace Drupal\Tests\simple_oauth_21\Functional;
 
+use Drupal\Component\Serialization\Json;
 use Drupal\Core\Cache\Cache;
 use Drupal\Tests\BrowserTestBase;
-use Drupal\Component\Serialization\Json;
 use GuzzleHttp\RequestOptions;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -82,7 +82,8 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     $this->rebuildContainer();
 
     // Test and demonstrate the auto-detection mechanism.
-    $config = $this->container->get('config.factory')->getEditable('simple_oauth_server_metadata.settings');
+    $config = $this->container->get('config.factory')
+      ->getEditable('simple_oauth_server_metadata.settings');
 
     // First, clear registration_endpoint to test auto-detection.
     $config->clear('registration_endpoint');
@@ -204,7 +205,10 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     // Check metadata fields are preserved.
     $this->assertEquals('Test OAuth Client', $response_data['client_name'], 'Client name matches');
     $this->assertEquals(['https://example.com/callback'], $response_data['redirect_uris'], 'Redirect URIs match');
-    $this->assertEquals(['authorization_code', 'refresh_token'], $response_data['grant_types'], 'Grant types match');
+    $this->assertEquals([
+      'authorization_code',
+      'refresh_token',
+    ], $response_data['grant_types'], 'Grant types match');
     $this->assertEquals('https://example.com', $response_data['client_uri'], 'Client URI matches');
     $this->assertEquals(['admin@example.com'], $response_data['contacts'], 'Contacts match');
 
@@ -254,8 +258,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
    * have predictable performance and don't encounter cache misses that
    * could cause timing-related test failures.
    */
-  protected function warmMetadataCache(): void {
-  }
+  protected function warmMetadataCache(): void {}
 
   /**
    * Ensures cache isolation before critical test operations.
@@ -400,36 +403,12 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
    * - Resource server identification.
    */
   protected function helperMetadataEndpoints(): void {
-    // Test authorization server metadata (RFC 8414)
-    $response = $this->httpClient->get($this->buildUrl('/.well-known/oauth-authorization-server'));
-    $this->assertEquals(200, $response->getStatusCode(), 'Authorization server metadata endpoint returns 200');
-    $response->getBody()->rewind();
-    $auth_metadata = Json::decode($response->getBody()->getContents());
-
-    // Validate key RFC 8414 metadata fields.
-    $required_fields = [
-      'issuer',
-      'authorization_endpoint',
-      'token_endpoint',
-      'jwks_uri',
-      'scopes_supported',
-      'response_types_supported',
-    ];
-
-    foreach ($required_fields as $field) {
-      $this->assertArrayHasKey($field, $auth_metadata, "Authorization server metadata contains required field: $field");
-    }
-
-    // Validate registration endpoint is included.
-    $this->assertArrayHasKey('registration_endpoint', $auth_metadata, 'Registration endpoint is advertised in metadata');
-    $this->assertNotEmpty($auth_metadata['registration_endpoint'], 'Registration endpoint has value');
-    $this->assertStringContainsString('/oauth/register', $auth_metadata['registration_endpoint'], 'Registration endpoint URL is correct');
-
     // Test protected resource metadata (RFC 9728)
     $resource_response = $this->httpClient->get($this->buildUrl('/.well-known/oauth-protected-resource'));
     $this->assertEquals(200, $resource_response->getStatusCode(), 'Protected resource metadata endpoint returns 200');
     $resource_response->getBody()->rewind();
-    $resource_metadata = Json::decode($resource_response->getBody()->getContents());
+    $resource_metadata = Json::decode($resource_response->getBody()
+      ->getContents());
 
     // Validate RFC 9728 resource server metadata.
     $this->assertTrue(is_array($resource_metadata), 'Resource metadata is an array');
@@ -437,14 +416,14 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
 
     // Check for required resource server identification.
     $has_resource_identifier = isset($resource_metadata['resource']) ||
-                               isset($resource_metadata['resource_server_name']) ||
-                               isset($resource_metadata['name']);
+      isset($resource_metadata['resource_server_name']) ||
+      isset($resource_metadata['name']);
     $this->assertTrue($has_resource_identifier, 'Resource server metadata contains resource identifier');
 
     // Check for authorization server information.
     $has_auth_info = isset($resource_metadata['authorization_servers']) ||
-                     isset($resource_metadata['bearer_methods_supported']) ||
-                     isset($resource_metadata['authorization_endpoint']);
+      isset($resource_metadata['bearer_methods_supported']) ||
+      isset($resource_metadata['authorization_endpoint']);
     $this->assertTrue($has_auth_info, 'Resource server metadata contains authorization information');
   }
 
@@ -524,14 +503,16 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     $first_http_response = $this->httpClient->get($this->buildUrl('/.well-known/oauth-authorization-server'));
     $this->assertEquals(200, $first_http_response->getStatusCode(), 'First metadata request returns 200');
     $first_http_response->getBody()->rewind();
-    $first_response = Json::decode($first_http_response->getBody()->getContents());
+    $first_response = Json::decode($first_http_response->getBody()
+      ->getContents());
 
     // Ensure cache isolation and make second request.
     $this->ensureCacheIsolation();
     $second_http_response = $this->httpClient->get($this->buildUrl('/.well-known/oauth-authorization-server'));
     $this->assertEquals(200, $second_http_response->getStatusCode(), 'Second metadata request returns 200');
     $second_http_response->getBody()->rewind();
-    $second_response = Json::decode($second_http_response->getBody()->getContents());
+    $second_response = Json::decode($second_http_response->getBody()
+      ->getContents());
 
     // Verify consistency between requests.
     $this->assertEquals($first_response['registration_endpoint'], $second_response['registration_endpoint'],

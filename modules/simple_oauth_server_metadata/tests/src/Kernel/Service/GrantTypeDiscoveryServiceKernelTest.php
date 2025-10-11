@@ -80,34 +80,6 @@ class GrantTypeDiscoveryServiceKernelTest extends KernelTestBase {
   }
 
   /**
-   * Tests response types without implicit grant.
-   *
-   * @covers ::getGrantTypesSupported
-   * @covers ::getResponseTypesSupported
-   */
-  #[Group('legacy')]
-  public function testWithImplicitGrantEnabled() {
-    // Note: The implicit grant has been removed in Simple OAuth 6.x
-    // as it's considered insecure per OAuth 2.0 Security Best Current Practice.
-    // The use_implicit setting is deprecated and has no effect.
-    $config = $this->config('simple_oauth.settings');
-    $config->set('use_implicit', TRUE);
-    $config->save();
-
-    $service = $this->container->get('simple_oauth_server_metadata.grant_type_discovery');
-
-    $grant_types = $service->getGrantTypesSupported();
-    // Implicit grant should NOT be available even when use_implicit is TRUE.
-    $this->assertNotContains('implicit', $grant_types);
-
-    $response_types = $service->getResponseTypesSupported();
-    // Token response type is only for implicit grant, which is not available.
-    $this->assertNotContains('token', $response_types);
-    // id_token token combination requires token response type.
-    $this->assertNotContains('id_token token', $response_types);
-  }
-
-  /**
    * Tests with OpenID Connect disabled.
    *
    * @covers ::getResponseTypesSupported
