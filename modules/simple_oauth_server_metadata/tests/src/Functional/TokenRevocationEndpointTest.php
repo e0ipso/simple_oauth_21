@@ -8,6 +8,7 @@ use Drupal\Component\Serialization\Json;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\simple_oauth\Entity\Oauth2Token;
 use Drupal\Tests\BrowserTestBase;
+use Drupal\Tests\simple_oauth\Functional\SimpleOauthTestTrait;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -21,6 +22,8 @@ use PHPUnit\Framework\Attributes\Group;
  */
 #[Group('simple_oauth_server_metadata')]
 final class TokenRevocationEndpointTest extends BrowserTestBase {
+
+  use SimpleOauthTestTrait;
 
   /**
    * {@inheritdoc}
@@ -68,6 +71,9 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
 
     // Rebuild router to ensure all routes are available.
     \Drupal::service('router.builder')->rebuild();
+
+    // Set up OAuth keys for testing.
+    $this->setUpKeys();
 
     // Create a confidential OAuth client (consumer).
     $this->clientSecret = 'test_client_secret_12345';

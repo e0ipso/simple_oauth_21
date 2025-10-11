@@ -5,6 +5,7 @@ namespace Drupal\Tests\simple_oauth_device_flow\Functional;
 use Drupal\Component\Serialization\Json;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\Tests\BrowserTestBase;
+use Drupal\Tests\simple_oauth\Functional\SimpleOauthTestTrait;
 use Drupal\user\Entity\User;
 use GuzzleHttp\RequestOptions;
 use PHPUnit\Framework\Attributes\Group;
@@ -21,6 +22,8 @@ use PHPUnit\Framework\Attributes\Group;
 #[Group('simple_oauth_device_flow')]
 #[Group('functional')]
 class DeviceFlowFunctionalTest extends BrowserTestBase {
+
+  use SimpleOauthTestTrait;
 
   /**
    * {@inheritdoc}
@@ -78,6 +81,9 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
 
     // Rebuild router to ensure device flow routes are registered.
     $this->container->get('router.builder')->rebuild();
+
+    // Set up OAuth keys for testing.
+    $this->setUpKeys();
 
     // Create test user.
     $this->testUser = User::create([
@@ -470,13 +476,14 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     $scoped_consumer = Consumer::create([
       'label' => 'Test Scoped Device Client',
       'client_id' => 'test_scoped_client',
-      'grant_types' => ['device_code'],
       'scopes' => ['read', 'write'],
       'confidential' => FALSE,
       'redirect' => ['http://localhost'],
       'access_token_expiration' => 300,
       'user_id' => $this->testUser->id(),
     ]);
+    // Add grant types using appendItem with explicit value structure.
+    $scoped_consumer->get('grant_types')->appendItem(['value' => 'urn:ietf:params:oauth:grant-type:device_code']);
     $scoped_consumer->save();
 
     $device_auth_url = $this->buildUrl('/oauth/device_authorization');
