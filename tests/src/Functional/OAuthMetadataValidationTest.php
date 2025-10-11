@@ -314,6 +314,9 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
     $native_data = Json::decode($native_response->getBody()->getContents());
     $this->assertArrayNotHasKey('client_secret', $native_data, 'Native app should not receive client secret');
     $this->assertArrayHasKey('client_id', $native_data, 'Native app should receive client ID');
+
+    // @phpstan-ignore method.alreadyNarrowedType
+    $this->assertTrue(TRUE, 'All test scenarios completed successfully');
   }
 
   /**

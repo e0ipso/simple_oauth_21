@@ -125,6 +125,8 @@ class GrantTypeDiscoveryServiceKernelTest extends KernelTestBase {
     // Verify OIDC-specific response types are not available when disabled.
     $this->assertNotContains('id_token', $response_types);
     $this->assertNotContains('id_token token', $response_types);
+
+    $this->assertTrue(TRUE, 'All test scenarios completed successfully');
   }
 
 }

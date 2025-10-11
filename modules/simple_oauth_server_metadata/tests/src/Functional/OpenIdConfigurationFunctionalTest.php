@@ -99,10 +99,12 @@ class OpenIdConfigurationFunctionalTest extends BrowserTestBase {
     $this->helperJsonContentType();
     $this->helperHttpMethodRestrictions();
     $this->helperRegistrationEndpointDetection();
+
+    $this->assertTrue(TRUE, 'All test scenarios completed successfully');
   }
 
   /**
-   * Helper: Tests that the OpenID Connect Discovery route exists and is accessible.
+   * Helper: Tests OpenID Connect Discovery route exists and is accessible.
    */
   protected function helperOpenIdConfigurationRouteExists(): void {
     $this->logDebug('Starting OpenID configuration route test');

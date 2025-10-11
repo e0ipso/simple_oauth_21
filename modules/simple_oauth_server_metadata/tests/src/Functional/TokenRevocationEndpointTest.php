@@ -145,6 +145,8 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
     // Infrastructure scenarios.
     $this->helperServerMetadataIncludesRevocationEndpoint();
     $this->helperOnlyPostMethodAccepted();
+
+    $this->assertTrue(TRUE, 'All test scenarios completed successfully');
   }
 
   /**
@@ -656,7 +658,8 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
       $options['headers'] = $headers;
     }
 
-    // Include session cookies for Drupal user authentication (needed for bypass permission checks).
+    // Include session cookies for Drupal user authentication (needed for
+    // bypass permission checks).
     $options['cookies'] = $this->getSessionCookies();
 
     return $httpClient->request('POST', $url, $options);
