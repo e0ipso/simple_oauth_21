@@ -106,6 +106,9 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
 
     // Rebuild container to ensure service definitions are fresh.
     $this->rebuildContainer();
+
+    // Rebuild router after container rebuild to ensure routes are available.
+    $this->container->get('router.builder')->rebuild();
   }
 
   /**
