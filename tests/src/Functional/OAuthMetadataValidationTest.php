@@ -58,9 +58,6 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
     // Ensure clean cache state for reliable testing.
     $this->clearAllTestCaches();
 
-    // Rebuild routes to ensure all OAuth routes are available.
-    $this->container->get('router.builder')->rebuild();
-
     // Clear registration_endpoint config to ensure auto-discovery works.
     $config = $this->container->get('config.factory')->getEditable('simple_oauth_server_metadata.settings');
     $config->clear('registration_endpoint')->save();

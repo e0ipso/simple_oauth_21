@@ -69,9 +69,6 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
   protected function setUp(): void {
     parent::setUp();
 
-    // Rebuild router to ensure all routes are available.
-    \Drupal::service('router.builder')->rebuild();
-
     // Set up OAuth keys for testing.
     $this->setUpKeys();
 

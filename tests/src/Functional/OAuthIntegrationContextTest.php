@@ -67,10 +67,6 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     $this->clearAllTestCaches();
     $this->logDebug('Test caches cleared');
 
-    // Rebuild routes to ensure all OAuth routes are available.
-    $this->container->get('router.builder')->rebuild();
-    $this->logDebug('Routes rebuilt');
-
     // Clear registration_endpoint config to ensure auto-discovery works.
     // The install hook may have set it to the wrong value.
     $config = $this->container->get('config.factory')->getEditable('simple_oauth_server_metadata.settings');
