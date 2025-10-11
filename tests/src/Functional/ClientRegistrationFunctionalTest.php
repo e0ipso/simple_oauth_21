@@ -43,6 +43,10 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   protected function setUp(): void {
     parent::setUp();
 
+    // Ensure router is rebuilt after module installation.
+    // This is critical for CI environments where timing may differ.
+    \Drupal::service('router.builder')->rebuild();
+
     // Set up HTTP client with base URI for test environment.
     // Must use http_client_factory from container, not new Client().
     $this->httpClient = $this->container->get('http_client_factory')
@@ -108,7 +112,8 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     $this->rebuildContainer();
 
     // Rebuild router after container rebuild to ensure routes are available.
-    $this->container->get('router.builder')->rebuild();
+    // Must use \Drupal to get fresh container after rebuildContainer().
+    \Drupal::service('router.builder')->rebuild();
   }
 
   /**

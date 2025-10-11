@@ -84,6 +84,7 @@ class GrantTypeDiscoveryServiceKernelTest extends KernelTestBase {
    *
    * @covers ::getGrantTypesSupported
    * @covers ::getResponseTypesSupported
+   * @group legacy
    */
   public function testWithImplicitGrantEnabled() {
     // Note: The implicit grant has been removed in Simple OAuth 6.x
