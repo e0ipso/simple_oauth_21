@@ -10,6 +10,14 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Functional tests for RFC 7591 OAuth Dynamic Client Registration.
+ *
+ * Tests the complete client registration functionality including:
+ * - Client registration workflow
+ * - Client management operations (GET, PUT)
+ * - Registration error conditions
+ * - Metadata endpoints discovery
+ * - Registration token authentication
+ * - Cache isolation and consistency.
  */
 #[Group('simple_oauth_21')]
 #[Group('functional')]
@@ -105,12 +113,49 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Test RFC 7591 client registration workflow.
+   * Comprehensive RFC 7591 Dynamic Client Registration test.
+   *
+   * Tests the complete client registration functionality including:
+   * - Client registration workflow (RFC 7591)
+   * - Client management operations (GET, PUT)
+   * - Registration error conditions
+   * - Metadata endpoints discovery (RFC 8414, RFC 9728)
+   * - Registration token authentication
+   * - Cache isolation and consistency.
+   *
+   * All scenarios execute sequentially using a shared Drupal instance
+   * for optimal performance.
+   */
+  public function testComprehensiveClientRegistrationFunctionality(): void {
+    // Core workflow tests.
+    $registration_data = $this->helperClientRegistrationWorkflow();
+    $this->helperClientManagementOperations($registration_data);
+
+    // Error handling tests.
+    $this->helperRegistrationErrorConditions();
+
+    // Metadata and discovery tests.
+    $this->helperMetadataEndpoints();
+
+    // Authentication tests.
+    $this->helperRegistrationTokenAuthentication($registration_data);
+
+    // Cache consistency tests.
+    $this->helperCacheIsolationAndConsistency();
+  }
+
+  /**
+   * Helper: Tests RFC 7591 client registration workflow.
+   *
+   * Validates the complete client registration process including:
+   * - POST request to registration endpoint
+   * - RFC 7591 response field validation
+   * - Client metadata preservation.
    *
    * @return array<string, mixed>
    *   The client registration response data.
    */
-  public function testClientRegistrationWorkflow(): array {
+  protected function helperClientRegistrationWorkflow(): array {
     // Prepare valid RFC 7591 client registration request.
     $client_metadata = [
       'client_name' => 'Test OAuth Client',
@@ -230,11 +275,18 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Test client management operations using registration access token.
+   * Helper: Tests client management operations using registration access token.
+   *
+   * Validates RFC 7591 client management capabilities including:
+   * - GET client metadata retrieval
+   * - PUT client metadata updates
+   * - Authorization using registration access token.
+   *
+   * @param array<string, mixed> $registration_data
+   *   The client registration response data containing client_id and
+   *   registration_access_token.
    */
-  public function testClientManagementOperations(): void {
-    // First register a client.
-    $registration_data = $this->testClientRegistrationWorkflow();
+  protected function helperClientManagementOperations(array $registration_data): void {
     $client_id = $registration_data['client_id'];
     $access_token = $registration_data['registration_access_token'];
 
@@ -275,9 +327,14 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Test registration error conditions.
+   * Helper: Tests registration error conditions.
+   *
+   * Validates RFC 7591 error handling including:
+   * - Empty request body
+   * - Invalid JSON format
+   * - Invalid redirect URI validation.
    */
-  public function testRegistrationErrorConditions(): void {
+  protected function helperRegistrationErrorConditions(): void {
     // Test empty request body.
     $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
       RequestOptions::HEADERS => [
@@ -329,9 +386,16 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Test metadata endpoints functionality.
+   * Helper: Tests metadata endpoints functionality.
+   *
+   * Validates RFC 8414 and RFC 9728 metadata discovery including:
+   * - Authorization server metadata endpoint
+   * - Required metadata fields validation
+   * - Registration endpoint discovery
+   * - Protected resource metadata endpoint
+   * - Resource server identification.
    */
-  public function testMetadataEndpoints(): void {
+  protected function helperMetadataEndpoints(): void {
     // Ensure cache isolation for HTTP-based metadata endpoint testing.
     $this->ensureCacheIsolation();
 
@@ -382,11 +446,18 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Test registration access token authentication.
+   * Helper: Tests registration access token authentication.
+   *
+   * Validates RFC 7591 registration access token security including:
+   * - Access without token (should fail)
+   * - Access with invalid token (should fail)
+   * - Access with valid token (should succeed).
+   *
+   * @param array<string, mixed> $registration_data
+   *   The client registration response data containing client_id and
+   *   registration_access_token.
    */
-  public function testRegistrationTokenAuthentication(): void {
-    // Register a client first.
-    $registration_data = $this->testClientRegistrationWorkflow();
+  protected function helperRegistrationTokenAuthentication(array $registration_data): void {
     $client_id = $registration_data['client_id'];
 
     // Test access without token.
@@ -421,14 +492,15 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Test cache isolation and consistency across test operations.
+   * Helper: Tests cache isolation and consistency across test operations.
    *
-   * This test verifies that cache handling improvements ensure:
+   * Verifies that cache handling improvements ensure:
    * - Fresh metadata generation after configuration changes
    * - Cache isolation between test operations
-   * - Consistent behavior across multiple requests.
+   * - Consistent behavior across multiple requests
+   * - No cache state leakage between operations.
    */
-  public function testCacheIsolationAndConsistency(): void {
+  protected function helperCacheIsolationAndConsistency(): void {
     // Get initial metadata service.
     $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
 

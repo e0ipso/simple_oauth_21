@@ -18,6 +18,11 @@ use PHPUnit\Framework\Attributes\Group;
  * token ownership validation, privacy preservation, and permission-based
  * bypass functionality for administrative token revocation.
  *
+ * This test class has been consolidated from 14 individual test methods
+ * into a single comprehensive test method that orchestrates all RFC 7009
+ * validation scenarios through protected helper methods. This approach
+ * reduces test execution overhead while maintaining complete coverage.
+ *
  * @see https://datatracker.ietf.org/doc/html/rfc7009
  */
 #[Group('simple_oauth_server_metadata')]
@@ -97,12 +102,58 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
   }
 
   /**
+   * Tests comprehensive token revocation functionality (RFC 7009).
+   *
+   * This comprehensive test executes all RFC 7009 token revocation scenarios
+   * in a single test run, reducing test execution overhead while maintaining
+   * complete coverage of the specification requirements.
+   *
+   * Test scenarios covered:
+   * 1. Happy path: Basic Auth, POST body credentials, public clients
+   * 2. Authentication errors: Invalid credentials, missing credentials
+   * 3. Validation errors: Missing token parameter
+   * 4. Permissions: Bypass for admin, ownership validation
+   * 5. Edge cases: Non-existent tokens, idempotent revocation
+   * 6. Token types: Type hints, refresh token revocation
+   * 7. Infrastructure: Metadata discovery, HTTP method restriction
+   */
+  public function testComprehensiveTokenRevocationFunctionality(): void {
+    // Happy path scenarios.
+    $this->helperSuccessfulRevocationWithBasicAuth();
+    $this->helperSuccessfulRevocationWithPostBodyCredentials();
+    $this->helperPublicClientRevocation();
+
+    // Authentication error scenarios.
+    $this->helperAuthenticationFailureWithInvalidCredentials();
+    $this->helperAuthenticationFailureWithMissingCredentials();
+
+    // Validation error scenarios.
+    $this->helperMissingTokenParameter();
+
+    // Permission-based scenarios.
+    $this->helperBypassPermissionAllowsRevokingAnyToken();
+    $this->helperOwnershipValidationPreventsUnauthorizedRevocation();
+
+    // Edge case scenarios.
+    $this->helperNonExistentTokenReturnsSuccess();
+    $this->helperIdempotentRevocation();
+
+    // Token type scenarios.
+    $this->helperTokenTypeHintParameter();
+    $this->helperRefreshTokenRevocation();
+
+    // Infrastructure scenarios.
+    $this->helperServerMetadataIncludesRevocationEndpoint();
+    $this->helperOnlyPostMethodAccepted();
+  }
+
+  /**
    * Tests successful token revocation with HTTP Basic Auth credentials.
    *
    * Validates that a client can revoke its own token using Basic Auth
    * for client authentication as specified in RFC 7009.
    */
-  public function testSuccessfulRevocationWithBasicAuth(): void {
+  protected function helperSuccessfulRevocationWithBasicAuth(): void {
     $credentials = base64_encode('test_client_id:' . $this->clientSecret);
 
     $response = $this->postRevocationRequest([
@@ -133,7 +184,7 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
    * POST body (client_id and client_secret parameters) as an alternative
    * to HTTP Basic Auth.
    */
-  public function testSuccessfulRevocationWithPostBodyCredentials(): void {
+  protected function helperSuccessfulRevocationWithPostBodyCredentials(): void {
     // Create a new token for this test.
     $newToken = Oauth2Token::create([
       'bundle' => 'access_token',
@@ -167,7 +218,7 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
    * Public clients (confidential = FALSE) should be able to revoke
    * their own tokens without providing a client secret.
    */
-  public function testPublicClientRevocation(): void {
+  protected function helperPublicClientRevocation(): void {
     // Create a public client.
     $publicClient = Consumer::create([
       'label' => 'Test Public Client',
@@ -208,11 +259,23 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
    *
    * RFC 7009 requires 401 Unauthorized when client authentication fails.
    */
-  public function testAuthenticationFailureWithInvalidCredentials(): void {
+  protected function helperAuthenticationFailureWithInvalidCredentials(): void {
+    // Create a fresh token for this test.
+    $invalidAuthToken = Oauth2Token::create([
+      'bundle' => 'access_token',
+      'auth_user_id' => $this->rootUser->id(),
+      'client' => $this->testClient,
+      'value' => 'invalid_auth_token_12345',
+      'scopes' => [],
+      'expire' => \Drupal::time()->getRequestTime() + 3600,
+      'status' => TRUE,
+    ]);
+    $invalidAuthToken->save();
+
     $credentials = base64_encode('test_client_id:wrong_secret');
 
     $response = $this->postRevocationRequest([
-      'token' => 'test_token_value_12345',
+      'token' => 'invalid_auth_token_12345',
     ], [
       'Authorization' => 'Basic ' . $credentials,
     ]);
@@ -224,8 +287,8 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
 
     // Verify token was NOT revoked.
     $storage = \Drupal::entityTypeManager()->getStorage('oauth2_token');
-    $storage->resetCache([$this->testToken->id()]);
-    $reloadedToken = $storage->load($this->testToken->id());
+    $storage->resetCache([$invalidAuthToken->id()]);
+    $reloadedToken = $storage->load($invalidAuthToken->id());
     $this->assertFalse($reloadedToken->isRevoked(), 'Token should not be revoked when authentication fails');
   }
 
@@ -234,9 +297,21 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
    *
    * Requests without any client authentication should return 401.
    */
-  public function testAuthenticationFailureWithMissingCredentials(): void {
+  protected function helperAuthenticationFailureWithMissingCredentials(): void {
+    // Create a fresh token for this test.
+    $missingAuthToken = Oauth2Token::create([
+      'bundle' => 'access_token',
+      'auth_user_id' => $this->rootUser->id(),
+      'client' => $this->testClient,
+      'value' => 'missing_auth_token_12345',
+      'scopes' => [],
+      'expire' => \Drupal::time()->getRequestTime() + 3600,
+      'status' => TRUE,
+    ]);
+    $missingAuthToken->save();
+
     $response = $this->postRevocationRequest([
-      'token' => 'test_token_value_12345',
+      'token' => 'missing_auth_token_12345',
     ]);
 
     $this->assertEquals(401, $response->getStatusCode());
@@ -246,8 +321,8 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
 
     // Verify token was NOT revoked.
     $storage = \Drupal::entityTypeManager()->getStorage('oauth2_token');
-    $storage->resetCache([$this->testToken->id()]);
-    $reloadedToken = $storage->load($this->testToken->id());
+    $storage->resetCache([$missingAuthToken->id()]);
+    $reloadedToken = $storage->load($missingAuthToken->id());
     $this->assertFalse($reloadedToken->isRevoked());
   }
 
@@ -257,7 +332,7 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
    * RFC 7009 requires that the token parameter is present. Missing it
    * should result in a 400 error with invalid_request error code.
    */
-  public function testMissingTokenParameter(): void {
+  protected function helperMissingTokenParameter(): void {
     $credentials = base64_encode('test_client_id:' . $this->clientSecret);
 
     $response = $this->postRevocationRequest([], [
@@ -277,7 +352,7 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
    * Users with 'bypass token revocation restrictions' permission
    * should be able to revoke tokens owned by other clients.
    */
-  public function testBypassPermissionAllowsRevokingAnyToken(): void {
+  protected function helperBypassPermissionAllowsRevokingAnyToken(): void {
     // Create another client and token.
     $otherClient = Consumer::create([
       'label' => 'Other Client',
@@ -319,6 +394,9 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
     $storage->resetCache([$otherToken->id()]);
     $reloadedToken = $storage->load($otherToken->id());
     $this->assertTrue($reloadedToken->isRevoked(), 'Token should be revoked when user has bypass permission');
+
+    // Log out the admin user so subsequent tests don't have bypass permission.
+    $this->drupalLogout();
   }
 
   /**
@@ -327,7 +405,7 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
    * RFC 7009 privacy: endpoint returns 200 even when client doesn't own
    * the token, but the token should NOT actually be revoked.
    */
-  public function testOwnershipValidationPreventsUnauthorizedRevocation(): void {
+  protected function helperOwnershipValidationPreventsUnauthorizedRevocation(): void {
     // Create another client and token.
     $otherClient = Consumer::create([
       'label' => 'Other Client',
@@ -373,7 +451,7 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
    * RFC 7009 requires returning 200 even for non-existent tokens to
    * prevent token enumeration attacks.
    */
-  public function testNonExistentTokenReturnsSuccess(): void {
+  protected function helperNonExistentTokenReturnsSuccess(): void {
     $credentials = base64_encode('test_client_id:' . $this->clientSecret);
 
     $response = $this->postRevocationRequest([
@@ -391,12 +469,24 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
    *
    * Revoking an already-revoked token should return 200 (idempotent).
    */
-  public function testIdempotentRevocation(): void {
+  protected function helperIdempotentRevocation(): void {
+    // Create a fresh token for this test.
+    $idempotentToken = Oauth2Token::create([
+      'bundle' => 'access_token',
+      'auth_user_id' => $this->rootUser->id(),
+      'client' => $this->testClient,
+      'value' => 'idempotent_token_12345',
+      'scopes' => [],
+      'expire' => \Drupal::time()->getRequestTime() + 3600,
+      'status' => TRUE,
+    ]);
+    $idempotentToken->save();
+
     $credentials = base64_encode('test_client_id:' . $this->clientSecret);
 
     // First revocation.
     $response1 = $this->postRevocationRequest([
-      'token' => 'test_token_value_12345',
+      'token' => 'idempotent_token_12345',
     ], [
       'Authorization' => 'Basic ' . $credentials,
     ]);
@@ -404,21 +494,21 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
 
     // Verify token is revoked.
     $storage = \Drupal::entityTypeManager()->getStorage('oauth2_token');
-    $storage->resetCache([$this->testToken->id()]);
-    $reloadedToken = $storage->load($this->testToken->id());
+    $storage->resetCache([$idempotentToken->id()]);
+    $reloadedToken = $storage->load($idempotentToken->id());
     $this->assertTrue($reloadedToken->isRevoked());
 
     // Second revocation (same token, already revoked).
     $response2 = $this->postRevocationRequest([
-      'token' => 'test_token_value_12345',
+      'token' => 'idempotent_token_12345',
     ], [
       'Authorization' => 'Basic ' . $credentials,
     ]);
     $this->assertEquals(200, $response2->getStatusCode());
 
     // Token should still be revoked.
-    $storage->resetCache([$this->testToken->id()]);
-    $reloadedToken = $storage->load($this->testToken->id());
+    $storage->resetCache([$idempotentToken->id()]);
+    $reloadedToken = $storage->load($idempotentToken->id());
     $this->assertTrue($reloadedToken->isRevoked());
   }
 
@@ -428,7 +518,7 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
    * RFC 7009 allows clients to provide a hint about the token type.
    * This is optional and our implementation handles it gracefully.
    */
-  public function testTokenTypeHintParameter(): void {
+  protected function helperTokenTypeHintParameter(): void {
     $credentials = base64_encode('test_client_id:' . $this->clientSecret);
 
     // Create a new token for this test.
@@ -465,7 +555,7 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
    * Both access tokens and refresh tokens should be revocable through
    * the same endpoint.
    */
-  public function testRefreshTokenRevocation(): void {
+  protected function helperRefreshTokenRevocation(): void {
     // Create a refresh token.
     $refreshToken = Oauth2Token::create([
       'bundle' => 'refresh_token',
@@ -501,7 +591,7 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
    *
    * RFC 8414 server metadata should advertise the revocation endpoint URL.
    */
-  public function testServerMetadataIncludesRevocationEndpoint(): void {
+  protected function helperServerMetadataIncludesRevocationEndpoint(): void {
     $this->drupalGet('/.well-known/oauth-authorization-server');
     $this->assertSession()->statusCodeEquals(200);
 
@@ -519,7 +609,7 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
    *
    * RFC 7009 requires POST method. Other methods should be rejected.
    */
-  public function testOnlyPostMethodAccepted(): void {
+  protected function helperOnlyPostMethodAccepted(): void {
     // The route already restricts to POST only, but verify it works.
     // GET request should fail.
     $credentials = base64_encode('test_client_id:' . $this->clientSecret);
@@ -552,6 +642,9 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
     $url = $this->getAbsoluteUrl('/oauth/revoke');
     $session = $this->getSession();
 
+    // Set SIMPLETEST_USER_AGENT cookie for test environment.
+    $session->setCookie('SIMPLETEST_USER_AGENT', drupal_generate_test_ua($this->databasePrefix));
+
     $httpClient = $this->container->get('http_client');
 
     $options = [
@@ -563,17 +656,8 @@ final class TokenRevocationEndpointTest extends BrowserTestBase {
       $options['headers'] = $headers;
     }
 
-    // Include session cookies to maintain user authentication state.
-    $cookies = [];
-    foreach ($session->getDriver()->getCookies() as $name => $value) {
-      $cookies[] = "$name=$value";
-    }
-    if (!empty($cookies)) {
-      if (!isset($options['headers'])) {
-        $options['headers'] = [];
-      }
-      $options['headers']['Cookie'] = implode('; ', $cookies);
-    }
+    // Include session cookies for Drupal user authentication (needed for bypass permission checks).
+    $options['cookies'] = $this->getSessionCookies();
 
     return $httpClient->request('POST', $url, $options);
   }

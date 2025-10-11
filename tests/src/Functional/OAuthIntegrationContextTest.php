@@ -16,6 +16,9 @@ use PHPUnit\Framework\Attributes\Group;
  *
  * Tests OAuth functionality across web, CLI, and test environments to ensure
  * consistent behavior and proper cache handling in all contexts.
+ *
+ * Tests are consolidated into a single comprehensive test method with
+ * granular helper methods for performance optimization.
  */
 #[Group('simple_oauth_21')]
 #[Group('functional')]
@@ -49,6 +52,20 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
    * @var \GuzzleHttp\Client
    */
   protected $httpClient;
+
+  /**
+   * Web client data for cross-helper usage.
+   *
+   * @var array
+   */
+  protected $webClientData;
+
+  /**
+   * API client data for cross-helper usage.
+   *
+   * @var array
+   */
+  protected $apiClientData;
 
   /**
    * {@inheritdoc}
@@ -105,16 +122,55 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
   /**
    * Comprehensive OAuth integration testing across all contexts.
    *
-   * This test consolidates OAuth functionality testing across web, API, and
-   * cache contexts for improved performance while maintaining comprehensive
-   * coverage.
+   * Tests OAuth functionality across web, API, and cache contexts to ensure
+   * consistent behavior and proper integration. This consolidation reduces
+   * test execution time while maintaining comprehensive cross-context coverage.
+   *
+   * Integration test coverage includes:
+   * - Web context OAuth workflow (HTTP endpoints)
+   * - API context OAuth functionality (service layer)
+   * - Cache behavior and consistency across contexts
+   * - Cross-context client management
+   * - Error handling consistency across contexts
+   * - Route discovery and concurrent access patterns
+   * - Configuration change propagation
+   * - Integration with existing OAuth clients
+   *
+   * All scenarios execute sequentially, maintaining test isolation through
+   * proper cache clearing and state management in helper methods.
    */
-  public function testComprehensiveOauthIntegrationAcrossContexts() {
+  public function testComprehensiveOAuthIntegrationFunctionality(): void {
     $this->logDebug('Starting comprehensive OAuth integration test');
 
-    // === Web Context OAuth Workflow ===
-    // Test metadata endpoints are accessible via HTTP
+    // Web and API context testing.
+    $this->helperWebContextOAuthWorkflow();
+    $this->helperApiContextOAuthFunctionality();
+
+    // Cache and state management.
+    $this->helperCacheBehaviorAcrossContexts();
+
+    // Client management and error handling.
+    $this->helperCrossContextClientManagement();
+    $this->helperErrorHandlingConsistency();
+
+    // Concurrent access and discovery.
+    $this->helperRouteDiscoveryAndConcurrentAccess();
+
+    // Configuration and integration.
+    $this->helperConfigurationChangesPropagation();
+    $this->helperIntegrationWithExistingClients();
+  }
+
+  /**
+   * Helper: Tests OAuth workflow in web context (HTTP requests).
+   *
+   * Validates that OAuth metadata endpoints are accessible via HTTP and
+   * that client registration works through web requests.
+   */
+  protected function helperWebContextOAuthWorkflow(): void {
     $this->logDebug('Testing OAuth metadata endpoint');
+
+    // Test metadata endpoints are accessible via HTTP.
     $this->drupalGet('/.well-known/oauth-authorization-server');
     $this->logDebug('OAuth metadata endpoint response code: ' . $this->getSession()->getStatusCode());
     $this->assertSession()->statusCodeEquals(200);
@@ -130,8 +186,8 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
       'redirect_uris' => ['https://example.com/callback'],
       'grant_types' => ['authorization_code'],
     ];
+
     $this->logDebug('About to POST to: ' . $auth_metadata['registration_endpoint']);
-    // Use buildUrl() to construct the full URL for the test environment.
     $web_response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
       RequestOptions::JSON => $web_client_metadata,
       RequestOptions::HEADERS => [
@@ -139,13 +195,24 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
         'Accept' => 'application/json',
       ],
     ]);
+
     $this->assertEquals(200, $web_response->getStatusCode(), 'Client registration should work in web context');
     $web_response->getBody()->rewind();
     $web_client_data = Json::decode($web_response->getBody()->getContents());
     $this->assertArrayHasKey('client_id', $web_client_data, 'Client ID should be generated in web context');
 
-    // === API Context OAuth Functionality ===
-    // Get metadata service directly
+    // Store for use in later helpers.
+    $this->webClientData = $web_client_data;
+  }
+
+  /**
+   * Helper: Tests OAuth functionality in API context (service layer).
+   *
+   * Validates that OAuth services work correctly when called directly
+   * without HTTP layer.
+   */
+  protected function helperApiContextOAuthFunctionality(): void {
+    // Get metadata service directly.
     $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
     $api_metadata = $metadata_service->getServerMetadata();
     $this->assertArrayHasKey('registration_endpoint', $api_metadata, 'Registration endpoint must be available in API context');
@@ -158,6 +225,7 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
       redirectUris: ['https://api.example.com/callback'],
       grantTypes: ['authorization_code', 'refresh_token']
     );
+
     $api_client_data = $registration_service->registerClient($api_client_metadata);
     $this->assertArrayHasKey('client_id', $api_client_data, 'Client ID should be generated in API context');
     $this->assertArrayHasKey('client_secret', $api_client_data, 'Client secret should be generated in API context');
@@ -167,8 +235,20 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     $retrieved_metadata = $registration_service->getClientMetadata($api_client_data['client_id']);
     $this->assertEquals($api_client_metadata->clientName, $retrieved_metadata['client_name'], 'Client metadata should be retrievable in API context');
 
-    // === Cache Behavior Across Contexts ===
-    // Test cache generation and consistency
+    // Store for use in later helpers.
+    $this->apiClientData = $api_client_data;
+  }
+
+  /**
+   * Helper: Tests cache behavior and consistency across contexts.
+   *
+   * Validates that cache is shared between web and API contexts and that
+   * cache invalidation affects both contexts.
+   */
+  protected function helperCacheBehaviorAcrossContexts(): void {
+    $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
+
+    // Test cache generation and consistency.
     $metadata1 = $metadata_service->getServerMetadata();
     $metadata2 = $metadata_service->getServerMetadata();
     $this->assertEquals($metadata1['registration_endpoint'], $metadata2['registration_endpoint'], 'Cached metadata should be consistent');
@@ -185,34 +265,61 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     $this->assertSession()->statusCodeEquals(200);
     $fresh_http_metadata = Json::decode($this->getSession()->getPage()->getContent());
     $this->assertEquals($fresh_metadata['registration_endpoint'], $fresh_http_metadata['registration_endpoint'], 'Cache invalidation should affect both contexts');
+  }
 
-    // === Cross-Context Client Management ===
-    // Verify that clients registered in different contexts can coexist
-    $this->assertNotEquals($web_client_data['client_id'], $api_client_data['client_id'], 'Web and API clients should have different IDs');
+  /**
+   * Helper: Tests client management across different contexts.
+   *
+   * Validates that clients registered in different contexts can coexist
+   * and be managed independently.
+   */
+  protected function helperCrossContextClientManagement(): void {
+    // Verify that clients registered in different contexts can coexist.
+    $this->assertNotEquals($this->webClientData['client_id'], $this->apiClientData['client_id'], 'Web and API clients should have different IDs');
 
     // Test updating web-registered client via HTTP.
-    $updated_metadata_http = ['client_name' => 'Updated Web Client', 'client_uri' => 'https://updated-web.example.com'];
-    $update_response = $this->httpClient->put($web_client_data['registration_client_uri'], [
+    $updated_metadata_http = [
+      'client_name' => 'Updated Web Client',
+      'client_uri' => 'https://updated-web.example.com',
+    ];
+
+    $update_response = $this->httpClient->put($this->webClientData['registration_client_uri'], [
       RequestOptions::JSON => $updated_metadata_http,
       RequestOptions::HEADERS => [
-        'Authorization' => 'Bearer ' . $web_client_data['registration_access_token'],
+        'Authorization' => 'Bearer ' . $this->webClientData['registration_access_token'],
         'Content-Type' => 'application/json',
         'Accept' => 'application/json',
       ],
     ]);
+
     $this->assertEquals(200, $update_response->getStatusCode(), 'Client should be updatable via HTTP');
     $update_response->getBody()->rewind();
     $updated_data = Json::decode($update_response->getBody()->getContents());
     $this->assertEquals('Updated Web Client', $updated_data['client_name'], 'Client name should be updated via HTTP');
+  }
 
-    // === Error Handling Consistency ===
-    // Test HTTP context error handling
-    $invalid_metadata = ['client_name' => 'Invalid Client', 'redirect_uris' => ['not-a-url']];
+  /**
+   * Helper: Tests error handling consistency across contexts.
+   *
+   * Validates that both HTTP and API contexts return appropriate errors
+   * for invalid data.
+   */
+  protected function helperErrorHandlingConsistency(): void {
+    // Test HTTP context error handling.
+    $invalid_metadata = [
+      'client_name' => 'Invalid Client',
+      'redirect_uris' => ['not-a-url'],
+    ];
+
     $http_error_response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
       RequestOptions::JSON => $invalid_metadata,
-      RequestOptions::HEADERS => ['Content-Type' => 'application/json', 'Accept' => 'application/json'],
+      RequestOptions::HEADERS => [
+        'Content-Type' => 'application/json',
+        'Accept' => 'application/json',
+      ],
       RequestOptions::HTTP_ERRORS => FALSE,
     ]);
+
     $this->assertEquals(400, $http_error_response->getStatusCode(), 'HTTP context should return 400 for invalid data');
     $http_error_response->getBody()->rewind();
     $http_error = Json::decode($http_error_response->getBody()->getContents());
@@ -221,6 +328,7 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     // Test API context error handling.
     $exception_thrown = FALSE;
     try {
+      $registration_service = $this->container->get('simple_oauth_client_registration.service.registration');
       $invalid_dto = new ClientRegistration(
         clientName: 'Invalid Client',
         redirectUris: ['not-a-url']
@@ -232,9 +340,18 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
       $this->assertStringContainsString('Invalid redirect URI', $e->getMessage(), 'API context should throw meaningful exception');
     }
     $this->assertTrue($exception_thrown, 'API context should throw exception for invalid data');
+  }
 
-    // === Route Discovery and Concurrent Access ===
-    // Test multiple cache invalidations and regenerations
+  /**
+   * Helper: Tests route discovery and concurrent access patterns.
+   *
+   * Validates that metadata endpoints remain consistent under concurrent
+   * access and cache regeneration.
+   */
+  protected function helperRouteDiscoveryAndConcurrentAccess(): void {
+    $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
+
+    // Test multiple cache invalidations and regenerations.
     for ($i = 0; $i < 3; $i++) {
       $metadata = $metadata_service->getServerMetadata();
       $this->assertArrayHasKey('registration_endpoint', $metadata, "Registration endpoint should be discoverable in iteration $i");
@@ -252,13 +369,15 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     for ($i = 0; $i < 5; $i++) {
       $metadata_results[] = $metadata_service->getServerMetadata();
     }
-    // All results should be identical (no race conditions)
+
+    // All results should be identical (no race conditions).
     $first_result = $metadata_results[0];
     foreach ($metadata_results as $index => $result) {
       $this->assertEquals($first_result['registration_endpoint'], $result['registration_endpoint'], "Concurrent access result $index should be consistent");
     }
 
     // Test concurrent client registrations.
+    $registration_service = $this->container->get('simple_oauth_client_registration.service.registration');
     $client_results = [];
     for ($i = 0; $i < 3; $i++) {
       $concurrent_metadata = new ClientRegistration(
@@ -267,6 +386,7 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
       );
       $client_results[] = $registration_service->registerClient($concurrent_metadata);
     }
+
     // All clients should have unique IDs.
     $client_ids = array_column($client_results, 'client_id');
     $unique_ids = array_unique($client_ids);
@@ -274,16 +394,14 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
   }
 
   /**
-   * Test configuration changes and existing client integration.
+   * Helper: Tests configuration change propagation across contexts.
    *
-   * Tests configuration propagation across contexts and integration with
-   * pre-existing OAuth clients.
+   * Validates that configuration changes are reflected in both API and
+   * HTTP contexts.
    */
-  public function testConfigurationAndExistingClientIntegration() {
-    $this->logDebug('Starting configuration and existing client integration test');
-
-    // === Configuration Changes Propagation ===
+  protected function helperConfigurationChangesPropagation(): void {
     $this->logDebug('Testing configuration changes propagation');
+
     $config = $this->container->get('config.factory')->getEditable('simple_oauth_server_metadata.settings');
     $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
     $this->logDebug('Got config and metadata service');
@@ -315,9 +433,16 @@ class OAuthIntegrationContextTest extends BrowserTestBase {
     $metadata = $metadata_service->getServerMetadata();
     $this->assertArrayHasKey('registration_endpoint', $metadata, 'Auto-detection should work after clearing explicit config');
     $this->assertStringContainsString('/oauth/register', $metadata['registration_endpoint'], 'Auto-detected endpoint should be correct');
+  }
 
-    // === Integration with Existing OAuth Clients ===
-    // Create a pre-existing consumer (simulating manually configured client)
+  /**
+   * Helper: Tests integration with pre-existing OAuth clients.
+   *
+   * Validates that dynamic client registration works alongside manually
+   * configured OAuth clients.
+   */
+  protected function helperIntegrationWithExistingClients(): void {
+    // Create a pre-existing consumer (simulating manually configured client).
     $consumer = Consumer::create([
       'uuid' => 'existing-client-id',
       'label' => 'Existing OAuth Client',
