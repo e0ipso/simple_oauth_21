@@ -457,15 +457,15 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
    */
   protected function helperDeviceFlowWithScopes(): void {
     // Create test scopes first.
+    // Note: Scope IDs are auto-generated from names using scopeToMachineName(),
+    // so 'name' => 'read' becomes 'id' => 'read'. Do not explicitly set 'id'.
     $scope_storage = \Drupal::entityTypeManager()->getStorage('oauth2_scope');
     $scope_storage->create([
-      'id' => 'read',
-      'name' => 'Read Access',
+      'name' => 'read',
       'description' => 'Read access to resources',
     ])->save();
     $scope_storage->create([
-      'id' => 'write',
-      'name' => 'Write Access',
+      'name' => 'write',
       'description' => 'Write access to resources',
     ])->save();
 
