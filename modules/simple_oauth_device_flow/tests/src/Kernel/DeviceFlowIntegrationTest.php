@@ -3,6 +3,7 @@
 namespace Drupal\Tests\simple_oauth_device_flow\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\simple_oauth\Entities\ScopeEntity;
 use Drupal\simple_oauth_device_flow\Service\DeviceCodeService;
 use Drupal\simple_oauth_device_flow\Service\UserCodeGenerator;
 use Drupal\simple_oauth_device_flow\Service\DeviceFlowSettingsService;
@@ -170,17 +171,18 @@ class DeviceFlowIntegrationTest extends KernelTestBase {
     $this->installConfig(['simple_oauth_device_flow', 'simple_oauth']);
 
     // Create test scopes.
+    // Note: Oauth2Scope entities auto-generate IDs from names using
+    // scopeToMachineName(). So 'name' => 'read' becomes 'id' => 'read',
+    // not 'id' => 'read_access'.
     $scope_storage = $this->container->get('entity_type.manager')->getStorage('oauth2_scope');
     $scope1 = $scope_storage->create([
-      'id' => 'read',
-      'name' => 'Read Access',
+      'name' => 'read',
       'description' => 'Read access to resources',
     ]);
     $scope1->save();
 
     $scope2 = $scope_storage->create([
-      'id' => 'write',
-      'name' => 'Write Access',
+      'name' => 'write',
       'description' => 'Write access to resources',
     ]);
     $scope2->save();
@@ -217,13 +219,13 @@ class DeviceFlowIntegrationTest extends KernelTestBase {
 
     // Test adding scope via entity method (addScope).
     $scope3 = $scope_storage->create([
-      'id' => 'admin',
-      'name' => 'Admin Access',
+      'name' => 'admin',
       'description' => 'Administrative access',
     ]);
     $scope3->save();
 
-    $loaded_device_code->addScope($scope3);
+    // Wrap the Drupal Oauth2Scope entity in a ScopeEntity (League interface).
+    $loaded_device_code->addScope(new ScopeEntity($scope3));
     $loaded_device_code->save();
 
     // Reload and verify third scope is added.

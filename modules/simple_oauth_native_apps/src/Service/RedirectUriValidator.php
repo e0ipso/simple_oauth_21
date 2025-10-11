@@ -100,7 +100,16 @@ class RedirectUriValidator {
   public function validateCustomScheme(string $uri): bool {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
-    if ($config->get('allow.custom_uri_schemes') !== 'native') {
+    $custom_schemes_setting = $config->get('allow.custom_uri_schemes') ?? 'auto-detect';
+
+    // Handle 'auto-detect', 'native', 'web' enum values.
+    if ($custom_schemes_setting === 'web') {
+      $this->logger->warning('Custom URI schemes are disabled: @uri', ['@uri' => $uri]);
+      return FALSE;
+    }
+
+    // For 'auto-detect' and 'native', allow custom schemes.
+    if (!in_array($custom_schemes_setting, ['native', 'auto-detect'], TRUE)) {
       $this->logger->warning('Custom URI schemes are disabled: @uri', ['@uri' => $uri]);
       return FALSE;
     }
@@ -148,7 +157,16 @@ class RedirectUriValidator {
   public function validateLoopbackInterface(string $uri): bool {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
-    if ($config->get('allow.loopback_redirects') !== 'native') {
+    $loopback_setting = $config->get('allow.loopback_redirects') ?? 'auto-detect';
+
+    // Handle 'auto-detect', 'native', 'web' enum values.
+    if ($loopback_setting === 'web') {
+      $this->logger->warning('Loopback redirects are disabled: @uri', ['@uri' => $uri]);
+      return FALSE;
+    }
+
+    // For 'auto-detect' and 'native', allow loopback.
+    if (!in_array($loopback_setting, ['native', 'auto-detect'], TRUE)) {
       $this->logger->warning('Loopback redirects are disabled: @uri', ['@uri' => $uri]);
       return FALSE;
     }
