@@ -400,13 +400,11 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
    * - Resource server identification.
    */
   protected function helperMetadataEndpoints(): void {
-    // Ensure cache isolation for HTTP-based metadata endpoint testing.
-    $this->ensureCacheIsolation();
-
     // Test authorization server metadata (RFC 8414)
-    $this->drupalGet('/.well-known/oauth-authorization-server');
-    $this->assertSession()->statusCodeEquals(200);
-    $auth_metadata = Json::decode($this->getSession()->getPage()->getContent());
+    $response = $this->httpClient->get($this->buildUrl('/.well-known/oauth-authorization-server'));
+    $this->assertEquals(200, $response->getStatusCode(), 'Authorization server metadata endpoint returns 200');
+    $response->getBody()->rewind();
+    $auth_metadata = Json::decode($response->getBody()->getContents());
 
     // Validate key RFC 8414 metadata fields.
     $required_fields = [
@@ -428,9 +426,10 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     $this->assertStringContainsString('/oauth/register', $auth_metadata['registration_endpoint'], 'Registration endpoint URL is correct');
 
     // Test protected resource metadata (RFC 9728)
-    $this->drupalGet('/.well-known/oauth-protected-resource');
-    $this->assertSession()->statusCodeEquals(200);
-    $resource_metadata = Json::decode($this->getSession()->getPage()->getContent());
+    $resource_response = $this->httpClient->get($this->buildUrl('/.well-known/oauth-protected-resource'));
+    $this->assertEquals(200, $resource_response->getStatusCode(), 'Protected resource metadata endpoint returns 200');
+    $resource_response->getBody()->rewind();
+    $resource_metadata = Json::decode($resource_response->getBody()->getContents());
 
     // Validate RFC 9728 resource server metadata.
     $this->assertTrue(is_array($resource_metadata), 'Resource metadata is an array');
@@ -522,15 +521,17 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     $this->ensureCacheIsolation();
 
     // Make first HTTP request to metadata endpoint.
-    $this->drupalGet('/.well-known/oauth-authorization-server');
-    $this->assertSession()->statusCodeEquals(200);
-    $first_response = Json::decode($this->getSession()->getPage()->getContent());
+    $first_http_response = $this->httpClient->get($this->buildUrl('/.well-known/oauth-authorization-server'));
+    $this->assertEquals(200, $first_http_response->getStatusCode(), 'First metadata request returns 200');
+    $first_http_response->getBody()->rewind();
+    $first_response = Json::decode($first_http_response->getBody()->getContents());
 
     // Ensure cache isolation and make second request.
     $this->ensureCacheIsolation();
-    $this->drupalGet('/.well-known/oauth-authorization-server');
-    $this->assertSession()->statusCodeEquals(200);
-    $second_response = Json::decode($this->getSession()->getPage()->getContent());
+    $second_http_response = $this->httpClient->get($this->buildUrl('/.well-known/oauth-authorization-server'));
+    $this->assertEquals(200, $second_http_response->getStatusCode(), 'Second metadata request returns 200');
+    $second_http_response->getBody()->rewind();
+    $second_response = Json::decode($second_http_response->getBody()->getContents());
 
     // Verify consistency between requests.
     $this->assertEquals($first_response['registration_endpoint'], $second_response['registration_endpoint'],
