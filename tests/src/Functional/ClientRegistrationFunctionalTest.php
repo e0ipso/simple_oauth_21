@@ -347,6 +347,10 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     // Ensure cache isolation for HTTP-based metadata endpoint testing.
     $this->ensureCacheIsolation();
 
+    // Rebuild router to ensure routes are available after cache clearing.
+    // This is critical for CI environments.
+    \Drupal::service('router.builder')->rebuild();
+
     // Test authorization server metadata (RFC 8414)
     $this->drupalGet('/.well-known/oauth-authorization-server');
     $this->assertSession()->statusCodeEquals(200);
