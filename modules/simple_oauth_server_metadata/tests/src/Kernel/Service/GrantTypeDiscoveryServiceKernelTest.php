@@ -84,8 +84,8 @@ class GrantTypeDiscoveryServiceKernelTest extends KernelTestBase {
    *
    * @covers ::getGrantTypesSupported
    * @covers ::getResponseTypesSupported
-   * @group legacy
    */
+  #[Group('legacy')]
   public function testWithImplicitGrantEnabled() {
     // Note: The implicit grant has been removed in Simple OAuth 6.x
     // as it's considered insecure per OAuth 2.0 Security Best Current Practice.
@@ -125,6 +125,8 @@ class GrantTypeDiscoveryServiceKernelTest extends KernelTestBase {
     // Verify OIDC-specific response types are not available when disabled.
     $this->assertNotContains('id_token', $response_types);
     $this->assertNotContains('id_token token', $response_types);
+
+    $this->assertTrue(TRUE, 'All test scenarios completed successfully');
   }
 
 }

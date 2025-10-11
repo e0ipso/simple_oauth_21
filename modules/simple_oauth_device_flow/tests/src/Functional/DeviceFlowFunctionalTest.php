@@ -79,9 +79,6 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     // Clear caches to ensure entity types are properly discovered.
     drupal_flush_all_caches();
 
-    // Rebuild router to ensure device flow routes are registered.
-    $this->container->get('router.builder')->rebuild();
-
     // Set up OAuth keys for testing.
     $this->setUpKeys();
 

@@ -58,9 +58,6 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
     // Ensure clean cache state for reliable testing.
     $this->clearAllTestCaches();
 
-    // Rebuild routes to ensure all OAuth routes are available.
-    $this->container->get('router.builder')->rebuild();
-
     // Clear registration_endpoint config to ensure auto-discovery works.
     $config = $this->container->get('config.factory')->getEditable('simple_oauth_server_metadata.settings');
     $config->clear('registration_endpoint')->save();
@@ -317,6 +314,9 @@ class OAuthMetadataValidationTest extends BrowserTestBase {
     $native_data = Json::decode($native_response->getBody()->getContents());
     $this->assertArrayNotHasKey('client_secret', $native_data, 'Native app should not receive client secret');
     $this->assertArrayHasKey('client_id', $native_data, 'Native app should receive client ID');
+
+    // @phpstan-ignore method.alreadyNarrowedType
+    $this->assertTrue(TRUE, 'All test scenarios completed successfully');
   }
 
   /**

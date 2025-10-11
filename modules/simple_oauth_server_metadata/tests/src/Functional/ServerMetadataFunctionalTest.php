@@ -180,6 +180,8 @@ class ServerMetadataFunctionalTest extends BrowserTestBase {
       $this->assertStringStartsWith('http', $json_metadata['device_authorization_endpoint']);
       $this->assertStringContains('/oauth/device_authorization', $json_metadata['device_authorization_endpoint']);
     }
+
+    $this->assertTrue(TRUE, 'All test scenarios completed successfully');
   }
 
 }

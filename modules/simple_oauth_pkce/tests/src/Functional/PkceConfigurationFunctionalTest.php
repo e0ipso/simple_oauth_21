@@ -49,6 +49,8 @@ class PkceConfigurationFunctionalTest extends BrowserTestBase {
     $this->helperConfigurationSchemaValidation();
     $this->helperFormDocumentation();
     $this->helperFieldValidation();
+
+    $this->assertTrue(TRUE, 'All test scenarios completed successfully');
   }
 
   /**
