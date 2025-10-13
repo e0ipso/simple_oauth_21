@@ -1,6 +1,8 @@
 <?php
 
-namespace Drupal\Tests\simple_oauth_21\Functional;
+declare(strict_types=1);
+
+namespace Drupal\Tests\simple_oauth_client_registration\Functional;
 
 use Drupal\Component\Serialization\Json;
 use Drupal\Core\Cache\Cache;
@@ -19,9 +21,9 @@ use PHPUnit\Framework\Attributes\Group;
  * - Registration token authentication
  * - Cache isolation and consistency.
  */
-#[Group('simple_oauth_21')]
+#[Group('simple_oauth_client_registration')]
 #[Group('functional')]
-class ClientRegistrationFunctionalTest extends BrowserTestBase {
+final class ClientRegistrationFunctionalTest extends BrowserTestBase {
 
   /**
    * {@inheritdoc}
