@@ -403,6 +403,31 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
    * - Resource server identification.
    */
   protected function helperMetadataEndpoints(): void {
+    // Test authorization server metadata (RFC 8414)
+    $response = $this->httpClient->get($this->buildUrl('/.well-known/oauth-authorization-server'));
+    $this->assertEquals(200, $response->getStatusCode(), 'Authorization server metadata endpoint returns 200');
+    $response->getBody()->rewind();
+    $auth_metadata = Json::decode($response->getBody()->getContents());
+
+    // Validate key RFC 8414 metadata fields.
+    $required_fields = [
+      'issuer',
+      'authorization_endpoint',
+      'token_endpoint',
+      'jwks_uri',
+      'scopes_supported',
+      'response_types_supported',
+    ];
+
+    foreach ($required_fields as $field) {
+      $this->assertArrayHasKey($field, $auth_metadata, "Authorization server metadata contains required field: $field");
+    }
+
+    // Validate registration endpoint is included.
+    $this->assertArrayHasKey('registration_endpoint', $auth_metadata, 'Registration endpoint is advertised in metadata');
+    $this->assertNotEmpty($auth_metadata['registration_endpoint'], 'Registration endpoint has value');
+    $this->assertStringContainsString('/oauth/register', $auth_metadata['registration_endpoint'], 'Registration endpoint URL is correct');
+
     // Test protected resource metadata (RFC 9728)
     $resource_response = $this->httpClient->get($this->buildUrl('/.well-known/oauth-protected-resource'));
     $this->assertEquals(200, $resource_response->getStatusCode(), 'Protected resource metadata endpoint returns 200');
