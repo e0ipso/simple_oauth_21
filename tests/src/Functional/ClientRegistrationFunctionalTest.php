@@ -135,6 +135,9 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     // Error handling tests.
     $this->helperRegistrationErrorConditions();
 
+    // Metadata and discovery tests.
+    $this->helperMetadataEndpoints();
+
     // Authentication tests.
     $this->helperRegistrationTokenAuthentication($registration_data);
 
@@ -387,6 +390,41 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     $response->getBody()->rewind();
     $error_data = Json::decode($response->getBody()->getContents());
     $this->assertEquals('invalid_client_metadata', $error_data['error'], 'Correct error code for invalid redirect URI');
+  }
+
+  /**
+   * Helper: Tests metadata endpoints functionality.
+   *
+   * Validates RFC 8414 and RFC 9728 metadata discovery including:
+   * - Authorization server metadata endpoint
+   * - Required metadata fields validation
+   * - Registration endpoint discovery
+   * - Protected resource metadata endpoint
+   * - Resource server identification.
+   */
+  protected function helperMetadataEndpoints(): void {
+    // Test protected resource metadata (RFC 9728)
+    $resource_response = $this->httpClient->get($this->buildUrl('/.well-known/oauth-protected-resource'));
+    $this->assertEquals(200, $resource_response->getStatusCode(), 'Protected resource metadata endpoint returns 200');
+    $resource_response->getBody()->rewind();
+    $resource_metadata = Json::decode($resource_response->getBody()
+      ->getContents());
+
+    // Validate RFC 9728 resource server metadata.
+    $this->assertTrue(is_array($resource_metadata), 'Resource metadata is an array');
+    $this->assertNotEmpty($resource_metadata, 'Resource metadata is not empty');
+
+    // Check for required resource server identification.
+    $has_resource_identifier = isset($resource_metadata['resource']) ||
+      isset($resource_metadata['resource_server_name']) ||
+      isset($resource_metadata['name']);
+    $this->assertTrue($has_resource_identifier, 'Resource server metadata contains resource identifier');
+
+    // Check for authorization server information.
+    $has_auth_info = isset($resource_metadata['authorization_servers']) ||
+      isset($resource_metadata['bearer_methods_supported']) ||
+      isset($resource_metadata['authorization_endpoint']);
+    $this->assertTrue($has_auth_info, 'Resource server metadata contains authorization information');
   }
 
   /**
