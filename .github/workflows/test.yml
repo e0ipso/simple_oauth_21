@@ -198,7 +198,7 @@ jobs:
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: |
           # Find unit test directories and convert to space-separated list
-          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -path "*/tests/src/Unit" -type d -print | tr '\n' ' ')
+          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Unit" -path "*/tests/src/Unit" -print | tr '\n' ' ')
           if [ -n "$TEST_DIRS" ]; then
             echo "Running unit tests in: $TEST_DIRS"
             php vendor/bin/phpunit \
@@ -214,7 +214,7 @@ jobs:
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: |
           # Find kernel test directories and convert to space-separated list
-          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -path "*/tests/src/Kernel" -type d -print | tr '\n' ' ')
+          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Kernel" -path "*/tests/src/Kernel" -print | tr '\n' ' ')
           if [ -n "$TEST_DIRS" ]; then
             echo "Running kernel tests in: $TEST_DIRS"
             php vendor/bin/phpunit \
@@ -232,7 +232,7 @@ jobs:
         timeout-minutes: 15
         run: |
           # Find functional test directories and convert to space-separated list
-          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -path "*/tests/src/Functional" -type d -print | tr '\n' ' ')
+          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Functional" -path "*/tests/src/Functional" -print | tr '\n' ' ')
           if [ -n "$TEST_DIRS" ]; then
             echo "Running functional tests in: $TEST_DIRS"
 
@@ -262,7 +262,7 @@ jobs:
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: |
           # Find FunctionalJavascript test directories and convert to space-separated list
-          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -path "*/tests/src/FunctionalJavascript" -type d -print | tr '\n' ' ')
+          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "FunctionalJavascript" -path "*/tests/src/FunctionalJavascript" -print | tr '\n' ' ')
           if [ -n "$TEST_DIRS" ]; then
             echo "Running FunctionalJavascript tests in: $TEST_DIRS"
             php vendor/bin/phpunit \
