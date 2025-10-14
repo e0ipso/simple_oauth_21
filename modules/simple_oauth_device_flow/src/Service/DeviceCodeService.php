@@ -326,17 +326,18 @@ class DeviceCodeService {
       $device_code_entity->setClient($client_entity);
       $device_code_entity->setExpiryDateTime(new \DateTimeImmutable('@' . $expires_at));
 
-      // Set additional properties.
-      // Parse scope string and add each scope to the field.
-      $scope_array = !empty($scope) ? explode(' ', trim($scope)) : [];
-      foreach ($scope_array as $scope_id) {
-        $device_code_entity->get('scopes')->appendItem(['scope_id' => $scope_id]);
-      }
+      // Set additional properties including scopes.
       $device_code_entity->set('created_at', $current_time);
       $device_code_entity->set('expires_at', $expires_at);
       $device_code_entity->set('authorized', FALSE);
 
-      // Persist the device code.
+      // Parse scope string and add each scope directly to the field.
+      $scope_array = !empty($scope) ? explode(' ', trim($scope)) : [];
+      foreach ($scope_array as $scope_id) {
+        $device_code_entity->get('scopes')->appendItem(['scope_id' => trim($scope_id)]);
+      }
+
+      // Persist the device code with all fields set.
       $this->deviceCodeRepository->persistDeviceCode($device_code_entity);
 
       $this->logger->info('Device authorization generated for client @client_id: device_code=@device_code, user_code=@user_code', [

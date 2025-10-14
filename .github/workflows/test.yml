@@ -139,7 +139,16 @@ jobs:
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: |
           vendor/bin/drush cache:rebuild
+
+          # Enable main module
           vendor/bin/drush pm:enable ${{ env.MODULE_NAME }} --yes
+
+          # Enable all submodules for comprehensive testing
+          vendor/bin/drush pm:enable simple_oauth_device_flow --yes
+          vendor/bin/drush pm:enable simple_oauth_pkce --yes
+          vendor/bin/drush pm:enable simple_oauth_native_apps --yes
+          vendor/bin/drush pm:enable simple_oauth_client_registration --yes
+          vendor/bin/drush pm:enable simple_oauth_server_metadata --yes
 
           # Enable test modules that are required by the tests
           vendor/bin/drush pm:enable simple_oauth_test --yes || echo "simple_oauth_test not available"
@@ -150,7 +159,17 @@ jobs:
 
       - name: Copy deprecation ignore file
         working-directory: ${{ env.DRUPAL_ROOT }}
-        run: cp web/core/.deprecation-ignore.txt .
+        run: |
+          cp web/core/.deprecation-ignore.txt .
+
+          # Add deprecations from upstream simple_oauth module to ignore file
+          # Patterns must be valid regex with delimiters
+          cat >> .deprecation-ignore.txt << 'EOF'
+
+          # Deprecations from upstream simple_oauth module (not under our control)
+          %Defining Drupal\\simple_oauth\\Normalizer\\TokenEntityNormalizer::supportedInterfaceOrClass property is deprecated%
+          %Defining Drupal\\simple_oauth\\Normalizer\\RefreshTokenEntityNormalizer::supportedInterfaceOrClass property is deprecated%
+          EOF
 
       - name: Create artifact directory for HTML output
         run: |
@@ -182,7 +201,7 @@ jobs:
       - name: Start web server for functional tests
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: |
-          php -S 127.0.0.1:8080 -t web > /dev/null 2>&1 &
+          php -S 127.0.0.1:8080 -t web "${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/.ht.router.php" > /dev/null 2>&1 &
           sleep 2
 
       - name: Run Unit tests
@@ -190,13 +209,25 @@ jobs:
         run: |
           # Find unit test directories
           TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Unit" -path "*/tests/src/Unit" -print)
-          if [ -n "$TEST_DIRS" ]; then
-            echo "Running unit tests in: $TEST_DIRS"
-            php vendor/bin/phpunit \
-              --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
-              $TEST_DIRS
-          else
+
+          if [ -z "$TEST_DIRS" ]; then
             echo "No unit tests found"
+          else
+            echo "Found unit test directories:"
+            echo "$TEST_DIRS"
+
+            # Run phpunit separately for each directory
+            while IFS= read -r test_dir; do
+              echo "========================================"
+              echo " 🏃‍➡️ Running tests in: $test_dir"
+              echo "----------------------------------------"
+              php vendor/bin/phpunit \
+                --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
+                --testdox \
+                --no-coverage \
+                "$test_dir"
+              echo "========================================"
+            done <<< "$TEST_DIRS"
           fi
 
       - name: Run Kernel tests
@@ -204,13 +235,25 @@ jobs:
         run: |
           # Find kernel test directories
           TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Kernel" -path "*/tests/src/Kernel" -print)
-          if [ -n "$TEST_DIRS" ]; then
-            echo "Running kernel tests in: $TEST_DIRS"
-            php vendor/bin/phpunit \
-              --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
-              $TEST_DIRS
-          else
+
+          if [ -z "$TEST_DIRS" ]; then
             echo "No kernel tests found"
+          else
+            echo "Found kernel test directories:"
+            echo "$TEST_DIRS"
+
+            # Run phpunit separately for each directory
+            while IFS= read -r test_dir; do
+              echo "========================================"
+              echo " 🏃‍➡️ Running tests in: $test_dir"
+              echo "----------------------------------------"
+              php vendor/bin/phpunit \
+                --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
+                --testdox \
+                --no-coverage \
+                "$test_dir"
+              echo "========================================"
+            done <<< "$TEST_DIRS"
           fi
 
       - name: Run Functional tests
@@ -220,20 +263,26 @@ jobs:
         run: |
           # Find functional test directories
           TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Functional" -path "*/tests/src/Functional" -print)
-          if [ -n "$TEST_DIRS" ]; then
-            echo "Running functional tests in: $TEST_DIRS"
 
-            # Verify test modules are available
-            echo "Checking enabled modules:"
-            vendor/bin/drush pm:list | grep -E "(simple_oauth|oauth)" || echo "No OAuth modules found"
-
-            # Run tests with timeout and verbose output
-            timeout 900 php vendor/bin/phpunit \
-              --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
-              --stop-on-failure \
-              $TEST_DIRS
-          else
+          if [ -z "$TEST_DIRS" ]; then
             echo "No functional tests found"
+          else
+            echo "Found functional test directories:"
+            echo "$TEST_DIRS"
+
+            # Run phpunit separately for each directory
+            while IFS= read -r test_dir; do
+              echo "========================================"
+              echo " 🏃‍➡️ Running tests in: $test_dir"
+              echo "----------------------------------------"
+              timeout 900 php vendor/bin/phpunit \
+                --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
+                --testdox \
+                --no-coverage \
+                --stop-on-failure \
+                "$test_dir"
+              echo "========================================"
+            done <<< "$TEST_DIRS"
           fi
 
       - name: Upload HTML artifacts on Functional test failure
@@ -252,13 +301,25 @@ jobs:
         run: |
           # Find FunctionalJavascript test directories
           TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "FunctionalJavascript" -path "*/tests/src/FunctionalJavascript" -print)
-          if [ -n "$TEST_DIRS" ]; then
-            echo "Running FunctionalJavascript tests in: $TEST_DIRS"
-            php vendor/bin/phpunit \
-              --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
-              $TEST_DIRS
-          else
+
+          if [ -z "$TEST_DIRS" ]; then
             echo "No FunctionalJavascript tests found"
+          else
+            echo "Found FunctionalJavascript test directories:"
+            echo "$TEST_DIRS"
+
+            # Run phpunit separately for each directory
+            while IFS= read -r test_dir; do
+              echo "========================================"
+              echo " 🏃‍➡️ Running tests in: $test_dir"
+              echo "----------------------------------------"
+              php vendor/bin/phpunit \
+                --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
+                --testdox \
+                --no-coverage \
+                "$test_dir"
+              echo "========================================"
+            done <<< "$TEST_DIRS"
           fi
 
       - name: Upload HTML artifacts on FunctionalJavascript test failure

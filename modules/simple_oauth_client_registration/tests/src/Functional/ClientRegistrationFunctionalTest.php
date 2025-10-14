@@ -1,19 +1,29 @@
 <?php
 
-namespace Drupal\Tests\simple_oauth_21\Functional;
+declare(strict_types=1);
 
+namespace Drupal\Tests\simple_oauth_client_registration\Functional;
+
+use Drupal\Component\Serialization\Json;
 use Drupal\Core\Cache\Cache;
 use Drupal\Tests\BrowserTestBase;
-use Drupal\Component\Serialization\Json;
 use GuzzleHttp\RequestOptions;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Functional tests for RFC 7591 OAuth Dynamic Client Registration.
+ *
+ * Tests the complete client registration functionality including:
+ * - Client registration workflow
+ * - Client management operations (GET, PUT)
+ * - Registration error conditions
+ * - Metadata endpoints discovery
+ * - Registration token authentication
+ * - Cache isolation and consistency.
  */
-#[Group('simple_oauth_21')]
+#[Group('simple_oauth_client_registration')]
 #[Group('functional')]
-class ClientRegistrationFunctionalTest extends BrowserTestBase {
+final class ClientRegistrationFunctionalTest extends BrowserTestBase {
 
   /**
    * {@inheritdoc}
@@ -74,7 +84,8 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     $this->rebuildContainer();
 
     // Test and demonstrate the auto-detection mechanism.
-    $config = $this->container->get('config.factory')->getEditable('simple_oauth_server_metadata.settings');
+    $config = $this->container->get('config.factory')
+      ->getEditable('simple_oauth_server_metadata.settings');
 
     // First, clear registration_endpoint to test auto-detection.
     $config->clear('registration_endpoint');
@@ -105,12 +116,53 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Test RFC 7591 client registration workflow.
+   * Comprehensive RFC 7591 Dynamic Client Registration test.
+   *
+   * Tests the complete client registration functionality including:
+   * - Client registration workflow (RFC 7591)
+   * - Client management operations (GET, PUT)
+   * - Registration error conditions
+   * - Metadata endpoints discovery (RFC 8414, RFC 9728)
+   * - Registration token authentication
+   * - Cache isolation and consistency.
+   *
+   * All scenarios execute sequentially using a shared Drupal instance
+   * for optimal performance.
+   */
+  public function testComprehensiveClientRegistrationFunctionality(): void {
+    // Core workflow tests.
+    $registration_data = $this->helperClientRegistrationWorkflow();
+    $this->helperClientManagementOperations($registration_data);
+
+    // Error handling tests.
+    $this->helperRegistrationErrorConditions();
+
+    // Metadata and discovery tests.
+    $this->helperMetadataEndpoints();
+
+    // Authentication tests.
+    $this->helperRegistrationTokenAuthentication($registration_data);
+
+    // Cache consistency tests.
+    $this->helperCacheIsolationAndConsistency();
+
+    // Final assertion to confirm all test scenarios completed successfully.
+    // @phpstan-ignore method.alreadyNarrowedType
+    $this->assertTrue(TRUE, 'All RFC 7591 client registration test scenarios completed successfully');
+  }
+
+  /**
+   * Helper: Tests RFC 7591 client registration workflow.
+   *
+   * Validates the complete client registration process including:
+   * - POST request to registration endpoint
+   * - RFC 7591 response field validation
+   * - Client metadata preservation.
    *
    * @return array<string, mixed>
    *   The client registration response data.
    */
-  public function testClientRegistrationWorkflow(): array {
+  protected function helperClientRegistrationWorkflow(): array {
     // Prepare valid RFC 7591 client registration request.
     $client_metadata = [
       'client_name' => 'Test OAuth Client',
@@ -155,7 +207,10 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     // Check metadata fields are preserved.
     $this->assertEquals('Test OAuth Client', $response_data['client_name'], 'Client name matches');
     $this->assertEquals(['https://example.com/callback'], $response_data['redirect_uris'], 'Redirect URIs match');
-    $this->assertEquals(['authorization_code', 'refresh_token'], $response_data['grant_types'], 'Grant types match');
+    $this->assertEquals([
+      'authorization_code',
+      'refresh_token',
+    ], $response_data['grant_types'], 'Grant types match');
     $this->assertEquals('https://example.com', $response_data['client_uri'], 'Client URI matches');
     $this->assertEquals(['admin@example.com'], $response_data['contacts'], 'Contacts match');
 
@@ -205,8 +260,7 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
    * have predictable performance and don't encounter cache misses that
    * could cause timing-related test failures.
    */
-  protected function warmMetadataCache(): void {
-  }
+  protected function warmMetadataCache(): void {}
 
   /**
    * Ensures cache isolation before critical test operations.
@@ -230,11 +284,18 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Test client management operations using registration access token.
+   * Helper: Tests client management operations using registration access token.
+   *
+   * Validates RFC 7591 client management capabilities including:
+   * - GET client metadata retrieval
+   * - PUT client metadata updates
+   * - Authorization using registration access token.
+   *
+   * @param array<string, mixed> $registration_data
+   *   The client registration response data containing client_id and
+   *   registration_access_token.
    */
-  public function testClientManagementOperations(): void {
-    // First register a client.
-    $registration_data = $this->testClientRegistrationWorkflow();
+  protected function helperClientManagementOperations(array $registration_data): void {
     $client_id = $registration_data['client_id'];
     $access_token = $registration_data['registration_access_token'];
 
@@ -275,9 +336,14 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Test registration error conditions.
+   * Helper: Tests registration error conditions.
+   *
+   * Validates RFC 7591 error handling including:
+   * - Empty request body
+   * - Invalid JSON format
+   * - Invalid redirect URI validation.
    */
-  public function testRegistrationErrorConditions(): void {
+  protected function helperRegistrationErrorConditions(): void {
     // Test empty request body.
     $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
       RequestOptions::HEADERS => [
@@ -329,16 +395,21 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Test metadata endpoints functionality.
+   * Helper: Tests metadata endpoints functionality.
+   *
+   * Validates RFC 8414 and RFC 9728 metadata discovery including:
+   * - Authorization server metadata endpoint
+   * - Required metadata fields validation
+   * - Registration endpoint discovery
+   * - Protected resource metadata endpoint
+   * - Resource server identification.
    */
-  public function testMetadataEndpoints(): void {
-    // Ensure cache isolation for HTTP-based metadata endpoint testing.
-    $this->ensureCacheIsolation();
-
+  protected function helperMetadataEndpoints(): void {
     // Test authorization server metadata (RFC 8414)
-    $this->drupalGet('/.well-known/oauth-authorization-server');
-    $this->assertSession()->statusCodeEquals(200);
-    $auth_metadata = Json::decode($this->getSession()->getPage()->getContent());
+    $response = $this->httpClient->get($this->buildUrl('/.well-known/oauth-authorization-server'));
+    $this->assertEquals(200, $response->getStatusCode(), 'Authorization server metadata endpoint returns 200');
+    $response->getBody()->rewind();
+    $auth_metadata = Json::decode($response->getBody()->getContents());
 
     // Validate key RFC 8414 metadata fields.
     $required_fields = [
@@ -360,9 +431,11 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     $this->assertStringContainsString('/oauth/register', $auth_metadata['registration_endpoint'], 'Registration endpoint URL is correct');
 
     // Test protected resource metadata (RFC 9728)
-    $this->drupalGet('/.well-known/oauth-protected-resource');
-    $this->assertSession()->statusCodeEquals(200);
-    $resource_metadata = Json::decode($this->getSession()->getPage()->getContent());
+    $resource_response = $this->httpClient->get($this->buildUrl('/.well-known/oauth-protected-resource'));
+    $this->assertEquals(200, $resource_response->getStatusCode(), 'Protected resource metadata endpoint returns 200');
+    $resource_response->getBody()->rewind();
+    $resource_metadata = Json::decode($resource_response->getBody()
+      ->getContents());
 
     // Validate RFC 9728 resource server metadata.
     $this->assertTrue(is_array($resource_metadata), 'Resource metadata is an array');
@@ -370,23 +443,30 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
 
     // Check for required resource server identification.
     $has_resource_identifier = isset($resource_metadata['resource']) ||
-                               isset($resource_metadata['resource_server_name']) ||
-                               isset($resource_metadata['name']);
+      isset($resource_metadata['resource_server_name']) ||
+      isset($resource_metadata['name']);
     $this->assertTrue($has_resource_identifier, 'Resource server metadata contains resource identifier');
 
     // Check for authorization server information.
     $has_auth_info = isset($resource_metadata['authorization_servers']) ||
-                     isset($resource_metadata['bearer_methods_supported']) ||
-                     isset($resource_metadata['authorization_endpoint']);
+      isset($resource_metadata['bearer_methods_supported']) ||
+      isset($resource_metadata['authorization_endpoint']);
     $this->assertTrue($has_auth_info, 'Resource server metadata contains authorization information');
   }
 
   /**
-   * Test registration access token authentication.
+   * Helper: Tests registration access token authentication.
+   *
+   * Validates RFC 7591 registration access token security including:
+   * - Access without token (should fail)
+   * - Access with invalid token (should fail)
+   * - Access with valid token (should succeed).
+   *
+   * @param array<string, mixed> $registration_data
+   *   The client registration response data containing client_id and
+   *   registration_access_token.
    */
-  public function testRegistrationTokenAuthentication(): void {
-    // Register a client first.
-    $registration_data = $this->testClientRegistrationWorkflow();
+  protected function helperRegistrationTokenAuthentication(array $registration_data): void {
     $client_id = $registration_data['client_id'];
 
     // Test access without token.
@@ -421,14 +501,15 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Test cache isolation and consistency across test operations.
+   * Helper: Tests cache isolation and consistency across test operations.
    *
-   * This test verifies that cache handling improvements ensure:
+   * Verifies that cache handling improvements ensure:
    * - Fresh metadata generation after configuration changes
    * - Cache isolation between test operations
-   * - Consistent behavior across multiple requests.
+   * - Consistent behavior across multiple requests
+   * - No cache state leakage between operations.
    */
-  public function testCacheIsolationAndConsistency(): void {
+  protected function helperCacheIsolationAndConsistency(): void {
     // Get initial metadata service.
     $metadata_service = $this->container->get('simple_oauth_server_metadata.server_metadata');
 
@@ -446,15 +527,19 @@ class ClientRegistrationFunctionalTest extends BrowserTestBase {
     $this->ensureCacheIsolation();
 
     // Make first HTTP request to metadata endpoint.
-    $this->drupalGet('/.well-known/oauth-authorization-server');
-    $this->assertSession()->statusCodeEquals(200);
-    $first_response = Json::decode($this->getSession()->getPage()->getContent());
+    $first_http_response = $this->httpClient->get($this->buildUrl('/.well-known/oauth-authorization-server'));
+    $this->assertEquals(200, $first_http_response->getStatusCode(), 'First metadata request returns 200');
+    $first_http_response->getBody()->rewind();
+    $first_response = Json::decode($first_http_response->getBody()
+      ->getContents());
 
     // Ensure cache isolation and make second request.
     $this->ensureCacheIsolation();
-    $this->drupalGet('/.well-known/oauth-authorization-server');
-    $this->assertSession()->statusCodeEquals(200);
-    $second_response = Json::decode($this->getSession()->getPage()->getContent());
+    $second_http_response = $this->httpClient->get($this->buildUrl('/.well-known/oauth-authorization-server'));
+    $this->assertEquals(200, $second_http_response->getStatusCode(), 'Second metadata request returns 200');
+    $second_http_response->getBody()->rewind();
+    $second_response = Json::decode($second_http_response->getBody()
+      ->getContents());
 
     // Verify consistency between requests.
     $this->assertEquals($first_response['registration_endpoint'], $second_response['registration_endpoint'],
