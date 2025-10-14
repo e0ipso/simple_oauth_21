@@ -306,6 +306,9 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
    * Helper: Clear configuration values.
    */
   protected function helperClearConfigurationValues(): void {
+    // Ensure we're logged in as admin user to access the settings form.
+    $this->drupalLogin($this->adminUser);
+
     $empty_data = [
       'service_documentation' => '',
       'op_policy_uri' => '',
