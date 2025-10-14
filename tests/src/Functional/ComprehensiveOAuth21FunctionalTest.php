@@ -98,13 +98,13 @@ final class ComprehensiveOAuth21FunctionalTest extends BrowserTestBase {
       'administer simple_oauth entities',
     ]);
 
+    // Ensure clean cache state.
+    $this->clearAllTestCaches();
+
     // Clear registration_endpoint config to ensure auto-discovery works.
     $config = $this->container->get('config.factory')
       ->getEditable('simple_oauth_server_metadata.settings');
     $config->clear('registration_endpoint')->save();
-
-    // Clear caches to ensure services are properly initialized.
-    drupal_flush_all_caches();
 
     $this->logDebug('Setup complete');
   }
