@@ -163,11 +163,12 @@ jobs:
           cp web/core/.deprecation-ignore.txt .
 
           # Add deprecations from upstream simple_oauth module to ignore file
+          # Patterns must be valid regex with delimiters
           cat >> .deprecation-ignore.txt << 'EOF'
 
           # Deprecations from upstream simple_oauth module (not under our control)
-          Defining Drupal\simple_oauth\Normalizer\TokenEntityNormalizer::supportedInterfaceOrClass property is deprecated
-          Defining Drupal\simple_oauth\Normalizer\RefreshTokenEntityNormalizer::supportedInterfaceOrClass property is deprecated
+          %Defining Drupal\\simple_oauth\\Normalizer\\TokenEntityNormalizer::supportedInterfaceOrClass property is deprecated%
+          %Defining Drupal\\simple_oauth\\Normalizer\\RefreshTokenEntityNormalizer::supportedInterfaceOrClass property is deprecated%
           EOF
 
       - name: Create artifact directory for HTML output
