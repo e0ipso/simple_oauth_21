@@ -139,7 +139,16 @@ jobs:
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: |
           vendor/bin/drush cache:rebuild
+
+          # Enable main module
           vendor/bin/drush pm:enable ${{ env.MODULE_NAME }} --yes
+
+          # Enable all submodules for comprehensive testing
+          vendor/bin/drush pm:enable simple_oauth_device_flow --yes
+          vendor/bin/drush pm:enable simple_oauth_pkce --yes
+          vendor/bin/drush pm:enable simple_oauth_native_apps --yes
+          vendor/bin/drush pm:enable simple_oauth_client_registration --yes
+          vendor/bin/drush pm:enable simple_oauth_server_metadata --yes
 
           # Enable test modules that are required by the tests
           vendor/bin/drush pm:enable simple_oauth_test --yes || echo "simple_oauth_test not available"
@@ -194,6 +203,7 @@ jobs:
             echo "Running unit tests in: $TEST_DIRS"
             php vendor/bin/phpunit \
               --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
+              --testdox
               $TEST_DIRS
           else
             echo "No unit tests found"
@@ -208,6 +218,7 @@ jobs:
             echo "Running kernel tests in: $TEST_DIRS"
             php vendor/bin/phpunit \
               --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
+              --testdox
               $TEST_DIRS
           else
             echo "No kernel tests found"
@@ -230,6 +241,7 @@ jobs:
             # Run tests with timeout and verbose output
             timeout 900 php vendor/bin/phpunit \
               --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
+              --testdox
               --stop-on-failure \
               $TEST_DIRS
           else
@@ -256,6 +268,7 @@ jobs:
             echo "Running FunctionalJavascript tests in: $TEST_DIRS"
             php vendor/bin/phpunit \
               --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
+              --testdox
               $TEST_DIRS
           else
             echo "No FunctionalJavascript tests found"
