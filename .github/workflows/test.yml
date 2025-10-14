@@ -182,7 +182,7 @@ jobs:
       - name: Start web server for functional tests
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: |
-          php -S 127.0.0.1:8080 -t web > /dev/null 2>&1 &
+          php -S 127.0.0.1:8080 -t web web/core/assets/scaffold/files/ht.router.php > /dev/null 2>&1 &
           sleep 2
 
       - name: Run Unit tests
