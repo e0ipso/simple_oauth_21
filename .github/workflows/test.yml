@@ -208,12 +208,15 @@ jobs:
 
             # Run phpunit separately for each directory
             while IFS= read -r test_dir; do
-              echo "Running tests in: $test_dir"
+              echo "========================================"
+              echo " 🏃‍➡️ Running tests in: $test_dir"
+              echo "----------------------------------------"
               php vendor/bin/phpunit \
                 --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
                 --testdox \
                 --no-coverage \
                 "$test_dir"
+              echo "========================================"
             done <<< "$TEST_DIRS"
           fi
 
@@ -231,12 +234,15 @@ jobs:
 
             # Run phpunit separately for each directory
             while IFS= read -r test_dir; do
-              echo "Running tests in: $test_dir"
+              echo "========================================"
+              echo " 🏃‍➡️ Running tests in: $test_dir"
+              echo "----------------------------------------"
               php vendor/bin/phpunit \
                 --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
                 --testdox \
                 --no-coverage \
                 "$test_dir"
+              echo "========================================"
             done <<< "$TEST_DIRS"
           fi
 
@@ -256,13 +262,16 @@ jobs:
 
             # Run phpunit separately for each directory
             while IFS= read -r test_dir; do
-              echo "Running tests in: $test_dir"
+              echo "========================================"
+              echo " 🏃‍➡️ Running tests in: $test_dir"
+              echo "----------------------------------------"
               timeout 900 php vendor/bin/phpunit \
                 --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
                 --testdox \
                 --no-coverage \
                 --stop-on-failure \
                 "$test_dir"
+              echo "========================================"
             done <<< "$TEST_DIRS"
           fi
 
@@ -291,12 +300,15 @@ jobs:
 
             # Run phpunit separately for each directory
             while IFS= read -r test_dir; do
-              echo "Running tests in: $test_dir"
+              echo "========================================"
+              echo " 🏃‍➡️ Running tests in: $test_dir"
+              echo "----------------------------------------"
               php vendor/bin/phpunit \
                 --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
                 --testdox \
                 --no-coverage \
                 "$test_dir"
+              echo "========================================"
             done <<< "$TEST_DIRS"
           fi
 

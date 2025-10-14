@@ -166,8 +166,6 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
 
     // ===== Phase 2: OpenID Connect Discovery =====
     $this->helperOpenIdConfigurationRouteExists();
-    $this->helperCacheHeaders();
-    $this->helperCorsHeaders();
     $this->helperConfigurationIntegration();
     $this->helperPublicAccess();
     $this->helperSpecificationCompliance();
@@ -474,20 +472,6 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
       [200, 503],
       'Route should return either success (200) or service unavailable (503)'
     );
-  }
-
-  /**
-   * Helper: Tests cache headers and behavior.
-   */
-  protected function helperCacheHeaders(): void {
-    $this->markTestSkipped('Skipped due to service dependency issues.');
-  }
-
-  /**
-   * Helper: Tests CORS headers for cross-origin requests.
-   */
-  protected function helperCorsHeaders(): void {
-    $this->markTestSkipped('Skipped due to service dependency issues.');
   }
 
   /**
