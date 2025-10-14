@@ -322,6 +322,8 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     $this->submitForm($empty_data, 'Save configuration');
 
     // Verify empty configuration was saved.
+    // Reload configuration from storage to get the updated values.
+    \Drupal::configFactory()->reset('simple_oauth_server_metadata.settings');
     $empty_config = $this->config('simple_oauth_server_metadata.settings');
     $this->assertEmpty($empty_config->get('service_documentation'));
     $this->assertEmpty($empty_config->get('op_policy_uri'));
