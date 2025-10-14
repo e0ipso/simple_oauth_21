@@ -316,15 +316,22 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
       'ui_locales_supported' => '',
       'additional_claims_supported' => '',
       'additional_signing_algorithms' => '',
+      'registration_endpoint' => '',
+      'revocation_endpoint' => '',
+      'introspection_endpoint' => '',
+      'resource_documentation' => '',
+      'resource_policy_uri' => '',
+      'resource_tos_uri' => '',
     ];
 
     $this->drupalGet('/admin/config/people/simple_oauth/oauth-21/server-metadata');
     $this->submitForm($empty_data, 'Save configuration');
 
     // Verify empty configuration was saved.
-    // Reload configuration from storage to get the updated values.
-    \Drupal::configFactory()->reset('simple_oauth_server_metadata.settings');
-    $empty_config = $this->config('simple_oauth_server_metadata.settings');
+    // Use config factory directly to get fresh values from storage.
+    $config_factory = \Drupal::configFactory();
+    $config_factory->reset('simple_oauth_server_metadata.settings');
+    $empty_config = $config_factory->getEditable('simple_oauth_server_metadata.settings');
     $this->assertEmpty($empty_config->get('service_documentation'));
     $this->assertEmpty($empty_config->get('op_policy_uri'));
     $this->assertEmpty($empty_config->get('op_tos_uri'));
