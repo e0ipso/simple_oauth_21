@@ -197,8 +197,8 @@ jobs:
       - name: Run Unit tests
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: |
-          # Find unit test directories
-          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Unit" -path "*/tests/src/Unit" -print)
+          # Find unit test directories and convert to space-separated list
+          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Unit" -path "*/tests/src/Unit" -print | tr '\n' ' ')
           if [ -n "$TEST_DIRS" ]; then
             echo "Running unit tests in: $TEST_DIRS"
             php vendor/bin/phpunit \
@@ -213,8 +213,8 @@ jobs:
       - name: Run Kernel tests
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: |
-          # Find kernel test directories
-          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Kernel" -path "*/tests/src/Kernel" -print)
+          # Find kernel test directories and convert to space-separated list
+          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Kernel" -path "*/tests/src/Kernel" -print | tr '\n' ' ')
           if [ -n "$TEST_DIRS" ]; then
             echo "Running kernel tests in: $TEST_DIRS"
             php vendor/bin/phpunit \
@@ -231,14 +231,10 @@ jobs:
         working-directory: ${{ env.DRUPAL_ROOT }}
         timeout-minutes: 15
         run: |
-          # Find functional test directories
-          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Functional" -path "*/tests/src/Functional" -print)
+          # Find functional test directories and convert to space-separated list
+          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "Functional" -path "*/tests/src/Functional" -print | tr '\n' ' ')
           if [ -n "$TEST_DIRS" ]; then
             echo "Running functional tests in: $TEST_DIRS"
-
-            # Verify test modules are available
-            echo "Checking enabled modules:"
-            vendor/bin/drush pm:list | grep -E "(simple_oauth|oauth)" || echo "No OAuth modules found"
 
             # Run tests with timeout and verbose output
             timeout 900 php vendor/bin/phpunit \
@@ -265,8 +261,8 @@ jobs:
         id: functional-js-tests
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: |
-          # Find FunctionalJavascript test directories
-          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "FunctionalJavascript" -path "*/tests/src/FunctionalJavascript" -print)
+          # Find FunctionalJavascript test directories and convert to space-separated list
+          TEST_DIRS=$(find ${{ env.MODULE_PATH }} -path "*/vendor" -prune -o -type d -name "FunctionalJavascript" -path "*/tests/src/FunctionalJavascript" -print | tr '\n' ' ')
           if [ -n "$TEST_DIRS" ]; then
             echo "Running FunctionalJavascript tests in: $TEST_DIRS"
             php vendor/bin/phpunit \
