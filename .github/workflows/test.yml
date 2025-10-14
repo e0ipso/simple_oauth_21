@@ -203,7 +203,8 @@ jobs:
             echo "Running unit tests in: $TEST_DIRS"
             php vendor/bin/phpunit \
               --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
-              --testdox
+              --testdox \
+              --no-coverage \
               $TEST_DIRS
           else
             echo "No unit tests found"
@@ -218,7 +219,8 @@ jobs:
             echo "Running kernel tests in: $TEST_DIRS"
             php vendor/bin/phpunit \
               --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
-              --testdox
+              --testdox \
+              --no-coverage \
               $TEST_DIRS
           else
             echo "No kernel tests found"
@@ -241,7 +243,8 @@ jobs:
             # Run tests with timeout and verbose output
             timeout 900 php vendor/bin/phpunit \
               --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
-              --testdox
+              --testdox \
+              --no-coverage \
               --stop-on-failure \
               $TEST_DIRS
           else
@@ -268,7 +271,8 @@ jobs:
             echo "Running FunctionalJavascript tests in: $TEST_DIRS"
             php vendor/bin/phpunit \
               --configuration ${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/core/phpunit.xml.dist \
-              --testdox
+              --testdox \
+              --no-coverage \
               $TEST_DIRS
           else
             echo "No FunctionalJavascript tests found"
