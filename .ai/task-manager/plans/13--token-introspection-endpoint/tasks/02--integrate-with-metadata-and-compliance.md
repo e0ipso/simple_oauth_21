@@ -2,7 +2,7 @@
 id: 2
 group: 'token-introspection'
 dependencies: [1]
-status: 'pending'
+status: 'completed'
 created: '2025-10-22'
 skills:
   - drupal-backend

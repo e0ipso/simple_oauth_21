@@ -123,8 +123,6 @@ class ServerMetadataService implements CacheableDependencyInterface {
   protected function addConfigurableFields(array &$metadata, $config, array $config_override = []): void {
     $configurable_fields = [
       'registration_endpoint',
-      'revocation_endpoint',
-      'introspection_endpoint',
       'service_documentation',
       'op_policy_uri',
       'op_tos_uri',
@@ -136,8 +134,6 @@ class ServerMetadataService implements CacheableDependencyInterface {
     // Fields that should be converted to absolute URLs if they are relative.
     $url_fields = [
       'registration_endpoint',
-      'revocation_endpoint',
-      'introspection_endpoint',
       'service_documentation',
       'op_policy_uri',
       'op_tos_uri',

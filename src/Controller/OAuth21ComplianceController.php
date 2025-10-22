@@ -86,6 +86,7 @@ final class OAuth21ComplianceController extends ControllerBase {
       'rfc_8252' => 'OAuth for Native Apps',
       'rfc_8628' => 'Device Authorization Grant',
       'rfc_7591' => 'Dynamic Client Registration',
+      'rfc_7662' => 'OAuth 2.0 Token Introspection',
     ];
 
     $rfc_descriptions = [
@@ -94,6 +95,7 @@ final class OAuth21ComplianceController extends ControllerBase {
       'rfc_8252' => 'Custom URI schemes, loopback redirects, WebView detection',
       'rfc_8628' => 'Device flow for input-constrained devices',
       'rfc_7591' => 'Full CRUD operations, metadata support',
+      'rfc_7662' => 'Token metadata introspection for resource servers',
     ];
 
     $rfc_urls = [
@@ -102,6 +104,7 @@ final class OAuth21ComplianceController extends ControllerBase {
       'rfc_8252' => 'https://datatracker.ietf.org/doc/html/rfc8252',
       'rfc_8628' => 'https://datatracker.ietf.org/doc/html/rfc8628',
       'rfc_7591' => 'https://datatracker.ietf.org/doc/html/rfc7591',
+      'rfc_7662' => 'https://datatracker.ietf.org/doc/html/rfc7662',
     ];
 
     $config_routes = [

@@ -7,6 +7,8 @@ namespace Drupal\simple_oauth_21\Service;
 use Drupal\Core\Config\Config;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
+use Drupal\Core\Routing\RouteProviderInterface;
+use Symfony\Component\Routing\Exception\RouteNotFoundException;
 
 /**
  * Simplified service for OAuth 2.1 compliance checking.
@@ -51,10 +53,13 @@ final class OAuth21ComplianceService {
    *   The module handler service.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The configuration factory service.
+   * @param \Drupal\Core\Routing\RouteProviderInterface $routeProvider
+   *   The route provider service.
    */
   public function __construct(
     private readonly ModuleHandlerInterface $moduleHandler,
     private readonly ConfigFactoryInterface $configFactory,
+    private readonly RouteProviderInterface $routeProvider,
   ) {}
 
   /**
@@ -109,6 +114,25 @@ final class OAuth21ComplianceService {
       'module' => 'simple_oauth_client_registration',
       'enabled' => $registration_status['enabled'],
       'recommendation' => $registration_status['enabled'] ? 'Dynamic client registration is available' : 'Enable client registration module for automated client setup',
+    ];
+
+    // RFC 7662 - Token Introspection.
+    $introspection_available = FALSE;
+    try {
+      $introspection_route = $this->routeProvider->getRouteByName('simple_oauth_server_metadata.token_introspection');
+      $introspection_available = $introspection_route !== NULL;
+    }
+    catch (RouteNotFoundException $e) {
+      $introspection_available = FALSE;
+    }
+
+    $rfcs['rfc_7662'] = [
+      'status' => $introspection_available ? 'configured' : 'not_available',
+      'module' => 'simple_oauth_server_metadata',
+      'enabled' => $introspection_available,
+      'recommendation' => $introspection_available
+        ? 'Token introspection endpoint is available for resource servers'
+        : 'Token introspection endpoint is not implemented',
     ];
 
     return $rfcs;

@@ -108,6 +108,22 @@ class EndpointDiscoveryService {
   }
 
   /**
+   * Gets the introspection endpoint URL if available.
+   *
+   * @return string|null
+   *   The introspection endpoint URL, or NULL if not available.
+   */
+  public function getIntrospectionEndpoint(): ?string {
+    try {
+      return Url::fromRoute('simple_oauth_server_metadata.token_introspection')->setAbsolute()->toString();
+    }
+    catch (\Exception $e) {
+      // Route doesn't exist, return NULL.
+      return NULL;
+    }
+  }
+
+  /**
    * Gets the OAuth server metadata endpoint URL.
    *
    * @return string
@@ -141,6 +157,11 @@ class EndpointDiscoveryService {
     $revocation_endpoint = $this->getRevocationEndpoint();
     if ($revocation_endpoint !== NULL) {
       $endpoints['revocation_endpoint'] = $revocation_endpoint;
+    }
+
+    $introspection_endpoint = $this->getIntrospectionEndpoint();
+    if ($introspection_endpoint !== NULL) {
+      $endpoints['introspection_endpoint'] = $introspection_endpoint;
     }
 
     // Check for Device Flow module.

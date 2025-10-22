@@ -509,11 +509,11 @@ graph TD
 
 - Reference: `.ai/task-manager/config/hooks/POST_PHASE.md`
 
-### Phase 1: Foundation
+### ✅ Phase 1: Foundation
 
 **Parallel Tasks:**
 
-- Task 001: Implement Token Introspection Endpoint
+- ✔️ Task 001: Implement Token Introspection Endpoint (status: completed)
 
 **Description:** Create the core RFC 7662 compliant token introspection controller, route, and permission system. This provides the foundational endpoint that subsequent phases will integrate and test.
 
