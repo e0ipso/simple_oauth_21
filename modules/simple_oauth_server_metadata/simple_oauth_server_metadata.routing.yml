@@ -54,9 +54,10 @@ simple_oauth_server_metadata.token_introspection:
     _title: 'OAuth 2.0 Token Introspection'
   methods: [POST]
   requirements:
-    # Bearer token authentication handled by controller per RFC 7662.
-    _access: 'TRUE'
+    # Require authenticated user via OAuth2 Bearer token per RFC 7662.
+    _role: 'authenticated'
   options:
+    _auth: ['oauth2']
     _format: 'json'
     no_cache: TRUE
 
