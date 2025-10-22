@@ -551,6 +551,7 @@ graph TD
 Successfully implemented RFC 7662 compliant OAuth 2.0 Token Introspection endpoint within the Simple OAuth 2.1 module ecosystem. All success criteria met:
 
 **Deliverables Completed:**
+
 1. **TokenIntrospectionController** (`modules/simple_oauth_server_metadata/src/Controller/TokenIntrospectionController.php`)
    - 282 lines of RFC 7662 compliant code
    - Handles POST requests to `/oauth/introspect`
@@ -578,6 +579,7 @@ Successfully implemented RFC 7662 compliant OAuth 2.0 Token Introspection endpoi
    - All tests pass successfully
 
 **Commits:**
+
 - `ac3a70a` - feat: implement RFC 7662 token introspection endpoint
 - `d42734b` - feat: integrate introspection endpoint with metadata and compliance
 - `81041ad` - test: add comprehensive token introspection endpoint tests
@@ -589,6 +591,7 @@ Successfully implemented RFC 7662 compliant OAuth 2.0 Token Introspection endpoi
 Initially implemented OAuth Bearer token authentication via route configuration (`_auth: ['oauth2']`), which is one valid approach per RFC 7662. During testing, discovered that functional tests would require complex OAuth authorization code flows to obtain valid JWT tokens.
 
 **Resolution:** Refactored to handle Bearer token authentication directly in the controller (similar to `/oauth/revoke` endpoint pattern). This approach:
+
 - Simplifies testing without sacrificing security
 - Provides more flexibility for future authentication methods
 - Remains fully RFC 7662 compliant (allows multiple auth methods)
@@ -609,18 +612,21 @@ Original test plan included complex multi-user OAuth flows with sequential token
 ### Recommendations
 
 **1. Production Deployment Checklist**
+
 - Review and assign "bypass token introspection restrictions" permission carefully (it's marked as sensitive)
 - Consider implementing rate limiting at web server level to prevent token scanning attacks
 - Monitor introspection endpoint usage for unusual patterns
 - Clear Drupal cache after deployment: `vendor/bin/drush cache:rebuild`
 
 **2. Future Enhancements** (out of scope for this implementation)
+
 - Add support for client credentials authentication as alternative to Bearer tokens
 - Implement detailed audit logging for introspection attempts
 - Add configuration option to control which optional fields are included in responses
 - Consider performance optimization with token value database indexing for high-volume usage
 
 **3. Documentation**
+
 - Update API.md with introspection endpoint examples showing request/response format
 - Add security best practices documentation for the bypass permission
 - Document the authentication approach for developers extending the endpoint
