@@ -2,11 +2,12 @@
 id: 3
 group: 'token-introspection'
 dependencies: [1, 2]
-status: 'pending'
+status: 'blocked'
 created: '2025-10-22'
 skills:
   - drupal-backend
   - phpunit
+blockedBy: 'Route configuration issue in Task 1 - requires OAuth2 user auth instead of client auth per RFC 7662'
 ---
 
 # Test Token Introspection Endpoint

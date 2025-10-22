@@ -8,6 +8,7 @@ use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\simple_oauth\Entity\Oauth2TokenInterface;
+use Drupal\user\UserInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -56,6 +57,15 @@ final class TokenIntrospectionController extends ControllerBase {
   private readonly RequestStack $requestStack;
 
   /**
+   * The current authenticated user account.
+   *
+   * Populated by authenticateRequest() when processing Bearer tokens.
+   *
+   * @var \Drupal\user\UserInterface|null
+   */
+  private ?UserInterface $authenticatedUser = NULL;
+
+  /**
    * Constructs a TokenIntrospectionController object.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
@@ -95,9 +105,12 @@ final class TokenIntrospectionController extends ControllerBase {
    * Handles token introspection requests.
    *
    * Processes POST requests to introspect OAuth tokens and return metadata
-   * in RFC 7662 compliant format. The endpoint requires OAuth 2.0
-   * authentication and enforces ownership validation unless the user has
-   * bypass permission.
+   * in RFC 7662 compliant format. The endpoint handles Bearer token
+   * authentication internally and enforces ownership validation unless the
+   * user has bypass permission.
+   *
+   * Authentication methods (per RFC 7662):
+   * - Bearer token in Authorization header
    *
    * Request parameters (POST body):
    * - token (required): The token value to introspect
@@ -111,6 +124,7 @@ final class TokenIntrospectionController extends ControllerBase {
    * Response codes:
    * - 200 OK: Token introspection completed (includes both active/inactive)
    * - 400 Bad Request: Missing required token parameter
+   * - 401 Unauthorized: Missing or invalid authentication credentials
    *
    * Security considerations:
    * - Returns identical {"active": false} for non-existent, expired, revoked,
@@ -126,6 +140,17 @@ final class TokenIntrospectionController extends ControllerBase {
    */
   public function introspect(Request $request): JsonResponse {
     try {
+      // Authenticate the request using Bearer token.
+      if (!$this->authenticateRequest($request)) {
+        return new JsonResponse(
+          [
+            'error' => 'invalid_client',
+            'error_description' => 'Client authentication failed',
+          ],
+          JsonResponse::HTTP_UNAUTHORIZED
+        );
+      }
+
       // Extract required token parameter from POST body.
       $tokenValue = $request->request->get('token');
       if (empty($tokenValue)) {
@@ -160,7 +185,7 @@ final class TokenIntrospectionController extends ControllerBase {
         // Per RFC 7662 Section 2.2, return inactive for unauthorized requests
         // to prevent token enumeration.
         $this->logger->info('Token introspection denied for user @uid: not owner and no bypass permission', [
-          '@uid' => $this->account->id(),
+          '@uid' => $this->authenticatedUser->id(),
         ]);
         return $this->createInactiveResponse();
       }
@@ -214,6 +239,62 @@ final class TokenIntrospectionController extends ControllerBase {
   }
 
   /**
+   * Authenticates the introspection request using Bearer token.
+   *
+   * Per RFC 7662, clients must authenticate themselves when making
+   * introspection requests. This implementation supports Bearer token
+   * authentication via the Authorization header.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request.
+   *
+   * @return bool
+   *   TRUE if authentication succeeded, FALSE otherwise.
+   */
+  private function authenticateRequest(Request $request): bool {
+    // Extract Authorization header.
+    $authHeader = $request->headers->get('Authorization');
+    if (empty($authHeader)) {
+      return FALSE;
+    }
+
+    // Parse Bearer token from Authorization header.
+    if (!preg_match('/^Bearer\s+(.+)$/i', $authHeader, $matches)) {
+      return FALSE;
+    }
+
+    $bearerToken = $matches[1];
+
+    // Look up the bearer token to authenticate the user.
+    $authToken = $this->findTokenByValue($bearerToken);
+    if (!$authToken) {
+      return FALSE;
+    }
+
+    // Check if authentication token is valid (not expired/revoked).
+    if ($this->isTokenInactive($authToken)) {
+      return FALSE;
+    }
+
+    // Load the user associated with the authentication token.
+    $userId = $authToken->get('auth_user_id')->target_id;
+    if (!$userId) {
+      return FALSE;
+    }
+
+    $userStorage = $this->entityManager->getStorage('user');
+    $user = $userStorage->load($userId);
+    if (!$user) {
+      return FALSE;
+    }
+
+    // Store authenticated user for authorization checks.
+    $this->authenticatedUser = $user;
+
+    return TRUE;
+  }
+
+  /**
    * Checks if the current user is authorized to introspect the token.
    *
    * Authorization is granted if either:
@@ -229,7 +310,7 @@ final class TokenIntrospectionController extends ControllerBase {
    */
   private function isAuthorizedToIntrospect(Oauth2TokenInterface $token): bool {
     // Check bypass permission first.
-    if ($this->account->hasPermission('bypass token introspection restrictions')) {
+    if ($this->authenticatedUser->hasPermission('bypass token introspection restrictions')) {
       return TRUE;
     }
 
@@ -241,7 +322,7 @@ final class TokenIntrospectionController extends ControllerBase {
       return FALSE;
     }
 
-    return (int) $tokenOwnerId === (int) $this->account->id();
+    return (int) $tokenOwnerId === (int) $this->authenticatedUser->id();
   }
 
   /**
@@ -304,12 +385,10 @@ final class TokenIntrospectionController extends ControllerBase {
       'active' => TRUE,
     ];
 
-    // Add scope if available.
-    $scopes = $token->get('scopes')->referencedEntities();
-    if (!empty($scopes)) {
-      $scopeNames = array_map(fn($scope) => $scope->label(), $scopes);
-      $response['scope'] = implode(' ', $scopeNames);
-    }
+    // Add scope (required by RFC 7662, empty string if no scopes).
+    $scopes = $token->get('scopes')->getScopes();
+    $scopeNames = array_map(fn($scope) => $scope->getName(), $scopes);
+    $response['scope'] = implode(' ', $scopeNames);
 
     // Add client_id.
     $client = $token->get('client')->entity;
