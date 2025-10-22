@@ -1,1 +1,3 @@
-auto_enable_refresh_token: true
+default_grant_types:
+  - authorization_code
+  - refresh_token

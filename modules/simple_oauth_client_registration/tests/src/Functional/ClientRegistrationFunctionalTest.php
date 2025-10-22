@@ -559,24 +559,24 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Tests default refresh_token grant behavior based on configuration.
+   * Tests default grant types behavior based on configuration.
    *
-   * Validates that the auto_enable_refresh_token setting correctly controls
-   * whether refresh_token is automatically added to the default grant types
-   * when clients register without explicitly specifying grant_types.
+   * Validates that the default_grant_types setting correctly controls
+   * which grant types are automatically assigned when clients register
+   * without explicitly specifying grant_types.
    *
    * Test scenarios:
-   * 1. Setting enabled + no grant_types: Should include refresh_token
-   * 2. Setting disabled + no grant_types: Should NOT include refresh_token
+   * 1. Default config (authorization_code + refresh_token): Should include both
+   * 2. Single grant type configured: Should include only configured grant
    * 3. Explicit grant_types: Client-specified values respected regardless
    *
    * @covers \Drupal\simple_oauth_client_registration\Service\ClientRegistrationService::processClientRegistration
    */
   public function testDefaultRefreshTokenGrant(): void {
-    // Scenario 1: Setting enabled + no grant_types specified.
-    // Expected: authorization_code and refresh_token in response.
+    // Scenario 1: Default config with both authorization_code and
+    // refresh_token. Expected: Both grant types in response.
     $config = $this->config('simple_oauth_client_registration.settings');
-    $config->set('auto_enable_refresh_token', TRUE);
+    $config->set('default_grant_types', ['authorization_code', 'refresh_token']);
     $config->save();
     $this->clearAllTestCaches();
 
@@ -593,24 +593,24 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
       ],
     ]);
 
-    $this->assertEquals(200, $response->getStatusCode(), 'Registration succeeded with setting enabled');
+    $this->assertEquals(200, $response->getStatusCode(), 'Registration succeeded with default grants');
     $response->getBody()->rewind();
     $response_data = Json::decode($response->getBody()->getContents());
 
     $this->assertArrayHasKey('grant_types', $response_data, 'Response contains grant_types');
     $this->assertContains('authorization_code', $response_data['grant_types'],
-      'Default grants include authorization_code when setting enabled');
+      'Default grants include authorization_code');
     $this->assertContains('refresh_token', $response_data['grant_types'],
-      'Default grants include refresh_token when setting enabled');
+      'Default grants include refresh_token');
 
-    // Scenario 2: Setting disabled + no grant_types specified.
+    // Scenario 2: Config with authorization_code only.
     // Expected: authorization_code only, NO refresh_token.
-    $config->set('auto_enable_refresh_token', FALSE);
+    $config->set('default_grant_types', ['authorization_code']);
     $config->save();
     $this->clearAllTestCaches();
 
     $client_metadata_no_grants_disabled = [
-      'client_name' => 'Test Client - Default Grants Disabled',
+      'client_name' => 'Test Client - Single Grant Type',
       'redirect_uris' => ['https://example2.com/callback'],
     ];
 
@@ -622,19 +622,19 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
       ],
     ]);
 
-    $this->assertEquals(200, $response->getStatusCode(), 'Registration succeeded with setting disabled');
+    $this->assertEquals(200, $response->getStatusCode(), 'Registration succeeded with single grant type');
     $response->getBody()->rewind();
     $response_data = Json::decode($response->getBody()->getContents());
 
     $this->assertArrayHasKey('grant_types', $response_data, 'Response contains grant_types');
     $this->assertContains('authorization_code', $response_data['grant_types'],
-      'Default grants include authorization_code when setting disabled');
+      'Default grants include authorization_code');
     $this->assertNotContains('refresh_token', $response_data['grant_types'],
-      'Default grants do NOT include refresh_token when setting disabled');
+      'Default grants do NOT include refresh_token when not configured');
 
     // Scenario 3: Explicit grant_types specified by client.
     // Expected: Client-specified values respected, setting has no effect.
-    $config->set('auto_enable_refresh_token', TRUE);
+    $config->set('default_grant_types', ['authorization_code', 'refresh_token']);
     $config->save();
     $this->clearAllTestCaches();
 

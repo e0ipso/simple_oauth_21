@@ -74,8 +74,7 @@ final class ClientRegistrationService {
     // RFC 7591 Section 3.2.1 grants the authorization server the authority to
     // establish default values for omitted fields during registration.
     $config = $this->configFactory->get('simple_oauth_client_registration.settings');
-    $auto_enable = $config->get('auto_enable_refresh_token') ?? TRUE;
-    $default_grant_types = $auto_enable ? ['authorization_code', 'refresh_token'] : ['authorization_code'];
+    $default_grant_types = $config->get('default_grant_types') ?? ['authorization_code', 'refresh_token'];
 
     // Map RFC 7591 fields to Consumer entity fields using Consumer::create.
     $values = [

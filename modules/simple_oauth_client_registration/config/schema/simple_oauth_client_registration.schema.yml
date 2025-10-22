@@ -2,6 +2,8 @@ simple_oauth_client_registration.settings:
   type: config_object
   label: 'Client Registration Settings'
   mapping:
-    auto_enable_refresh_token:
-      type: boolean
-      label: 'Automatically enable refresh_token grant for DCR clients'
+    default_grant_types:
+      type: sequence
+      label: 'Default grant types for DCR clients'
+      sequence:
+        type: string
