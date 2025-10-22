@@ -2,3 +2,8 @@ bypass token revocation restrictions:
   title: 'Bypass token revocation restrictions'
   description: 'Allows revoking any OAuth token regardless of ownership. This is an administrative permission that should only be granted to trusted roles.'
   restrict access: TRUE
+
+bypass token introspection restrictions:
+  title: 'Bypass token introspection authorization restrictions'
+  description: 'Allow introspection of any token regardless of ownership. This is a sensitive permission.'
+  restrict access: TRUE

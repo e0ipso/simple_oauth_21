@@ -99,7 +99,15 @@ Structure your response as follows:
 - If context is insufficient: List specific clarifying questions
 - If context is sufficient: Provide the comprehensive plan using the structure above. Use the information in @TASK_MANAGER.md for the directory structure and additional information about plans.
 
-Outside the plan document, be **extremely** concise. Just tell the user that you are done, and instruct them to review the plan document.
+**Output Behavior:**
+
+Be extremely concise but helpful:
+
+- Tell the user that you are done
+- Instruct them to review the plan document with the file path
+- Example output: "Plan created. Please review: `.ai/task-manager/plans/40--plan-name/plan-40--plan-name.md`"
+
+**Note:** When this command is invoked by the full-workflow command, the full-workflow will modify the plan's `approval_method` field after creation to enable automated execution.
 
 ###### Plan Template
 
@@ -121,8 +129,11 @@ Example:
 id: 1
 summary: 'Implement a comprehensive CI/CD pipeline using GitHub Actions for automated linting, testing, semantic versioning, and NPM publishing'
 created: 2025-09-01
+approval_method: 'manual'
 ---
 ```
+
+**Important**: Always set `approval_method` to "manual" when creating a plan. The full-workflow command will modify this field to "auto" after creation if running in automated mode.
 
 The schema for this frontmatter is:
 
@@ -143,6 +154,11 @@ The schema for this frontmatter is:
       "type": "string",
       "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
       "description": "Creation date in YYYY-MM-DD format"
+    },
+    "approval_method": {
+      "type": "string",
+      "enum": ["auto", "manual"],
+      "description": "Workflow approval mode: auto for automated workflows, manual for standalone execution"
     }
   },
   "additionalProperties": false

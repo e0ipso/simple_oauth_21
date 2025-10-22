@@ -47,6 +47,19 @@ simple_oauth_server_metadata.revoke:
     # Made accessible because there is custom authorization in the controller, as per RFC 7009.
     _access: 'TRUE'
 
+simple_oauth_server_metadata.token_introspection:
+  path: '/oauth/introspect'
+  defaults:
+    _controller: '\Drupal\simple_oauth_server_metadata\Controller\TokenIntrospectionController::introspect'
+    _title: 'OAuth 2.0 Token Introspection'
+  methods: [POST]
+  requirements:
+    _user_is_logged_in: 'TRUE'
+  options:
+    _auth: ['oauth2']
+    _format: 'json'
+    no_cache: TRUE
+
 simple_oauth_server_metadata.settings:
   path: '/admin/config/people/simple_oauth/oauth-21/server-metadata'
   defaults:
