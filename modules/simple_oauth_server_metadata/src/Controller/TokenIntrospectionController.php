@@ -5,15 +5,13 @@ declare(strict_types=1);
 namespace Drupal\simple_oauth_server_metadata\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
-use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\simple_oauth\Entity\Oauth2TokenInterface;
-use Drupal\user\UserInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Controller for OAuth 2.0 token introspection endpoint (RFC 7662).
@@ -24,80 +22,36 @@ use Symfony\Component\HttpFoundation\RequestStack;
  * This prevents token enumeration attacks by returning consistent responses
  * for unauthorized, non-existent, or expired tokens.
  *
+ * Authentication is handled by the global SimpleOauthAuthenticationProvider
+ * which validates Bearer tokens and sets the current user. This controller
+ * trusts the currentUser service rather than duplicating authentication logic.
+ * Authentication failures are caught by IntrospectionExceptionSubscriber and
+ * converted to RFC 7662 compliant error responses.
+ *
  * @see https://datatracker.ietf.org/doc/html/rfc7662
  */
 final class TokenIntrospectionController extends ControllerBase {
 
   /**
-   * The entity type manager.
-   *
-   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
-   */
-  private readonly EntityTypeManagerInterface $entityManager;
-
-  /**
-   * The current user.
-   *
-   * @var \Drupal\Core\Session\AccountProxyInterface
-   */
-  private readonly AccountProxyInterface $account;
-
-  /**
-   * The logger service.
-   *
-   * @var \Psr\Log\LoggerInterface
-   */
-  private readonly LoggerInterface $logger;
-
-  /**
-   * The request stack.
-   *
-   * @var \Symfony\Component\HttpFoundation\RequestStack
-   */
-  private readonly RequestStack $requestStack;
-
-  /**
-   * The current authenticated user account.
-   *
-   * Populated by authenticateRequest() when processing Bearer tokens.
-   *
-   * @var \Drupal\user\UserInterface|null
-   */
-  private ?UserInterface $authenticatedUser = NULL;
-
-  /**
    * Constructs a TokenIntrospectionController object.
    *
-   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
-   *   The entity type manager.
-   * @param \Drupal\Core\Session\AccountProxyInterface $currentUser
-   *   The current user account.
-   * @param \Psr\Log\LoggerInterface $logger
-   *   The logger service.
    * @param \Symfony\Component\HttpFoundation\RequestStack $requestStack
    *   The request stack.
+   * @param \Psr\Log\LoggerInterface $logger
+   *   The logger service.
    */
   public function __construct(
-    EntityTypeManagerInterface $entityTypeManager,
-    AccountProxyInterface $currentUser,
-    LoggerInterface $logger,
-    RequestStack $requestStack,
-  ) {
-    $this->entityManager = $entityTypeManager;
-    $this->account = $currentUser;
-    $this->logger = $logger;
-    $this->requestStack = $requestStack;
-  }
+    private readonly RequestStack $requestStack,
+    private readonly LoggerInterface $logger,
+  ) {}
 
   /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): self {
     return new self(
-      $container->get('entity_type.manager'),
-      $container->get('current_user'),
-      $container->get('logger.channel.simple_oauth'),
       $container->get('request_stack'),
+      $container->get('logger.channel.simple_oauth'),
     );
   }
 
@@ -105,12 +59,15 @@ final class TokenIntrospectionController extends ControllerBase {
    * Handles token introspection requests.
    *
    * Processes POST requests to introspect OAuth tokens and return metadata
-   * in RFC 7662 compliant format. The endpoint handles Bearer token
-   * authentication internally and enforces ownership validation unless the
-   * user has bypass permission.
+   * in RFC 7662 compliant format. Authentication is handled by the global
+   * SimpleOauthAuthenticationProvider which validates Bearer tokens and sets
+   * currentUser. The controller enforces ownership validation unless the user
+   * has bypass permission.
    *
-   * Authentication methods (per RFC 7662):
-   * - Bearer token in Authorization header
+   * Authentication:
+   * - Bearer token in Authorization header (validated by authentication
+   *   provider).
+   * - Authentication failures are caught by IntrospectionExceptionSubscriber.
    *
    * Request parameters (POST body):
    * - token (required): The token value to introspect
@@ -124,7 +81,8 @@ final class TokenIntrospectionController extends ControllerBase {
    * Response codes:
    * - 200 OK: Token introspection completed (includes both active/inactive)
    * - 400 Bad Request: Missing required token parameter
-   * - 401 Unauthorized: Missing or invalid authentication credentials
+   * - 401 Unauthorized: Missing or invalid Bearer token (via event
+   *   subscriber)
    *
    * Security considerations:
    * - Returns identical {"active": false} for non-existent, expired, revoked,
@@ -140,14 +98,18 @@ final class TokenIntrospectionController extends ControllerBase {
    */
   public function introspect(Request $request): JsonResponse {
     try {
-      // Authenticate the request using Bearer token.
-      if (!$this->authenticateRequest($request)) {
+      // Check if user is authenticated. The authentication provider sets
+      // currentUser() based on Bearer token validation. If authentication
+      // fails, the provider throws OAuthUnauthorizedHttpException which is
+      // caught by IntrospectionExceptionSubscriber.
+      if ($this->currentUser()->isAnonymous()) {
         return new JsonResponse(
           [
             'error' => 'invalid_client',
-            'error_description' => 'Client authentication failed',
+            'error_description' => 'Authentication required',
           ],
-          JsonResponse::HTTP_UNAUTHORIZED
+          Response::HTTP_UNAUTHORIZED,
+          ['WWW-Authenticate' => 'Bearer']
         );
       }
 
@@ -159,17 +121,9 @@ final class TokenIntrospectionController extends ControllerBase {
             'error' => 'invalid_request',
             'error_description' => 'Missing token parameter',
           ],
-          JsonResponse::HTTP_BAD_REQUEST
+          Response::HTTP_BAD_REQUEST
         );
       }
-
-      // Extract optional token_type_hint parameter.
-      // Per RFC 7662 Section 2.1, this parameter is optional and provides a
-      // hint about the token type. Our implementation searches both access and
-      // refresh tokens automatically, so this hint is informational only.
-      $tokenTypeHint = $request->request->get('token_type_hint');
-      // Prevent unused variable warning - accepted per RFC 7662.
-      unset($tokenTypeHint);
 
       // Look up the token by its value.
       $token = $this->findTokenByValue($tokenValue);
@@ -185,7 +139,7 @@ final class TokenIntrospectionController extends ControllerBase {
         // Per RFC 7662 Section 2.2, return inactive for unauthorized requests
         // to prevent token enumeration.
         $this->logger->info('Token introspection denied for user @uid: not owner and no bypass permission', [
-          '@uid' => $this->authenticatedUser->id(),
+          '@uid' => $this->currentUser()->id(),
         ]);
         return $this->createInactiveResponse();
       }
@@ -224,7 +178,7 @@ final class TokenIntrospectionController extends ControllerBase {
    *   The token entity if found, NULL otherwise.
    */
   private function findTokenByValue(string $tokenValue): ?Oauth2TokenInterface {
-    $storage = $this->entityManager->getStorage('oauth2_token');
+    $storage = $this->entityTypeManager->getStorage('oauth2_token');
 
     // Query for token by value field.
     $results = $storage->loadByProperties(['value' => $tokenValue]);
@@ -236,62 +190,6 @@ final class TokenIntrospectionController extends ControllerBase {
     // Return the first matching token.
     $token = reset($results);
     return $token instanceof Oauth2TokenInterface ? $token : NULL;
-  }
-
-  /**
-   * Authenticates the introspection request using Bearer token.
-   *
-   * Per RFC 7662, clients must authenticate themselves when making
-   * introspection requests. This implementation supports Bearer token
-   * authentication via the Authorization header.
-   *
-   * @param \Symfony\Component\HttpFoundation\Request $request
-   *   The HTTP request.
-   *
-   * @return bool
-   *   TRUE if authentication succeeded, FALSE otherwise.
-   */
-  private function authenticateRequest(Request $request): bool {
-    // Extract Authorization header.
-    $authHeader = $request->headers->get('Authorization');
-    if (empty($authHeader)) {
-      return FALSE;
-    }
-
-    // Parse Bearer token from Authorization header.
-    if (!preg_match('/^Bearer\s+(.+)$/i', $authHeader, $matches)) {
-      return FALSE;
-    }
-
-    $bearerToken = $matches[1];
-
-    // Look up the bearer token to authenticate the user.
-    $authToken = $this->findTokenByValue($bearerToken);
-    if (!$authToken) {
-      return FALSE;
-    }
-
-    // Check if authentication token is valid (not expired/revoked).
-    if ($this->isTokenInactive($authToken)) {
-      return FALSE;
-    }
-
-    // Load the user associated with the authentication token.
-    $userId = $authToken->get('auth_user_id')->target_id;
-    if (!$userId) {
-      return FALSE;
-    }
-
-    $userStorage = $this->entityManager->getStorage('user');
-    $user = $userStorage->load($userId);
-    if (!$user) {
-      return FALSE;
-    }
-
-    // Store authenticated user for authorization checks.
-    $this->authenticatedUser = $user;
-
-    return TRUE;
   }
 
   /**
@@ -310,7 +208,7 @@ final class TokenIntrospectionController extends ControllerBase {
    */
   private function isAuthorizedToIntrospect(Oauth2TokenInterface $token): bool {
     // Check bypass permission first.
-    if ($this->authenticatedUser->hasPermission('bypass token introspection restrictions')) {
+    if ($this->currentUser()->hasPermission('bypass token introspection restrictions')) {
       return TRUE;
     }
 
@@ -322,7 +220,7 @@ final class TokenIntrospectionController extends ControllerBase {
       return FALSE;
     }
 
-    return (int) $tokenOwnerId === (int) $this->authenticatedUser->id();
+    return (int) $tokenOwnerId === (int) $this->currentUser()->id();
   }
 
   /**

@@ -17,9 +17,9 @@ use Psr\Http\Message\ResponseInterface;
 /**
  * Functional tests for RFC 7662 Token Introspection endpoint.
  *
- * Tests comprehensive token introspection functionality including authentication,
- * authorization, token validation, request parameters, response formats,
- * integration points, and security constraints.
+ * Tests comprehensive token introspection functionality including
+ * authentication, authorization, token validation, request parameters,
+ * response formats, integration points, and security constraints.
  *
  * @see https://datatracker.ietf.org/doc/html/rfc7662
  */

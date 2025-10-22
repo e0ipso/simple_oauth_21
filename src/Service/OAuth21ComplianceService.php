@@ -119,8 +119,8 @@ final class OAuth21ComplianceService {
     // RFC 7662 - Token Introspection.
     $introspection_available = FALSE;
     try {
-      $introspection_route = $this->routeProvider->getRouteByName('simple_oauth_server_metadata.token_introspection');
-      $introspection_available = $introspection_route !== NULL;
+      $this->routeProvider->getRouteByName('simple_oauth_server_metadata.token_introspection');
+      $introspection_available = TRUE;
     }
     catch (RouteNotFoundException $e) {
       $introspection_available = FALSE;

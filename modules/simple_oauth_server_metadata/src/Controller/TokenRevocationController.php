@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\simple_oauth_server_metadata\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
-use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\simple_oauth_server_metadata\Service\ClientAuthenticationService;
 use Drupal\simple_oauth_server_metadata\Service\TokenRevocationService;
 use Psr\Log\LoggerInterface;
@@ -33,8 +32,6 @@ final class TokenRevocationController extends ControllerBase {
    *   The client authentication service.
    * @param \Drupal\simple_oauth_server_metadata\Service\TokenRevocationService $tokenRevocation
    *   The token revocation service.
-   * @param \Drupal\Core\Session\AccountProxyInterface $account
-   *   The current user account.
    * @param \Symfony\Bridge\PsrHttpMessage\HttpMessageFactoryInterface $httpMessageFactory
    *   The HTTP message factory for PSR-7 conversion.
    * @param \Psr\Log\LoggerInterface $logger
@@ -43,7 +40,6 @@ final class TokenRevocationController extends ControllerBase {
   public function __construct(
     private readonly ClientAuthenticationService $clientAuthentication,
     private readonly TokenRevocationService $tokenRevocation,
-    private readonly AccountProxyInterface $account,
     private readonly HttpMessageFactoryInterface $httpMessageFactory,
     private readonly LoggerInterface $logger,
   ) {}
@@ -55,7 +51,6 @@ final class TokenRevocationController extends ControllerBase {
     return new self(
       $container->get('simple_oauth_server_metadata.client_authentication'),
       $container->get('simple_oauth_server_metadata.token_revocation'),
-      $container->get('current_user'),
       $container->get('psr7.http_message_factory'),
       $container->get('logger.channel.simple_oauth'),
     );
@@ -113,17 +108,16 @@ final class TokenRevocationController extends ControllerBase {
       }
 
       // Extract optional token_type_hint parameter.
-      // Per RFC 7009 Section 2.1, this parameter is optional and
-      // provides a hint about the token type. Our implementation handles
-      // both access and refresh tokens automatically, so this hint is not
-      // needed for revocation logic.
-      // phpcs:ignore Drupal.Commenting.VariableComment.IncorrectVarType
+      // Per RFC 7009 Section 2.1, this parameter is optional and provides a
+      // hint about the token type. Our implementation handles both access and
+      // refresh tokens automatically, so this hint is not needed for
+      // revocation logic.
       $tokenTypeHint = $request->request->get('token_type_hint');
       // Prevent unused variable warning - accepted per RFC 7009.
       unset($tokenTypeHint);
 
       // Check if user has permission to bypass ownership restrictions.
-      $bypassOwnership = $this->account->hasPermission('bypass token revocation restrictions');
+      $bypassOwnership = $this->currentUser->hasPermission('bypass token revocation restrictions');
 
       // Get the client ID for ownership validation.
       $clientId = $client->getClientId();
@@ -139,8 +133,8 @@ final class TokenRevocationController extends ControllerBase {
       ]);
 
       // Per RFC 7009 Section 2.2, always return 200 for privacy.
-      // This prevents token enumeration attacks by not revealing whether
-      // the token existed or was successfully revoked.
+      // This prevents token enumeration attacks by not revealing whether the
+      // token existed or was successfully revoked.
       return new Response('', Response::HTTP_OK);
     }
     catch (\Exception $e) {

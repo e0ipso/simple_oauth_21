@@ -61,3 +61,8 @@ services:
     class: Drupal\simple_oauth_server_metadata\Routing\RouteSubscriber
     tags:
       - { name: event_subscriber }
+  simple_oauth_server_metadata.introspection_exception_subscriber:
+    class: Drupal\simple_oauth_server_metadata\EventSubscriber\IntrospectionExceptionSubscriber
+    arguments: ['@logger.channel.simple_oauth']
+    tags:
+      - { name: event_subscriber }
