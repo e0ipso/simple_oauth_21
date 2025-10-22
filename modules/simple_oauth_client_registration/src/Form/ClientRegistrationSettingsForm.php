@@ -4,11 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\simple_oauth_client_registration\Form;
 
-use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
-use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Configuration form for Dynamic Client Registration settings.
