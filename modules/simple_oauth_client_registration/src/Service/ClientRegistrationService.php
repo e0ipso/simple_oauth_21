@@ -70,12 +70,19 @@ final class ClientRegistrationService {
     // Determine if client should be confidential.
     $is_confidential = $clientData->isConfidential();
 
+    // Determine default grant types based on configuration.
+    // RFC 7591 Section 3.2.1 grants the authorization server the authority to
+    // establish default values for omitted fields during registration.
+    $config = $this->configFactory->get('simple_oauth_client_registration.settings');
+    $auto_enable = $config->get('auto_enable_refresh_token') ?? TRUE;
+    $default_grant_types = $auto_enable ? ['authorization_code', 'refresh_token'] : ['authorization_code'];
+
     // Map RFC 7591 fields to Consumer entity fields using Consumer::create.
     $values = [
       'client_id' => $client_id,
       'label' => $clientData->clientName ?? 'Dynamically Registered Client',
       'description' => 'Client registered via RFC 7591 Dynamic Client Registration',
-      'grant_types' => $clientData->grantTypes ?: ['authorization_code'],
+      'grant_types' => $clientData->grantTypes ?: $default_grant_types,
       'redirect' => $clientData->redirectUris,
       'confidential' => $is_confidential,
       'roles' => ['authenticated'],
