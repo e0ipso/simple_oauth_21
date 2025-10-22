@@ -356,6 +356,7 @@ Successfully implemented configurable default grant types for the Dynamic Client
    - Drush commands documented
 
 **Commits**:
+
 - `feat: add configuration infrastructure for DCR refresh token defaults` (2c4903e)
 - `feat: add settings form and service logic for DCR refresh token defaults` (6004991)
 - `test: add functional tests for DCR refresh token defaults` (5434ce3)
@@ -367,6 +368,7 @@ Successfully implemented configurable default grant types for the Dynamic Client
 **Phase 2 Efficiency**: Task 4 (routing configuration) was completed as part of Task 2 (settings form implementation), demonstrating natural task consolidation. The routing was added alongside the form class, which made logical sense given their tight coupling.
 
 **Linting Integration**: Pre-commit hooks successfully enforced code quality standards throughout execution:
+
 - PHPCS (Drupal coding standards) - passed all phases
 - PHPStan (static analysis) - passed all phases
 - Prettier (markdown/JS formatting) - auto-fixed formatting issues
