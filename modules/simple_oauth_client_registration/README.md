@@ -93,6 +93,116 @@ The module adds the following RFC 7591 metadata fields to Consumer entities:
 - **Software ID**: Unique application identifier
 - **Software Version**: Application version string
 
+### Automatic Refresh Token Configuration
+
+The module provides OAuth 2.1-compliant automatic refresh token enablement via the **Configuration » People » Simple OAuth Client Registration** settings page.
+
+#### Setting: Auto-enable Refresh Token Grant
+
+- **Default Value**: `true` (enabled)
+- **Configuration Key**: `simple_oauth_client_registration.settings.auto_enable_refresh_token`
+- **Scope**: Dynamic Client Registration (DCR) endpoint only - does NOT affect admin UI client creation
+
+**RFC 7591 Compliance**: Per RFC 7591 Section 3.2.1, when a client omits the `grant_types` parameter during registration, the authorization server determines the default set of grant types. This setting implements OAuth 2.1 best practices by automatically including `refresh_token` in the default grant types.
+
+**OAuth 2.1 Rationale**: OAuth 2.1 mandates refresh tokens for most authorization flows to improve security through token rotation and expiration. This default aligns with modern OAuth security recommendations while maintaining backward compatibility through explicit client control.
+
+#### Behavior
+
+**When enabled** (default):
+
+- If client registration request omits `grant_types`, the server automatically includes `refresh_token` alongside other default grant types (e.g., `authorization_code`)
+- Clients explicitly specifying `grant_types` are NOT modified - their request is honored exactly as provided
+- Ensures OAuth 2.1-compliant token lifecycle management by default
+
+**When disabled**:
+
+- Server uses base OAuth 2.0 defaults only when `grant_types` is omitted
+- Clients must explicitly request `refresh_token` in their registration request
+- Provides compatibility with OAuth 2.0-only implementations
+
+#### Registration Examples
+
+**Example 1: Omitted grant_types (auto_enable_refresh_token: true)**
+
+Request:
+
+```json
+{
+  "client_name": "My Application",
+  "redirect_uris": ["https://myapp.example.com/callback"]
+}
+```
+
+Response (server adds refresh_token automatically):
+
+```json
+{
+  "client_id": "generated_client_id",
+  "client_secret": "generated_secret",
+  "grant_types": ["authorization_code", "refresh_token"],
+  "redirect_uris": ["https://myapp.example.com/callback"]
+}
+```
+
+**Example 2: Explicit grant_types (auto_enable_refresh_token: ignored)**
+
+Request:
+
+```json
+{
+  "client_name": "My Application",
+  "redirect_uris": ["https://myapp.example.com/callback"],
+  "grant_types": ["client_credentials"]
+}
+```
+
+Response (server honors explicit request, no refresh_token added):
+
+```json
+{
+  "client_id": "generated_client_id",
+  "client_secret": "generated_secret",
+  "grant_types": ["client_credentials"],
+  "redirect_uris": ["https://myapp.example.com/callback"]
+}
+```
+
+**Example 3: Omitted grant_types (auto_enable_refresh_token: false)**
+
+Request:
+
+```json
+{
+  "client_name": "My Application",
+  "redirect_uris": ["https://myapp.example.com/callback"]
+}
+```
+
+Response (server uses base defaults only):
+
+```json
+{
+  "client_id": "generated_client_id",
+  "client_secret": "generated_secret",
+  "grant_types": ["authorization_code"],
+  "redirect_uris": ["https://myapp.example.com/callback"]
+}
+```
+
+#### Configuration via Drush
+
+```bash
+# Check current setting
+drush config:get simple_oauth_client_registration.settings auto_enable_refresh_token
+
+# Enable automatic refresh token (OAuth 2.1 recommended)
+drush config:set simple_oauth_client_registration.settings auto_enable_refresh_token true
+
+# Disable automatic refresh token (OAuth 2.0 compatibility)
+drush config:set simple_oauth_client_registration.settings auto_enable_refresh_token false
+```
+
 ## API Reference
 
 ### Registration Endpoint

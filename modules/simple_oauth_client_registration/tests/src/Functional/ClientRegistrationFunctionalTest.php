@@ -558,4 +558,109 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
       'No cache state leakage detected between test operations');
   }
 
+  /**
+   * Tests default refresh_token grant behavior based on configuration.
+   *
+   * Validates that the auto_enable_refresh_token setting correctly controls
+   * whether refresh_token is automatically added to the default grant types
+   * when clients register without explicitly specifying grant_types.
+   *
+   * Test scenarios:
+   * 1. Setting enabled + no grant_types: Should include refresh_token
+   * 2. Setting disabled + no grant_types: Should NOT include refresh_token
+   * 3. Explicit grant_types: Client-specified values respected regardless
+   *
+   * @covers \Drupal\simple_oauth_client_registration\Service\ClientRegistrationService::processClientRegistration
+   */
+  public function testDefaultRefreshTokenGrant(): void {
+    // Scenario 1: Setting enabled + no grant_types specified.
+    // Expected: authorization_code and refresh_token in response.
+    $config = $this->config('simple_oauth_client_registration.settings');
+    $config->set('auto_enable_refresh_token', TRUE);
+    $config->save();
+    $this->clearAllTestCaches();
+
+    $client_metadata_no_grants = [
+      'client_name' => 'Test Client - Default Grants Enabled',
+      'redirect_uris' => ['https://example.com/callback'],
+    ];
+
+    $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
+      RequestOptions::JSON => $client_metadata_no_grants,
+      RequestOptions::HEADERS => [
+        'Content-Type' => 'application/json',
+        'Accept' => 'application/json',
+      ],
+    ]);
+
+    $this->assertEquals(200, $response->getStatusCode(), 'Registration succeeded with setting enabled');
+    $response->getBody()->rewind();
+    $response_data = Json::decode($response->getBody()->getContents());
+
+    $this->assertArrayHasKey('grant_types', $response_data, 'Response contains grant_types');
+    $this->assertContains('authorization_code', $response_data['grant_types'],
+      'Default grants include authorization_code when setting enabled');
+    $this->assertContains('refresh_token', $response_data['grant_types'],
+      'Default grants include refresh_token when setting enabled');
+
+    // Scenario 2: Setting disabled + no grant_types specified.
+    // Expected: authorization_code only, NO refresh_token.
+    $config->set('auto_enable_refresh_token', FALSE);
+    $config->save();
+    $this->clearAllTestCaches();
+
+    $client_metadata_no_grants_disabled = [
+      'client_name' => 'Test Client - Default Grants Disabled',
+      'redirect_uris' => ['https://example2.com/callback'],
+    ];
+
+    $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
+      RequestOptions::JSON => $client_metadata_no_grants_disabled,
+      RequestOptions::HEADERS => [
+        'Content-Type' => 'application/json',
+        'Accept' => 'application/json',
+      ],
+    ]);
+
+    $this->assertEquals(200, $response->getStatusCode(), 'Registration succeeded with setting disabled');
+    $response->getBody()->rewind();
+    $response_data = Json::decode($response->getBody()->getContents());
+
+    $this->assertArrayHasKey('grant_types', $response_data, 'Response contains grant_types');
+    $this->assertContains('authorization_code', $response_data['grant_types'],
+      'Default grants include authorization_code when setting disabled');
+    $this->assertNotContains('refresh_token', $response_data['grant_types'],
+      'Default grants do NOT include refresh_token when setting disabled');
+
+    // Scenario 3: Explicit grant_types specified by client.
+    // Expected: Client-specified values respected, setting has no effect.
+    $config->set('auto_enable_refresh_token', TRUE);
+    $config->save();
+    $this->clearAllTestCaches();
+
+    $client_metadata_explicit_grants = [
+      'client_name' => 'Test Client - Explicit Grants',
+      'redirect_uris' => ['https://example3.com/callback'],
+      'grant_types' => ['client_credentials'],
+    ];
+
+    $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
+      RequestOptions::JSON => $client_metadata_explicit_grants,
+      RequestOptions::HEADERS => [
+        'Content-Type' => 'application/json',
+        'Accept' => 'application/json',
+      ],
+    ]);
+
+    $this->assertEquals(200, $response->getStatusCode(), 'Registration succeeded with explicit grant_types');
+    $response->getBody()->rewind();
+    $response_data = Json::decode($response->getBody()->getContents());
+
+    $this->assertArrayHasKey('grant_types', $response_data, 'Response contains grant_types');
+    $this->assertEquals(['client_credentials'], $response_data['grant_types'],
+      'Explicit grant_types are respected exactly as specified');
+    $this->assertNotContains('refresh_token', $response_data['grant_types'],
+      'refresh_token is NOT added when client explicitly specifies grant_types');
+  }
+
 }
