@@ -111,8 +111,8 @@ final class OAuth21ComplianceController extends ControllerBase {
       'simple_oauth_pkce' => 'simple_oauth_pkce.settings',
       'simple_oauth_server_metadata' => 'simple_oauth_server_metadata.settings',
       'simple_oauth_native_apps' => 'simple_oauth_native_apps.settings',
-      // Note: device_flow and client_registration use different routing
-      // patterns.
+      'simple_oauth_client_registration' => 'simple_oauth_client_registration.settings',
+      // Note: device_flow uses a different routing pattern.
     ];
 
     foreach ($rfc_data as $rfc_key => $data) {
