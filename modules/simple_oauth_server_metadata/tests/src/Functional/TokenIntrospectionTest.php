@@ -290,6 +290,15 @@ final class TokenIntrospectionTest extends BrowserTestBase {
       ['token' => $this->validToken->get('value')->value],
       ['Authorization' => 'Bearer ' . $this->user1AuthToken]
     );
+    if ($response->getStatusCode() !== 200) {
+      // Debug output for troubleshooting.
+      $this->fail(sprintf(
+        'Expected 200 but got %d. Response body: %s. Auth token first 50 chars: %s',
+        $response->getStatusCode(),
+        (string) $response->getBody(),
+        substr($this->user1AuthToken, 0, 50)
+      ));
+    }
     $this->assertEquals(200, $response->getStatusCode(), 'Valid Bearer token should allow introspection');
 
     // Test 2: Missing Bearer token returns 401.
