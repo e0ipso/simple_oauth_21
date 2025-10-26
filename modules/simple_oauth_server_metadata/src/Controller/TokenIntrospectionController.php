@@ -97,6 +97,23 @@ final class TokenIntrospectionController extends ControllerBase {
    *   The JSON response with token metadata or inactive status.
    */
   public function introspect(Request $request): JsonResponse {
+    // Temporary workaround: Reject GET requests with HTTP 405.
+    // The route accepts both GET and POST to bypass a simple_oauth
+    // bug where PathValidator creates internal GET requests, causing
+    // MethodNotAllowedException for POST-only routes with OAuth
+    // authentication.
+    // See: https://www.drupal.org/project/simple_oauth/issues/[TBD]
+    if ($request->getMethod() === 'GET') {
+      return new JsonResponse(
+        [
+          'error' => 'invalid_request',
+          'error_description' => 'Only POST requests are allowed. RFC 7662 requires the introspection endpoint to accept HTTP POST.',
+        ],
+        Response::HTTP_METHOD_NOT_ALLOWED,
+        ['Allow' => 'POST']
+      );
+    }
+
     try {
       // Check if user is authenticated. The authentication provider sets
       // currentUser() based on Bearer token validation. If authentication
@@ -178,7 +195,7 @@ final class TokenIntrospectionController extends ControllerBase {
    *   The token entity if found, NULL otherwise.
    */
   private function findTokenByValue(string $tokenValue): ?Oauth2TokenInterface {
-    $storage = $this->entityTypeManager->getStorage('oauth2_token');
+    $storage = $this->entityTypeManager()->getStorage('oauth2_token');
 
     // Query for token by value field.
     $results = $storage->loadByProperties(['value' => $tokenValue]);
@@ -207,8 +224,20 @@ final class TokenIntrospectionController extends ControllerBase {
    *   TRUE if authorized, FALSE otherwise.
    */
   private function isAuthorizedToIntrospect(Oauth2TokenInterface $token): bool {
+    $currentUserId = $this->currentUser()->id();
+
+    // Load the full user account to ensure all roles and permissions are
+    // available. The currentUser() service may return a lightweight proxy that
+    // doesn't have all user data fully loaded during OAuth authentication.
+    /** @var \Drupal\user\UserInterface|null $userAccount */
+    $userAccount = $this->entityTypeManager()->getStorage('user')->load($currentUserId);
+
+    if (!$userAccount) {
+      return FALSE;
+    }
+
     // Check bypass permission first.
-    if ($this->currentUser()->hasPermission('bypass token introspection restrictions')) {
+    if ($userAccount->hasPermission('bypass token introspection restrictions')) {
       return TRUE;
     }
 
@@ -220,7 +249,7 @@ final class TokenIntrospectionController extends ControllerBase {
       return FALSE;
     }
 
-    return (int) $tokenOwnerId === (int) $this->currentUser()->id();
+    return (int) $tokenOwnerId === (int) $currentUserId;
   }
 
   /**

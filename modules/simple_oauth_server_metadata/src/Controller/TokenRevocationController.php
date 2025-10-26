@@ -117,7 +117,7 @@ final class TokenRevocationController extends ControllerBase {
       unset($tokenTypeHint);
 
       // Check if user has permission to bypass ownership restrictions.
-      $bypassOwnership = $this->currentUser->hasPermission('bypass token revocation restrictions');
+      $bypassOwnership = $this->currentUser()->hasPermission('bypass token revocation restrictions');
 
       // Get the client ID for ownership validation.
       $clientId = $client->getClientId();

@@ -25,3 +25,11 @@ simple_oauth_client_registration.manage:
     _format: 'json'
     no_cache: TRUE
     _oauth_skip_auth: TRUE
+
+simple_oauth_client_registration.settings:
+  path: '/admin/config/services/simple-oauth/oauth-21/client-registration'
+  defaults:
+    _form: '\Drupal\simple_oauth_client_registration\Form\ClientRegistrationSettingsForm'
+    _title: 'Client Registration Settings'
+  requirements:
+    _permission: 'administer simple_oauth entities'

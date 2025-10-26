@@ -1,0 +1,3 @@
+default_grant_types:
+  - authorization_code
+  - refresh_token

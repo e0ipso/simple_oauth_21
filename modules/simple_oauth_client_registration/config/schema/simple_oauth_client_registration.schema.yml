@@ -1,0 +1,9 @@
+simple_oauth_client_registration.settings:
+  type: config_object
+  label: 'Client Registration Settings'
+  mapping:
+    default_grant_types:
+      type: sequence
+      label: 'Default grant types for DCR clients'
+      sequence:
+        type: string

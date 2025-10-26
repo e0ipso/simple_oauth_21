@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace Drupal\Tests\simple_oauth_server_metadata\Functional;
 
 use Drupal\Component\Serialization\Json;
-use Drupal\consumers\Entity\Consumer;
 use Drupal\Core\Url;
 use Drupal\simple_oauth\Entity\Oauth2Token;
-use Drupal\Tests\BrowserTestBase;
+use Drupal\simple_oauth_21\Trait\DebugLoggingTrait;
 use Drupal\Tests\simple_oauth\Functional\RequestHelperTrait;
-use Drupal\Tests\simple_oauth\Functional\SimpleOauthTestTrait;
+use Drupal\Tests\simple_oauth\Functional\TokenBearerFunctionalTestBase;
+use Drupal\user\Entity\Role;
+use Drupal\user\RoleInterface;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Http\Message\ResponseInterface;
 
@@ -24,10 +25,10 @@ use Psr\Http\Message\ResponseInterface;
  * @see https://datatracker.ietf.org/doc/html/rfc7662
  */
 #[Group('simple_oauth_server_metadata')]
-final class TokenIntrospectionTest extends BrowserTestBase {
+final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
 
+  use DebugLoggingTrait;
   use RequestHelperTrait;
-  use SimpleOauthTestTrait;
 
   /**
    * {@inheritdoc}
@@ -41,11 +42,6 @@ final class TokenIntrospectionTest extends BrowserTestBase {
     'simple_oauth_21',
     'simple_oauth_server_metadata',
   ];
-
-  /**
-   * {@inheritdoc}
-   */
-  protected $defaultTheme = 'stark';
 
   /**
    * Test user 1 (token owner).
@@ -67,13 +63,6 @@ final class TokenIntrospectionTest extends BrowserTestBase {
    * @var \Drupal\user\UserInterface
    */
   private $adminUser;
-
-  /**
-   * Test OAuth client (confidential).
-   *
-   * @var \Drupal\consumers\Entity\Consumer
-   */
-  private Consumer $client;
 
   /**
    * Valid access token for user1.
@@ -130,27 +119,20 @@ final class TokenIntrospectionTest extends BrowserTestBase {
   protected function setUp(): void {
     parent::setUp();
 
-    // Set up OAuth keys.
-    $this->setUpKeys();
+    // Grant permissions to authenticated role (applies to all
+    // authenticated users).
+    $this->grantPermissions(Role::load(RoleInterface::AUTHENTICATED_ID), [
+      'grant simple_oauth codes',
+      'access content',
+    ]);
 
-    // Create test users.
-    $this->user1 = $this->drupalCreateUser(['access content', 'grant simple_oauth codes']);
-    $this->user2 = $this->drupalCreateUser(['access content', 'grant simple_oauth codes']);
+    // Create additional test users.
+    // parent::setUp() already creates $this->user.
+    $this->user1 = $this->user;
+    $this->user2 = $this->drupalCreateUser();
     $this->adminUser = $this->drupalCreateUser([
       'bypass token introspection restrictions',
-      'access content',
-      'grant simple_oauth codes',
     ]);
-
-    // Create OAuth client.
-    $this->client = Consumer::create([
-      'label' => 'Test Client',
-      'client_id' => 'test_client_id',
-      'secret' => 'test_client_secret',
-      'is_default' => FALSE,
-      'confidential' => TRUE,
-    ]);
-    $this->client->save();
 
     // Create valid access token for user1.
     $this->validToken = Oauth2Token::create([
@@ -202,46 +184,12 @@ final class TokenIntrospectionTest extends BrowserTestBase {
     ]);
     $this->refreshToken->save();
 
-    // Create authenticating access tokens for making introspection requests.
-    // These are separate from the tokens being tested (validToken, etc.).
-    $user1Token = Oauth2Token::create([
-      'bundle' => 'access_token',
-      'auth_user_id' => $this->user1->id(),
-      'client' => $this->client,
-      'value' => 'auth_token_user1_' . $this->randomMachineName(),
-      'scopes' => [],
-      'expire' => time() + 3600,
-      'status' => TRUE,
-    ]);
-    $user1Token->save();
-    $this->user1AuthToken = $user1Token->get('value')->value;
-
-    $user2Token = Oauth2Token::create([
-      'bundle' => 'access_token',
-      'auth_user_id' => $this->user2->id(),
-      'client' => $this->client,
-      'value' => 'auth_token_user2_' . $this->randomMachineName(),
-      'scopes' => [],
-      'expire' => time() + 3600,
-      'status' => TRUE,
-    ]);
-    $user2Token->save();
-    $this->user2AuthToken = $user2Token->get('value')->value;
-
-    $adminToken = Oauth2Token::create([
-      'bundle' => 'access_token',
-      'auth_user_id' => $this->adminUser->id(),
-      'client' => $this->client,
-      'value' => 'auth_token_admin_' . $this->randomMachineName(),
-      'scopes' => [],
-      'expire' => time() + 3600,
-      'status' => TRUE,
-    ]);
-    $adminToken->save();
-    $this->adminAuthToken = $adminToken->get('value')->value;
-
-    // Clear caches to ensure routes are available.
-    drupal_flush_all_caches();
+    // Obtain real JWT access tokens for authenticating introspection
+    // requests. These must be valid JWTs issued by the OAuth server,
+    // not manually created.
+    $this->user1AuthToken = $this->obtainAccessTokenForUser($this->user1);
+    $this->user2AuthToken = $this->obtainAccessTokenForUser($this->user2);
+    $this->adminAuthToken = $this->obtainAccessTokenForUser($this->adminUser);
   }
 
   /**
@@ -272,7 +220,6 @@ final class TokenIntrospectionTest extends BrowserTestBase {
 
     // Phase 7: Security Tests.
     $this->doSecurityTests();
-
     $this->assertTrue(TRUE, 'All token introspection test scenarios completed successfully');
   }
 
@@ -285,11 +232,26 @@ final class TokenIntrospectionTest extends BrowserTestBase {
    * - Invalid Bearer token returns 401 Unauthorized.
    */
   private function doAuthenticationTests(): void {
+    // First verify the token works with GET (which we know works in
+    // simple_oauth).
+    $this->assertAccessTokenOnResource($this->user1AuthToken);
+
     // Test 1: Valid Bearer token allows introspection.
     $response = $this->postIntrospectionRequest(
       ['token' => $this->validToken->get('value')->value],
       ['Authorization' => 'Bearer ' . $this->user1AuthToken]
     );
+    if ($response->getStatusCode() !== 200) {
+      // Debug output for troubleshooting.
+      $message = sprintf(
+        'Expected 200 but got %d. Response body: %s. Auth token first 50 chars: %s',
+        $response->getStatusCode(),
+        (string) $response->getBody(),
+        substr($this->user1AuthToken, 0, 50)
+      );
+      $this->logDebug($message);
+      $this->fail($message);
+    }
     $this->assertEquals(200, $response->getStatusCode(), 'Valid Bearer token should allow introspection');
 
     // Test 2: Missing Bearer token returns 401.
@@ -568,6 +530,140 @@ final class TokenIntrospectionTest extends BrowserTestBase {
     $errorBody = (string) $errorResponse->getBody();
     $this->assertStringNotContainsString('auth_user_id', $errorBody, 'Error response does not leak field names');
     $this->assertStringNotContainsString('oauth2_token', $errorBody, 'Error response does not leak entity type');
+  }
+
+  /**
+   * Obtains a valid JWT access token for a user via authorization code flow.
+   *
+   * Goes through the full OAuth authorization code flow to obtain a real JWT
+   * token from the OAuth server. This ensures the token can be validated by
+   * the League OAuth2 Server library. Follows the same pattern as
+   * AuthCodeFunctionalTest.
+   *
+   * @param \Drupal\user\UserInterface $user
+   *   The user to obtain a token for.
+   *
+   * @return string
+   *   The JWT access token string.
+   *
+   * @throws \Exception
+   *   If token acquisition fails.
+   */
+  private function obtainAccessTokenForUser($user): string {
+    // Log in the user.
+    $this->drupalLogin($user);
+
+    // Request authorization with the user logged in.
+    $authorizeUrl = Url::fromRoute('oauth2_token.authorize');
+    $queryParams = [
+      'response_type' => 'code',
+      'client_id' => $this->client->getClientId(),
+      'scope' => $this->scope,
+      'redirect_uri' => $this->redirectUri,
+    ];
+
+    $this->drupalGet($authorizeUrl->toString(), [
+      'query' => $queryParams,
+    ]);
+
+    // Check if we're on the authorization form or already redirected.
+    $session = $this->getSession();
+    $currentUrl = $session->getCurrentUrl();
+
+    // If already redirected (e.g., due to automatic authorization or
+    // remember approval), we don't need to submit the form.
+    if (strpos($currentUrl, $this->redirectUri) !== FALSE) {
+      // Already redirected, skip form submission.
+    }
+    else {
+      // We're on the authorization page, submit the form.
+      try {
+        $this->submitForm([], 'Allow');
+      }
+      catch (\Exception $e) {
+        // Form submission failed - output page content for debugging.
+        throw new \Exception(sprintf(
+          'Failed to submit authorization form for user %s: %s. Current URL: %s, Page title: %s',
+          $user->getAccountName(),
+          $e->getMessage(),
+          $currentUrl,
+          $session->getPage()->find('css', 'title')?->getText() ?? 'No title'
+        ));
+      }
+    }
+
+    // Extract authorization code from the redirect URL.
+    $session = $this->getSession();
+    $currentUrl = $session->getCurrentUrl();
+    $parsedUrl = parse_url($currentUrl);
+
+    if (!isset($parsedUrl['query'])) {
+      throw new \Exception(sprintf(
+        'No query string in redirect URL for user %s. Full URL: %s',
+        $user->getAccountName(),
+        $currentUrl
+      ));
+    }
+
+    parse_str($parsedUrl['query'], $query);
+
+    // Debug: Check what we actually received.
+    if (!isset($query['code'])) {
+      // Check if there's an error instead.
+      if (isset($query['error'])) {
+        throw new \Exception(sprintf(
+          'OAuth authorization failed for user %s. Error: %s, Description: %s',
+          $user->getAccountName(),
+          $query['error'],
+          $query['error_description'] ?? 'No description'
+        ));
+      }
+
+      // Check if we're still on the authorization page (not redirected).
+      if (isset($query['response_type']) && $query['response_type'] === 'code') {
+        throw new \Exception(sprintf(
+          'Still on authorization page for user %s (not redirected). This suggests the form submission did not work or was denied. Full URL: %s. Check the browser output HTML files for details.',
+          $user->getAccountName(),
+          $currentUrl
+        ));
+      }
+
+      throw new \Exception(sprintf(
+        'Authorization code not found for user %s. Query params: %s. Full URL: %s',
+        $user->getAccountName(),
+        print_r($query, TRUE),
+        $currentUrl
+      ));
+    }
+
+    $code = $query['code'];
+
+    // Exchange authorization code for access token.
+    $tokenPayload = [
+      'grant_type' => 'authorization_code',
+      'client_id' => $this->client->getClientId(),
+      'client_secret' => $this->clientSecret,
+      'code' => $code,
+      'redirect_uri' => $this->redirectUri,
+    ];
+
+    $response = $this->post($this->url, $tokenPayload);
+
+    if ($response->getStatusCode() !== 200) {
+      throw new \Exception(sprintf(
+        'Failed to exchange code for access token for user %s. Status: %d, Body: %s',
+        $user->getAccountName(),
+        $response->getStatusCode(),
+        (string) $response->getBody()
+      ));
+    }
+
+    $parsedResponse = Json::decode((string) $response->getBody());
+
+    // Log out the user to clean up for next token request.
+    $this->drupalLogout();
+
+    return $parsedResponse['access_token'];
   }
 
   /**
