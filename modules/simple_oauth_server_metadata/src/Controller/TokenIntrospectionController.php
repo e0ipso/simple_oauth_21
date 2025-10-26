@@ -224,8 +224,20 @@ final class TokenIntrospectionController extends ControllerBase {
    *   TRUE if authorized, FALSE otherwise.
    */
   private function isAuthorizedToIntrospect(Oauth2TokenInterface $token): bool {
+    $currentUserId = $this->currentUser()->id();
+
+    // Load the full user account to ensure all roles and permissions are
+    // available. The currentUser() service may return a lightweight proxy that
+    // doesn't have all user data fully loaded during OAuth authentication.
+    /** @var \Drupal\user\UserInterface|null $userAccount */
+    $userAccount = $this->entityTypeManager()->getStorage('user')->load($currentUserId);
+
+    if (!$userAccount) {
+      return FALSE;
+    }
+
     // Check bypass permission first.
-    if ($this->currentUser()->hasPermission('bypass token introspection restrictions')) {
+    if ($userAccount->hasPermission('bypass token introspection restrictions')) {
       return TRUE;
     }
 
@@ -237,7 +249,7 @@ final class TokenIntrospectionController extends ControllerBase {
       return FALSE;
     }
 
-    return (int) $tokenOwnerId === (int) $this->currentUser()->id();
+    return (int) $tokenOwnerId === (int) $currentUserId;
   }
 
   /**
