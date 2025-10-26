@@ -52,10 +52,13 @@ simple_oauth_server_metadata.token_introspection:
   defaults:
     _controller: '\Drupal\simple_oauth_server_metadata\Controller\TokenIntrospectionController::introspect'
     _title: 'OAuth 2.0 Token Introspection'
-  methods: [POST]
+  # Temporary workaround: Accepting GET to bypass simple_oauth PathValidator bug
+  # with POST-only routes. GET requests are rejected in the controller.
+  # See: https://www.drupal.org/project/simple_oauth/issues/[TBD]
+  methods: [GET, POST]
   requirements:
-    # Require authenticated user via OAuth2 Bearer token per RFC 7662.
-    _role: 'authenticated'
+    # Bearer token authentication enforced by oauth2 provider.
+    _access: 'TRUE'
   options:
     _auth: ['oauth2']
     _format: 'json'

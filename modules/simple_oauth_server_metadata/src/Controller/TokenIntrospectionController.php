@@ -97,6 +97,23 @@ final class TokenIntrospectionController extends ControllerBase {
    *   The JSON response with token metadata or inactive status.
    */
   public function introspect(Request $request): JsonResponse {
+    // Temporary workaround: Reject GET requests with HTTP 405.
+    // The route accepts both GET and POST to bypass a simple_oauth
+    // bug where PathValidator creates internal GET requests, causing
+    // MethodNotAllowedException for POST-only routes with OAuth
+    // authentication.
+    // See: https://www.drupal.org/project/simple_oauth/issues/[TBD]
+    if ($request->getMethod() === 'GET') {
+      return new JsonResponse(
+        [
+          'error' => 'invalid_request',
+          'error_description' => 'Only POST requests are allowed. RFC 7662 requires the introspection endpoint to accept HTTP POST.',
+        ],
+        Response::HTTP_METHOD_NOT_ALLOWED,
+        ['Allow' => 'POST']
+      );
+    }
+
     try {
       // Check if user is authenticated. The authentication provider sets
       // currentUser() based on Bearer token validation. If authentication
@@ -178,7 +195,7 @@ final class TokenIntrospectionController extends ControllerBase {
    *   The token entity if found, NULL otherwise.
    */
   private function findTokenByValue(string $tokenValue): ?Oauth2TokenInterface {
-    $storage = $this->entityTypeManager->getStorage('oauth2_token');
+    $storage = $this->entityTypeManager()->getStorage('oauth2_token');
 
     // Query for token by value field.
     $results = $storage->loadByProperties(['value' => $tokenValue]);
