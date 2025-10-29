@@ -2,8 +2,8 @@
 
 Ensure that:
 
-- The code base is passing the linting requirements
-- A descriptive commit (using conventional commits with a subject and a description) for the phase was successfully created.
+ - The code base is passing the linting requirements
+ - A descriptive commit (using conventional commits with a subject and a description) for the phase was successfully created.
 
 ### Execution Monitoring
 
@@ -16,10 +16,9 @@ Add ✔️ emoji in front of all the tasks in that phase, and update their statu
 `completed`.
 
 #### Task Status Updates
-
 Valid status transitions:
-
 - `pending` → `in-progress` (when agent starts)
 - `in-progress` → `completed` (successful execution)
 - `in-progress` → `failed` (execution error)
 - `failed` → `in-progress` (retry attempt)
+

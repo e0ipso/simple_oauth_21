@@ -12,7 +12,6 @@ This hook provides pre-planning guidance to ensure scope control, simplicity pri
 - **YAGNI Principle**: _You Aren't Gonna Need It_ - don't build for hypothetical future needs
 
 **Common Scope Creep Anti-Patterns to Avoid:**
-
 1. Adding extra commands or features "for completeness"
 2. Creating infrastructure for future features that weren't requested
 3. Building abstractions or frameworks when simple solutions suffice

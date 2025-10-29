@@ -5,22 +5,19 @@ This hook executes before task assignment to determine the most appropriate agen
 ## Agent Selection and Task Assignment
 
 - For each task in the current phase:
-  - Read task frontmatter to extract the `skills` property (array of technical skills)
-  - Analyze task requirements and technical domain from description
-  - Match task skills against available sub-agent capabilities
-  - Select the most appropriate sub-agent (if any are available). If no sub-agent is appropriate, use the general-purpose one.
-  - Consider task-specific requirements from the task document
+    - Read task frontmatter to extract the `skills` property (array of technical skills)
+    - Analyze task requirements and technical domain from description
+    - Match task skills against available sub-agent capabilities
+    - Select the most appropriate sub-agent (if any are available). If no sub-agent is appropriate, use the general-purpose one.
+    - Consider task-specific requirements from the task document
 
 ## Available Sub-Agents
-
 Analyze the sub-agents available in your current assistant's agents directory. If none are available
 or the available ones do not match the task's requirements, then use a generic
 agent.
 
 ## Matching Criteria
-
 Select agents based on:
-
 1. **Primary skill match**: Task technical requirements from the `skills` array in task frontmatter
 2. **Domain expertise**: Specific frameworks or libraries mentioned in task descriptions
 3. **Task complexity**: Senior vs. junior agent capabilities

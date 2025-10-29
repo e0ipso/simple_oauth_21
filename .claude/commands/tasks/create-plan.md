@@ -99,15 +99,18 @@ Structure your response as follows:
 - If context is insufficient: List specific clarifying questions
 - If context is sufficient: Provide the comprehensive plan using the structure above. Use the information in @TASK_MANAGER.md for the directory structure and additional information about plans.
 
-**Output Behavior:**
+**Output Behavior: CRITICAL - Structured Output for Command Coordination**
 
-Be extremely concise but helpful:
+Always end your output with a standardized summary in this exact format:
 
-- Tell the user that you are done
-- Instruct them to review the plan document with the file path
-- Example output: "Plan created. Please review: `.ai/task-manager/plans/40--plan-name/plan-40--plan-name.md`"
+```
+---
+Plan Summary:
+- Plan ID: [numeric-id]
+- Plan File: [full-path-to-plan-file]
+```
 
-**Note:** When this command is invoked by the full-workflow command, the full-workflow will modify the plan's `approval_method` field after creation to enable automated execution.
+This structured output enables automated workflow coordination and must be included even when running standalone.
 
 ###### Plan Template
 
@@ -129,11 +132,12 @@ Example:
 id: 1
 summary: 'Implement a comprehensive CI/CD pipeline using GitHub Actions for automated linting, testing, semantic versioning, and NPM publishing'
 created: 2025-09-01
-approval_method: 'manual'
+approval_method_plan: 'manual'
+approval_method_tasks: 'manual'
 ---
 ```
 
-**Important**: Always set `approval_method` to "manual" when creating a plan. The full-workflow command will modify this field to "auto" after creation if running in automated mode.
+**Important**: Always set both `approval_method_plan` and `approval_method_tasks` to "manual" when creating a plan. The full-workflow command will modify these fields to "auto" after creation if running in automated mode.
 
 The schema for this frontmatter is:
 
@@ -155,10 +159,15 @@ The schema for this frontmatter is:
       "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
       "description": "Creation date in YYYY-MM-DD format"
     },
-    "approval_method": {
+    "approval_method_plan": {
       "type": "string",
       "enum": ["auto", "manual"],
-      "description": "Workflow approval mode: auto for automated workflows, manual for standalone execution"
+      "description": "Workflow approval mode for plan review: auto for automated workflows, manual for standalone execution"
+    },
+    "approval_method_tasks": {
+      "type": "string",
+      "enum": ["auto", "manual"],
+      "description": "Workflow approval mode for task generation review: auto when tasks auto-generated in workflow, manual for standalone execution"
     }
   },
   "additionalProperties": false
