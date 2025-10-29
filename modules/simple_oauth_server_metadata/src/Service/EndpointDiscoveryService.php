@@ -3,8 +3,9 @@
 namespace Drupal\simple_oauth_server_metadata\Service;
 
 use Drupal\Core\Extension\ModuleHandlerInterface;
+use Drupal\Core\Language\LanguageInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Url;
-use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Service for discovering OAuth 2.0 endpoints.
@@ -14,13 +15,13 @@ class EndpointDiscoveryService {
   /**
    * Constructs an EndpointDiscoveryService object.
    *
-   * @param \Symfony\Component\HttpFoundation\RequestStack $requestStack
-   *   The request stack service.
+   * @param \Drupal\Core\Language\LanguageManagerInterface $languageManager
+   *   The language manager.
    * @param \Drupal\Core\Extension\ModuleHandlerInterface $moduleHandler
    *   The module handler service.
    */
   public function __construct(
-    private readonly RequestStack $requestStack,
+    private readonly LanguageManagerInterface $languageManager,
     private readonly ModuleHandlerInterface $moduleHandler,
   ) {}
 
@@ -31,8 +32,10 @@ class EndpointDiscoveryService {
    *   The issuer identifier URL.
    */
   public function getIssuer(): string {
-    $request = $this->requestStack->getCurrentRequest();
-    return $request->getSchemeAndHttpHost();
+    // Generate the issuer URL using the same approach as OpenID Connect.
+    // Per RFC 8725 Section 3.1, the iss claim should be included for security.
+    $language_none = $this->languageManager->getLanguage(LanguageInterface::LANGCODE_NOT_APPLICABLE);
+    return Url::fromUri('internal:/', ['language' => $language_none, 'https' => TRUE])->setAbsolute()->toString();
   }
 
   /**
