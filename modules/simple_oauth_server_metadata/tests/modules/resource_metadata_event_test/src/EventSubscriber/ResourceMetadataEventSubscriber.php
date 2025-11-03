@@ -43,11 +43,10 @@ final class ResourceMetadataEventSubscriber implements EventSubscriberInterface 
 
     // Override configured fields for testing field override.
     // Check if fields exist in the current metadata (after config was applied).
-    $metadata = $event->getMetadata();
-    if (isset($metadata['resource_documentation']) && !empty($metadata['resource_documentation'])) {
+    if (isset($event->metadata['resource_documentation']) && !empty($event->metadata['resource_documentation'])) {
       $event->addMetadataField('resource_documentation', 'https://override.example.com/docs');
     }
-    if (isset($metadata['resource_policy_uri']) && !empty($metadata['resource_policy_uri'])) {
+    if (isset($event->metadata['resource_policy_uri']) && !empty($event->metadata['resource_policy_uri'])) {
       $event->addMetadataField('resource_policy_uri', 'https://override.example.com/policy');
     }
 

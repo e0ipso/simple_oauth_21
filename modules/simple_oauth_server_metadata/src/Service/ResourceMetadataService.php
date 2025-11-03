@@ -67,9 +67,9 @@ class ResourceMetadataService implements CacheableDependencyInterface {
     $this->addConfigurableFields($metadata, $config, $config_override);
 
     // Dispatch event to allow modules to modify metadata.
-    $event = new ResourceMetadataEvent($metadata, $config_override);
+    $event = new ResourceMetadataEvent($metadata);
     $this->eventDispatcher->dispatch($event, ResourceMetadataEvents::BUILD);
-    $metadata = $event->getMetadata();
+    $metadata = $event->metadata;
 
     // Remove empty optional fields per RFC 9728.
     $metadata = $this->filterEmptyFields($metadata);

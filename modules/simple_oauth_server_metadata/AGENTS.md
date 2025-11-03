@@ -293,23 +293,21 @@ final class ResourceMetadataSubscriber implements EventSubscriberInterface {
    *   The resource metadata event.
    */
   public function onResourceMetadata(ResourceMetadataEvent $event): void {
-    $metadata = $event->getMetadata();
-
-    // Add RFC 9728 compliant fields.
-    $metadata['resource_signing_alg_values_supported'] = ['RS256', 'ES256'];
+    // Direct property access for reading and modifying metadata.
+    $event->metadata['resource_signing_alg_values_supported'] = ['RS256', 'ES256'];
 
     // Add custom scope claim mapping.
-    $metadata['scope_claim_name'] = 'scope';
+    $event->metadata['scope_claim_name'] = 'scope';
 
     // Add resource-specific capabilities.
-    $metadata['resource_capabilities'] = [
+    $event->metadata['resource_capabilities'] = [
       'versioning' => 'v1',
       'rate_limiting' => TRUE,
       'pagination' => 'cursor',
     ];
 
-    // Update the event with modified metadata.
-    $event->setMetadata($metadata);
+    // Alternatively, use convenience methods for individual fields.
+    $event->addMetadataField('custom_field', 'custom_value');
   }
 
 }
@@ -333,11 +331,10 @@ services:
 
 ```php
 public function onResourceMetadata(ResourceMetadataEvent $event): void {
-  $metadata = $event->getMetadata();
   $config = \Drupal::config('your_module.settings');
 
   if ($config->get('enable_advanced_auth')) {
-    $metadata['resource_signing_alg_values_supported'] = [
+    $event->metadata['resource_signing_alg_values_supported'] = [
       'RS256',
       'RS384',
       'RS512',
@@ -345,10 +342,8 @@ public function onResourceMetadata(ResourceMetadataEvent $event): void {
       'ES384',
       'ES512',
     ];
-    $metadata['dpop_signing_alg_values_supported'] = ['RS256', 'ES256'];
+    $event->metadata['dpop_signing_alg_values_supported'] = ['RS256', 'ES256'];
   }
-
-  $event->setMetadata($metadata);
 }
 ```
 
@@ -356,17 +351,13 @@ public function onResourceMetadata(ResourceMetadataEvent $event): void {
 
 ```php
 public function onResourceMetadata(ResourceMetadataEvent $event): void {
-  $metadata = $event->getMetadata();
-
   // Fetch capabilities from external service.
   $apiService = \Drupal::service('your_module.api_service');
   $capabilities = $apiService->getResourceCapabilities();
 
   if (!empty($capabilities)) {
-    $metadata['supported_features'] = $capabilities;
+    $event->metadata['supported_features'] = $capabilities;
   }
-
-  $event->setMetadata($metadata);
 }
 ```
 
@@ -374,18 +365,14 @@ public function onResourceMetadata(ResourceMetadataEvent $event): void {
 
 ```php
 public function onResourceMetadata(ResourceMetadataEvent $event): void {
-  $metadata = $event->getMetadata();
-
   // Add environment indicator.
   $environment = \Drupal::config('environment_indicator.indicator');
   if ($environment->get('name')) {
-    $metadata['environment'] = $environment->get('name');
+    $event->metadata['environment'] = $environment->get('name');
   }
 
   // Add deployment version.
-  $metadata['api_version'] = \Drupal::VERSION;
-
-  $event->setMetadata($metadata);
+  $event->metadata['api_version'] = \Drupal::VERSION;
 }
 ```
 
@@ -459,8 +446,8 @@ final class MetadataSubscriber implements EventSubscriberInterface {
    - Document which fields your module adds
 
    ```php
-   if (!isset($metadata['custom_field'])) {
-     $metadata['custom_field'] = 'value';
+   if (!isset($event->metadata['custom_field'])) {
+     $event->metadata['custom_field'] = 'value';
    }
    ```
 
@@ -477,7 +464,7 @@ final class MetadataSubscriber implements EventSubscriberInterface {
    ```php
    try {
      $data = $externalService->fetch();
-     $metadata['external_data'] = $data;
+     $event->metadata['external_data'] = $data;
    }
    catch (\Exception $e) {
      \Drupal::logger('your_module')->error(
@@ -498,8 +485,7 @@ final class MetadataSubscriber implements EventSubscriberInterface {
      $subscriber = new ResourceMetadataSubscriber();
      $subscriber->onResourceMetadata($event);
 
-     $metadata = $event->getMetadata();
-     $this->assertArrayHasKey('resource_capabilities', $metadata);
+     $this->assertArrayHasKey('resource_capabilities', $event->metadata);
    }
    ```
 
