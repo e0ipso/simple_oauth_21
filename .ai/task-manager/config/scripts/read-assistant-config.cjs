@@ -8,20 +8,20 @@ const os = require('os');
 const CONFIG_PATHS = {
   claude: {
     global: [path.join(os.homedir(), '.claude', 'CLAUDE.md')],
-    project: ['AGENTS.md', 'CLAUDE.md'],
+    project: ['AGENTS.md', 'CLAUDE.md']
   },
   gemini: {
     global: [path.join(os.homedir(), '.gemini', 'GEMINI.md')],
-    project: ['.gemini/styleguide.md'],
+    project: ['.gemini/styleguide.md']
   },
   opencode: {
     global: [path.join(os.homedir(), '.opencode', 'OPENCODE.md')],
-    project: ['AGENTS.md', 'OPENCODE.md'],
+    project: ['AGENTS.md', 'OPENCODE.md']
   },
   cursor: {
     global: [path.join(os.homedir(), '.cursor', 'rules', 'index.mdc')],
-    project: ['.cursor/index.mdc'],
-  },
+    project: ['.cursor/index.mdc']
+  }
 };
 
 function readConfigFile(filePath) {

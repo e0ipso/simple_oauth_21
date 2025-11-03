@@ -12,12 +12,7 @@ function findTaskManagerRoot() {
   const root = path.parse(currentPath).root;
 
   while (currentPath !== root) {
-    const taskManagerPath = path.join(
-      currentPath,
-      '.ai',
-      'task-manager',
-      'plans',
-    );
+    const taskManagerPath = path.join(currentPath, '.ai', 'task-manager', 'plans');
     if (fs.existsSync(taskManagerPath)) {
       return path.join(currentPath, '.ai', 'task-manager');
     }
@@ -52,10 +47,10 @@ function extractIdFromFrontmatter(content) {
   // 'id': 5
   // id : 5 (with spaces)
   const patterns = [
-    /^\s*["']?id["']?\s*:\s*["']?(\d+)["']?\s*$/m, // Most flexible pattern
-    /^\s*id\s*:\s*(\d+)\s*$/m, // Simple numeric
-    /^\s*id\s*:\s*"(\d+)"\s*$/m, // Double quoted
-    /^\s*id\s*:\s*'(\d+)'\s*$/m, // Single quoted
+    /^\s*["']?id["']?\s*:\s*["']?(\d+)["']?\s*$/m,  // Most flexible pattern
+    /^\s*id\s*:\s*(\d+)\s*$/m,                       // Simple numeric
+    /^\s*id\s*:\s*"(\d+)"\s*$/m,                     // Double quoted
+    /^\s*id\s*:\s*'(\d+)'\s*$/m,                     // Single quoted
   ];
 
   for (const pattern of patterns) {
@@ -83,12 +78,8 @@ function getNextTaskId(planId) {
   const taskManagerRoot = findTaskManagerRoot();
 
   if (!taskManagerRoot) {
-    console.error(
-      'Error: No .ai/task-manager/plans directory found in current directory or any parent directory.',
-    );
-    console.error(
-      'Please ensure you are in a project with task manager initialized.',
-    );
+    console.error('Error: No .ai/task-manager/plans directory found in current directory or any parent directory.');
+    console.error('Please ensure you are in a project with task manager initialized.');
     process.exit(1);
   }
 

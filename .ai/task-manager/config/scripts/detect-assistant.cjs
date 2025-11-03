@@ -32,7 +32,7 @@ function detectAssistant() {
     { name: 'claude', dir: '.claude' },
     { name: 'gemini', dir: '.gemini' },
     { name: 'opencode', dir: '.opencode' },
-    { name: 'cursor', dir: '.cursor' },
+    { name: 'cursor', dir: '.cursor' }
   ];
 
   for (const { name, dir } of assistantDirs) {
