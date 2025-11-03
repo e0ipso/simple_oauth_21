@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\simple_oauth_server_metadata\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
-use Drupal\Core\Session\PermissionCheckerInterface;
 use Drupal\simple_oauth\Entity\Oauth2TokenInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -40,13 +39,10 @@ final class TokenIntrospectionController extends ControllerBase {
    *   The request stack.
    * @param \Psr\Log\LoggerInterface $logger
    *   The logger service.
-   * @param \Drupal\Core\Session\PermissionCheckerInterface $permissionChecker
-   *   The permission checker service.
    */
   public function __construct(
     private readonly RequestStack $requestStack,
     private readonly LoggerInterface $logger,
-    private readonly PermissionCheckerInterface $permissionChecker,
   ) {}
 
   /**
@@ -56,7 +52,6 @@ final class TokenIntrospectionController extends ControllerBase {
     return new self(
       $container->get('request_stack'),
       $container->get('logger.channel.simple_oauth'),
-      $container->get('permission_checker'),
     );
   }
 
@@ -231,14 +226,9 @@ final class TokenIntrospectionController extends ControllerBase {
   private function isAuthorizedToIntrospect(Oauth2TokenInterface $token): bool {
     $currentUserId = $this->currentUser()->id();
 
-    // Load the actual user entity to check role-based permissions.
-    // During OAuth authentication, currentUser() returns a TokenAuthUser
-    // decorator that overrides hasPermission() to require permissions to exist
-    // in BOTH the OAuth token's scopes AND the user's roles. Since "bypass
-    // token introspection restrictions" is a role-based permission (not an
-    // OAuth scope), we must load the actual user entity and use the
-    // permission_checker service to check only role-based permissions. This
-    // approach works consistently across Drupal 10 and 11.
+    // Load the full user account to ensure all roles and permissions are
+    // available. The currentUser() service may return a lightweight proxy that
+    // doesn't have all user data fully loaded during OAuth authentication.
     /** @var \Drupal\user\UserInterface|null $userAccount */
     $userAccount = $this->entityTypeManager()->getStorage('user')->load($currentUserId);
 
@@ -246,10 +236,8 @@ final class TokenIntrospectionController extends ControllerBase {
       return FALSE;
     }
 
-    // Use permission_checker service with the loaded user entity.
-    // This bypasses TokenAuthUser::hasPermission() and checks only role-based
-    // permissions through Drupal's access policy system.
-    if ($this->permissionChecker->hasPermission('bypass token introspection restrictions', $userAccount)) {
+    // Check bypass permission first.
+    if ($userAccount->hasPermission('bypass token introspection restrictions')) {
       return TRUE;
     }
 
