@@ -48,6 +48,8 @@
     "LINEIOS",
     "urlparse",
     "tlds",
+    "inheritdoc",
+    "dpop",
     "Pinterest",
     "myapp",
     "updatedb",

@@ -1,0 +1,5 @@
+services:
+  resource_metadata_event_test.event_subscriber:
+    class: Drupal\resource_metadata_event_test\EventSubscriber\ResourceMetadataEventSubscriber
+    tags:
+      - { name: event_subscriber }

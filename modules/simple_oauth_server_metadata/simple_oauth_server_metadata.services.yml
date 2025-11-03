@@ -48,6 +48,7 @@ services:
     arguments:
       - '@config.factory'
       - '@simple_oauth_server_metadata.endpoint_discovery'
+      - '@event_dispatcher'
   simple_oauth_server_metadata.openid_configuration:
     class: Drupal\simple_oauth_server_metadata\Service\OpenIdConfigurationService
     arguments:
