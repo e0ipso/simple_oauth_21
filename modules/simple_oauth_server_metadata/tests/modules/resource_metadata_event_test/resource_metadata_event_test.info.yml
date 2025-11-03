@@ -4,4 +4,4 @@ description: 'Test module for resource metadata event system testing'
 package: Testing
 core_version_requirement: ^10 || ^11
 dependencies:
-  - simple_oauth_server_metadata
+  - simple_oauth_21:simple_oauth_server_metadata
