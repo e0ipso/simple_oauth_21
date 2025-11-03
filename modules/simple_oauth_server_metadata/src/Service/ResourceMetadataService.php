@@ -6,6 +6,9 @@ use Drupal\Core\Cache\CacheableDependencyInterface;
 use Drupal\Core\Cache\CacheableDependencyTrait;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Url;
+use Drupal\simple_oauth_server_metadata\Event\ResourceMetadataEvent;
+use Drupal\simple_oauth_server_metadata\Event\ResourceMetadataEvents;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Service for generating RFC 9728 protected resource metadata.
@@ -21,10 +24,13 @@ class ResourceMetadataService implements CacheableDependencyInterface {
    *   The configuration factory.
    * @param \Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService $endpointDiscovery
    *   The endpoint discovery service.
+   * @param \Symfony\Contracts\EventDispatcher\EventDispatcherInterface $eventDispatcher
+   *   The event dispatcher service.
    */
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
     private readonly EndpointDiscoveryService $endpointDiscovery,
+    private readonly EventDispatcherInterface $eventDispatcher,
   ) {
     $this->cacheTags = [
       'config:simple_oauth.settings',
@@ -59,6 +65,11 @@ class ResourceMetadataService implements CacheableDependencyInterface {
     // Add admin-configured fields.
     $config = $this->configFactory->get('simple_oauth_server_metadata.settings');
     $this->addConfigurableFields($metadata, $config, $config_override);
+
+    // Dispatch event to allow modules to modify metadata.
+    $event = new ResourceMetadataEvent($metadata, $config_override);
+    $this->eventDispatcher->dispatch($event, ResourceMetadataEvents::BUILD);
+    $metadata = $event->getMetadata();
 
     // Remove empty optional fields per RFC 9728.
     $metadata = $this->filterEmptyFields($metadata);
