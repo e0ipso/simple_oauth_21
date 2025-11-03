@@ -103,8 +103,8 @@ Consider that the generated code can be part of a multi-site project and what th
 
 **Use Typed Entity pattern for SOLID principles**
 Use the `typed_entity` Drupal module to implement business logic using SOLID principles. Use tools to consider:
-- https://www.lullabot.com/articles/write-better-code-typed-entity
-- https://www.lullabot.com/articles/maintainable-code-drupal-wrapped-entities
+  - https://www.lullabot.com/articles/write-better-code-typed-entity
+  - https://www.lullabot.com/articles/maintainable-code-drupal-wrapped-entities
 
 If the `typed_entity` module is not installed, find the custom EntityWrapper pattern and match it.
 
@@ -115,5 +115,5 @@ When writing code comments focus on the reasons the code is that way, do not des
 `/** @var ` is typically a code smell. Use conditionals for type refinement, or assertions when you know the type is correct.
 
 **Use the correct capitalization for variable names**
-- Use snake_case for the names of variables and function/method parameters. These are the local variables inside of a method or a function or its parameters. Ex: `string $variable_name = ''`.
-- Use lowerCamelCase for class attributes. Ex: `private readonly EntityInterface $variableName`.
+  - Use snake_case for the names of variables and function/method parameters. These are the local variables inside of a method or a function or its parameters. Ex: `string $variable_name = ''`.
+  - Use lowerCamelCase for class attributes. Ex: `private readonly EntityInterface $variableName`.

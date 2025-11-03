@@ -8,3 +8,4 @@
 /.claude/agents
 /.ai/task-manager
 
+.claude/commands/tasks
