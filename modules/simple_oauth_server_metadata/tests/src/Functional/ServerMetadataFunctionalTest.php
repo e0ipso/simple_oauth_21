@@ -44,6 +44,7 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     'simple_oauth_21',
     'simple_oauth_server_metadata',
     'simple_oauth_client_registration',
+    'resource_metadata_event_test',
   ];
 
   /**
@@ -193,6 +194,11 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     $this->helperRefreshTokenRevocation();
     $this->helperServerMetadataIncludesRevocationEndpoint();
     $this->helperOnlyPostMethodAccepted();
+
+    // ===== Phase 4: Resource Metadata Event System (RFC 9728) =====
+    $this->helperResourceMetadataEventDispatch();
+    $this->helperResourceMetadataFieldOverride();
+    $this->helperResourceMetadataRfcCompliance();
 
     $this->assertTrue(TRUE, 'All server metadata test scenarios completed successfully');
   }
@@ -1200,6 +1206,131 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     $options['cookies'] = $this->getSessionCookies();
 
     return $httpClient->request('POST', $url, $options);
+  }
+
+  /**
+   * Helper: Tests resource metadata event is dispatched with custom fields.
+   *
+   * Verifies that event subscribers can add custom metadata fields to the
+   * RFC 9728 resource metadata response through the event system.
+   */
+  protected function helperResourceMetadataEventDispatch(): void {
+    // Request the resource metadata endpoint.
+    // The test module's event subscriber will add custom fields.
+    $this->drupalGet('/.well-known/oauth-protected-resource');
+    $this->assertSession()->statusCodeEquals(200);
+
+    $response_body = $this->getSession()->getPage()->getContent();
+    $metadata = Json::decode($response_body);
+
+    // Verify custom fields were added by event subscriber.
+    $this->assertArrayHasKey('custom_resource_capability', $metadata);
+    $this->assertEquals('test_capability', $metadata['custom_resource_capability']);
+
+    $this->assertArrayHasKey('custom_bearer_methods', $metadata);
+    $this->assertContains('header', $metadata['custom_bearer_methods']);
+
+    $this->assertArrayHasKey('test_metadata_field', $metadata);
+    $this->assertEquals('test_value_12345', $metadata['test_metadata_field']);
+
+    // Verify required RFC 9728 fields are still present.
+    $this->assertArrayHasKey('resource', $metadata);
+    $this->assertArrayHasKey('authorization_servers', $metadata);
+  }
+
+  /**
+   * Helper: Tests event subscribers can override configured fields.
+   *
+   * Verifies that event subscribers have the ability to override metadata
+   * fields that were configured through the admin interface.
+   */
+  protected function helperResourceMetadataFieldOverride(): void {
+    // Set up initial configuration.
+    $this->config('simple_oauth_server_metadata.settings')
+      ->set('resource_documentation', 'https://example.com/original-docs')
+      ->set('resource_policy_uri', 'https://example.com/original-policy')
+      ->save();
+
+    drupal_flush_all_caches();
+
+    // Request the resource metadata endpoint.
+    // The test module's event subscriber will override configured fields.
+    $this->drupalGet('/.well-known/oauth-protected-resource');
+    $this->assertSession()->statusCodeEquals(200);
+
+    $response_body = $this->getSession()->getPage()->getContent();
+    $metadata = Json::decode($response_body);
+
+    // Verify configured fields were overridden by event subscriber.
+    $this->assertArrayHasKey('resource_documentation', $metadata);
+    $this->assertEquals('https://override.example.com/docs', $metadata['resource_documentation']);
+    $this->assertNotEquals('https://example.com/original-docs', $metadata['resource_documentation']);
+
+    $this->assertArrayHasKey('resource_policy_uri', $metadata);
+    $this->assertEquals('https://override.example.com/policy', $metadata['resource_policy_uri']);
+    $this->assertNotEquals('https://example.com/original-policy', $metadata['resource_policy_uri']);
+
+    $this->assertArrayHasKey('bearer_methods_supported', $metadata);
+    $this->assertContains('header', $metadata['bearer_methods_supported']);
+    $this->assertContains('query', $metadata['bearer_methods_supported']);
+
+    // Clean up configuration.
+    $this->config('simple_oauth_server_metadata.settings')
+      ->set('resource_documentation', '')
+      ->set('resource_policy_uri', '')
+      ->save();
+
+    drupal_flush_all_caches();
+  }
+
+  /**
+   * Helper: Tests RFC 9728 compliance is maintained after event processing.
+   *
+   * Verifies that required RFC 9728 fields remain intact and valid even
+   * after event subscribers modify metadata.
+   */
+  protected function helperResourceMetadataRfcCompliance(): void {
+    // Request the resource metadata endpoint.
+    // The test module's event subscriber will add multiple custom fields.
+    $this->drupalGet('/.well-known/oauth-protected-resource');
+    $this->assertSession()->statusCodeEquals(200);
+
+    $response_body = $this->getSession()->getPage()->getContent();
+    $metadata = Json::decode($response_body);
+
+    // Verify RFC 9728 required fields are present.
+    $this->assertArrayHasKey('resource', $metadata);
+    $this->assertNotEmpty($metadata['resource']);
+    $this->assertIsString($metadata['resource']);
+
+    $this->assertArrayHasKey('authorization_servers', $metadata);
+    $this->assertIsArray($metadata['authorization_servers']);
+    $this->assertNotEmpty($metadata['authorization_servers']);
+
+    // Verify resource is a valid URL.
+    $this->assertTrue(
+      filter_var($metadata['resource'], FILTER_VALIDATE_URL) !== FALSE,
+      'Resource field must be a valid URL per RFC 9728'
+    );
+
+    // Verify authorization_servers contains valid URLs.
+    foreach ($metadata['authorization_servers'] as $server) {
+      $this->assertTrue(
+        filter_var($server, FILTER_VALIDATE_URL) !== FALSE,
+        'Authorization server must be a valid URL per RFC 9728'
+      );
+    }
+
+    // Verify custom fields were added.
+    $this->assertArrayHasKey('custom_field_1', $metadata);
+    $this->assertArrayHasKey('custom_field_2', $metadata);
+    $this->assertArrayHasKey('custom_field_3', $metadata);
+
+    // Verify JSON structure is valid.
+    $this->assertIsArray($metadata);
+    $encoded = Json::encode($metadata);
+    $this->assertIsString($encoded);
+    $this->assertNotEmpty($encoded);
   }
 
 }

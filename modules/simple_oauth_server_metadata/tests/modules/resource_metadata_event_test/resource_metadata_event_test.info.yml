@@ -1,0 +1,7 @@
+name: 'Resource Metadata Event Test'
+type: module
+description: 'Test module for resource metadata event system testing'
+package: Testing
+core_version_requirement: ^10 || ^11
+dependencies:
+  - simple_oauth_server_metadata
