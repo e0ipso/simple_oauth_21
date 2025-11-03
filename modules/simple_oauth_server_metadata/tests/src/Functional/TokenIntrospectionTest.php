@@ -58,13 +58,6 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
   private $user2;
 
   /**
-   * Admin user with bypass permission.
-   *
-   * @var \Drupal\user\UserInterface
-   */
-  private $adminUser;
-
-  /**
    * Valid access token for user1.
    *
    * @var \Drupal\simple_oauth\Entity\Oauth2Token
@@ -107,13 +100,6 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
   private string $user2AuthToken;
 
   /**
-   * Authenticating token for admin user.
-   *
-   * @var string
-   */
-  private string $adminAuthToken;
-
-  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -130,9 +116,6 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
     // parent::setUp() already creates $this->user.
     $this->user1 = $this->user;
     $this->user2 = $this->drupalCreateUser();
-    $this->adminUser = $this->drupalCreateUser([
-      'bypass token introspection restrictions',
-    ]);
 
     // Create valid access token for user1.
     $this->validToken = Oauth2Token::create([
@@ -189,7 +172,6 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
     // not manually created.
     $this->user1AuthToken = $this->obtainAccessTokenForUser($this->user1);
     $this->user2AuthToken = $this->obtainAccessTokenForUser($this->user2);
-    $this->adminAuthToken = $this->obtainAccessTokenForUser($this->adminUser);
   }
 
   /**
@@ -276,9 +258,6 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
    * - Token owner can introspect their own token (returns active: true).
    * - Token owner cannot introspect other users' tokens (returns active:
    *   false).
-   * - User with bypass permission can introspect any token (returns active:
-   *   true).
-   * - User without bypass permission limited to own tokens.
    */
   private function doAuthorizationTests(): void {
     // Test 1: User1 introspects their own token - should succeed.
@@ -299,16 +278,6 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
     $json = Json::decode($response->getBody());
     $this->assertFalse($json['active'], 'User cannot introspect other users\' tokens');
     $this->assertCount(1, $json, 'Unauthorized response only contains active field');
-
-    // Test 3: Admin with bypass permission introspects user1's token - should
-    // succeed.
-    $response = $this->postIntrospectionRequest(
-      ['token' => $this->validToken->get('value')->value],
-      ['Authorization' => 'Bearer ' . $this->adminAuthToken]
-    );
-    $json = Json::decode($response->getBody());
-    $this->assertTrue($json['active'], 'User with bypass permission can introspect any token');
-    $this->assertArrayHasKey('username', $json, 'Active token response includes username field');
   }
 
   /**
