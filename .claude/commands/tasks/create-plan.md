@@ -2,7 +2,6 @@
 argument-hint: [user-prompt]
 description: Create a comprehensive plan to accomplish the request from the user.
 ---
-
 # Comprehensive Plan Creation
 
 ## Assistant Configuration
@@ -10,7 +9,6 @@ description: Create a comprehensive plan to accomplish the request from the user
 Before proceeding with this command, you MUST load and respect the assistant's configuration:
 
 **Run the following scripts:**
-
 ```bash
 ASSISTANT=$(node .ai/task-manager/config/scripts/detect-assistant.cjs)
 node .ai/task-manager/config/scripts/read-assistant-config.cjs "$ASSISTANT"
@@ -50,9 +48,7 @@ Use your internal Todo task tool to track the plan generation:
 - [ ] Read and execute .ai/task-manager/config/hooks/POST_PLAN.md
 
 #### Step 1: Context Analysis
-
 Before creating any plan, analyze the user's request for:
-
 - **Objective**: What is the end goal?
 - **Scope**: What are the boundaries and constraints?
 - **Resources**: What tools, budget, or team are available?
@@ -61,9 +57,7 @@ Before creating any plan, analyze the user's request for:
 - **Technical Requirements**: What technologies or skills are needed?
 
 #### Step 2: Clarification Phase
-
 If any critical context is missing:
-
 1. Identify specific gaps in the information provided
 2. Ask targeted follow-up questions grouped by category
 3. Wait for user responses before proceeding to planning
@@ -71,7 +65,6 @@ If any critical context is missing:
 5. Be extra cautious. Users miss important context very often. Don't hesitate to ask for clarifications.
 
 Example clarifying questions:
-
 - "Q: What is your primary goal with [specific aspect]?"
 - "Q: Do you have any existing [resources/code/infrastructure] I should consider?"
 - "Q: What is your timeline for completing this?"
@@ -82,9 +75,7 @@ Example clarifying questions:
 Try to answer your own questions first by inspecting the codebase, docs, and assistant documents like CLAUDE.md, GEMINI.md, AGENTS.md ...
 
 #### Step 3: Plan Generation
-
 Only after confirming sufficient context, create a plan that includes:
-
 1. **Executive Summary**: Brief overview of the approach
 2. **Detailed Steps**: Numbered, actionable tasks with clear outcomes
 3. **Risk Considerations**: Potential challenges and mitigation strategies
@@ -93,9 +84,7 @@ Only after confirming sufficient context, create a plan that includes:
 Remember that a plan needs to be reviewed by a human. Be concise and to the point. Also, include mermaid diagrams to illustrate the plan.
 
 ##### Output Format
-
 Structure your response as follows:
-
 - If context is insufficient: List specific clarifying questions
 - If context is sufficient: Provide the comprehensive plan using the structure above. Use the information in @TASK_MANAGER.md for the directory structure and additional information about plans.
 
@@ -117,30 +106,26 @@ This structured output enables automated workflow coordination and must be inclu
 Use the template in .ai/task-manager/config/templates/PLAN_TEMPLATE.md
 
 ###### Patterns to Avoid
-
 Do not include the following in your plan output.
-
 - Avoid time estimations
 - Avoid task lists and mentions of phases (those are things we'll introduce later)
 
 ###### Frontmatter Structure
 
 Example:
-
 ```yaml
 ---
 id: 1
-summary: 'Implement a comprehensive CI/CD pipeline using GitHub Actions for automated linting, testing, semantic versioning, and NPM publishing'
+summary: "Implement a comprehensive CI/CD pipeline using GitHub Actions for automated linting, testing, semantic versioning, and NPM publishing"
 created: 2025-09-01
-approval_method_plan: 'manual'
-approval_method_tasks: 'manual'
+approval_method_plan: "manual"
+approval_method_tasks: "manual"
 ---
 ```
 
 **Important**: Always set both `approval_method_plan` and `approval_method_tasks` to "manual" when creating a plan. The full-workflow command will modify these fields to "auto" after creation if running in automated mode.
 
 The schema for this frontmatter is:
-
 ```json
 {
   "type": "object",
@@ -177,20 +162,17 @@ The schema for this frontmatter is:
 ### Plan ID Generation
 
 **Auto-generate the next plan ID:**
-
 ```bash
 node .ai/task-manager/config/scripts/get-next-plan-id.cjs
 ```
 
 **Key formatting:**
-
 - **Front-matter**: Use numeric values (`id: 7`)
 - **Directory names**: Use zero-padded strings (`07--plan-name`)
 
 This Node.js script provides robust plan ID generation with comprehensive error handling:
 
 **Features:**
-
 - **Flexible Whitespace Handling**: Supports various frontmatter patterns
 - **Validation Layer**: Only processes files with valid numeric ID fields in YAML frontmatter
 - **Error Resilience**: Gracefully handles empty directories, corrupted files, and parsing failures
@@ -198,7 +180,6 @@ This Node.js script provides robust plan ID generation with comprehensive error 
 - **Dual ID Detection**: Checks both filename patterns and frontmatter for maximum reliability
 
 **Handles Edge Cases:**
-
 - Empty plans/archive directories → Returns 1
 - Corrupted or malformed YAML frontmatter → Skips invalid files
 - Non-numeric ID values → Filters out automatically

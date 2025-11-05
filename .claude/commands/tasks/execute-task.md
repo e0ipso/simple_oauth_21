@@ -2,7 +2,6 @@
 argument-hint: [plan-ID] [task-ID]
 description: Execute a single task with dependency validation and status management
 ---
-
 # Single Task Execution
 
 You are responsible for executing a single task within a plan while maintaining strict dependency validation and proper status management. Your role is to ensure the task is ready for execution, deploy the appropriate agent, and track execution progress.
@@ -25,7 +24,6 @@ Use your internal Todo task tool to track the execution of all parts of the task
 5. **Document execution** - Record all outcomes and issues encountered
 
 ## Input Requirements
-
 - Plan ID: $1 (required)
 - Task ID: $2 (required)
 - Task management directory structure: `/`
@@ -191,14 +189,12 @@ echo "✓ Task status updated to in-progress"
 Deploy the task using the Task tool with full context:
 
 **Task Deployment**: Use your internal Task tool to execute the task with the following context:
-
 - Task file path: `$TASK_FILE`
 - Plan directory: `$PLAN_DIR`
 - Required skills: `$TASK_SKILLS`
 - Agent selection: Based on skills analysis or general-purpose agent
 
 Read the complete task file and execute according to its requirements. The task includes:
-
 - Objective and acceptance criteria
 - Technical requirements and implementation notes
 - Input dependencies and expected output artifacts
@@ -254,7 +250,6 @@ Read and execute .ai/task-manager/config/hooks/POST_ERROR_DETECTION.md
 ## Integration Notes
 
 This command integrates with the existing task management system by:
-
 - Using established plan and task location patterns
 - Leveraging the dependency checking script for validation
 - Following status management conventions

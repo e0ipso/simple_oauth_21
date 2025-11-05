@@ -2,7 +2,6 @@
 argument-hint: [user-prompt]
 description: Execute the full workflow from plan creation to blueprint execution
 ---
-
 # Full Workflow Execution
 
 ## Assistant Configuration
@@ -10,7 +9,6 @@ description: Execute the full workflow from plan creation to blueprint execution
 Before proceeding with this command, you MUST load and respect the assistant's configuration:
 
 **Run the following scripts:**
-
 ```bash
 ASSISTANT=$(node .ai/task-manager/config/scripts/detect-assistant.cjs)
 node .ai/task-manager/config/scripts/read-assistant-config.cjs "$ASSISTANT"
@@ -60,7 +58,6 @@ After the plan is created, extract the Plan ID from the structured output in the
 **Instructions for the LLM:**
 
 The create-plan command outputs a structured summary in this format:
-
 ```
 ---
 Plan Summary:
@@ -99,7 +96,6 @@ Use the Plan ID that you extracted in Step 2 from the conversation context.
 ```
 
 After task generation completes, the command will output a structured summary:
-
 ```
 ---
 Task Generation Summary:
@@ -123,7 +119,6 @@ Use the same Plan ID that you've been using in previous steps.
 ```
 
 After blueprint execution completes, the command will output a structured summary:
-
 ```
 ---
 Execution Summary:
