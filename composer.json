@@ -11,7 +11,7 @@
   ],
   "require": {
     "drupal/simple_oauth": "^6.0.3"
-  }
+  },
   "require-dev": {
     "drupal/coder": "^8",
     "phpstan/phpstan": "^2.1",
