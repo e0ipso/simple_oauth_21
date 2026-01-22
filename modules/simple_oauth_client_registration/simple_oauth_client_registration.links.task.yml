@@ -1,0 +1,6 @@
+# Client Registration tab under OAuth 2.1 Compliance
+simple_oauth_21.client_registration:
+  route_name: simple_oauth_client_registration.settings
+  title: 'Client Registration'
+  parent_id: simple_oauth_21.oauth21_compliance
+  weight: 40
