@@ -12,6 +12,7 @@ use Drupal\Component\Uuid\UuidInterface;
 use Drupal\Component\Utility\Crypt;
 use Drupal\Core\Url;
 use Drupal\Core\File\FileUrlGeneratorInterface;
+use Drupal\simple_oauth\Oauth2ScopeProviderInterface;
 use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -22,6 +23,19 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  * Implements RFC 7591 Dynamic Client Registration Protocol logic.
  */
 final class ClientRegistrationService {
+
+  /**
+   * Consumer scope fields, keyed by the grant type they apply to.
+   *
+   * Simple OAuth keeps a separate scope selection per grant type, and resolves
+   * which one to use from the grant being exercised.
+   *
+   * @see \Drupal\simple_oauth\Repositories\ScopeRepository
+   */
+  private const SCOPE_FIELDS = [
+    'authorization_code' => 'authorization_code_scopes',
+    'client_credentials' => 'scopes',
+  ];
 
   /**
    * Temporarily stores the generated secret for return in response.
@@ -40,6 +54,7 @@ final class ClientRegistrationService {
     private readonly UuidInterface $uuid,
     private readonly RegistrationTokenService $tokenService,
     private readonly FileUrlGeneratorInterface $fileUrlGenerator,
+    private readonly Oauth2ScopeProviderInterface $scopeProvider,
   ) {}
 
   /**
@@ -99,6 +114,13 @@ final class ClientRegistrationService {
       'software_id' => $clientData->softwareId ?? '',
       'software_version' => $clientData->softwareVersion ?? '',
     ];
+
+    // Persist the requested scopes so the client can authorize without having
+    // to repeat them on every authorization request.
+    $values += $this->buildScopeFieldValues(
+      $clientData->scope,
+      $values['grant_types'],
+    );
 
     // Generate client secret for confidential clients.
     if ($is_confidential) {
@@ -254,6 +276,20 @@ final class ClientRegistrationService {
       $consumer->set('redirect', $redirectUris);
     }
 
+    // Update scopes if provided. An omitted scope leaves the current selection
+    // alone; an empty string clears it.
+    if ($metadata->scope !== NULL) {
+      $grant_types = array_column($consumer->get('grant_types')->getValue(), 'value');
+      foreach (self::SCOPE_FIELDS as $field_name) {
+        if ($consumer->hasField($field_name)) {
+          $consumer->set($field_name, []);
+        }
+      }
+      foreach ($this->buildScopeFieldValues($metadata->scope, $grant_types) as $field_name => $field_value) {
+        $consumer->set($field_name, $field_value);
+      }
+    }
+
     $consumer->save();
 
     return $this->getClientMetadataArray($consumer);
@@ -374,6 +410,7 @@ final class ClientRegistrationService {
       'redirect_uris' => [],
       'contacts' => [],
       'grant_types' => [],
+      'scope' => $this->getRegisteredScope($consumer),
     ];
 
     // Get redirect URIs.
@@ -401,6 +438,76 @@ final class ClientRegistrationService {
     return array_filter($metadata, function ($value) {
       return $value !== '' && $value !== [];
     });
+  }
+
+  /**
+   * Builds consumer scope field values for a requested scope string.
+   *
+   * Scope names the server does not know are dropped rather than rejected:
+   * RFC 7591 section 2 lets the authorization server ignore or override any
+   * requested scope, provided the registration response reports what was
+   * actually registered.
+   *
+   * @param string|null $scope
+   *   Space-delimited list of requested scope names, or NULL when the client
+   *   asked for none.
+   * @param string[] $grant_types
+   *   The grant types the client is registered for.
+   *
+   * @return array<string, array<int, array<string, string>>>
+   *   Consumer field values, keyed by field name. Empty when nothing matched.
+   */
+  private function buildScopeFieldValues(?string $scope, array $grant_types): array {
+    $names = preg_split('/\s+/', trim((string) $scope), -1, PREG_SPLIT_NO_EMPTY);
+    if (empty($names)) {
+      return [];
+    }
+
+    $scopes = $this->scopeProvider->loadMultipleByNames($names);
+    $values = [];
+    foreach (self::SCOPE_FIELDS as $grant_type => $field_name) {
+      if (!in_array($grant_type, $grant_types, TRUE)) {
+        continue;
+      }
+
+      // A scope is only selectable for the grant types it is enabled on.
+      $field_value = [];
+      foreach ($scopes as $scope_id => $scope_entity) {
+        if ($scope_entity->isGrantTypeEnabled($grant_type)) {
+          $field_value[] = ['scope_id' => $scope_id];
+        }
+      }
+
+      if ($field_value !== []) {
+        $values[$field_name] = $field_value;
+      }
+    }
+
+    return $values;
+  }
+
+  /**
+   * Gets the scopes registered for a client as an RFC 7591 scope string.
+   *
+   * @param \Drupal\consumers\Entity\ConsumerInterface $consumer
+   *   The consumer entity.
+   *
+   * @return string
+   *   Space-delimited list of scope names, empty when none are registered.
+   */
+  private function getRegisteredScope(ConsumerInterface $consumer): string {
+    $names = [];
+    foreach (self::SCOPE_FIELDS as $field_name) {
+      if (!$consumer->hasField($field_name)) {
+        continue;
+      }
+
+      foreach ($consumer->get($field_name)->getScopes() as $scope) {
+        $names[$scope->getName()] = TRUE;
+      }
+    }
+
+    return implode(' ', array_keys($names));
   }
 
   /**
