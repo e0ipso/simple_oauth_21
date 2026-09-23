@@ -9,6 +9,13 @@
       "email": "mateu@mateuaguilo.com"
     }
   ],
+  "provide": {
+    "drupal/simple_oauth_client_registration": "self.version",
+    "drupal/simple_oauth_device_flow": "self.version",
+    "drupal/simple_oauth_native_apps": "self.version",
+    "drupal/simple_oauth_pkce": "self.version",
+    "drupal/simple_oauth_server_metadata": "self.version"
+  },
   "require-dev": {
     "drupal/coder": "^8",
     "phpstan/phpstan": "^2.1",
