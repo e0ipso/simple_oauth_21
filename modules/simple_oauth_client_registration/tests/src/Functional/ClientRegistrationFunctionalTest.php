@@ -6,6 +6,8 @@ namespace Drupal\Tests\simple_oauth_client_registration\Functional;
 
 use Drupal\Component\Serialization\Json;
 use Drupal\Core\Cache\Cache;
+use Drupal\simple_oauth\Entity\Oauth2Scope;
+use Drupal\simple_oauth\Oauth2ScopeInterface;
 use Drupal\Tests\BrowserTestBase;
 use GuzzleHttp\RequestOptions;
 use PHPUnit\Framework\Attributes\Group;
@@ -661,6 +663,111 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
       'Explicit grant_types are respected exactly as specified');
     $this->assertNotContains('refresh_token', $response_data['grant_types'],
       'refresh_token is NOT added when client explicitly specifies grant_types');
+  }
+
+  /**
+   * Tests that a requested scope is registered and reported back.
+   *
+   * A scope asked for at registration has to reach the consumer, otherwise the
+   * client cannot authorize without repeating it on every request. What the
+   * server actually registered has to be reported back, so a client can tell
+   * when a requested scope was not granted.
+   */
+  public function testRequestedScopeIsPersistedAndReported(): void {
+    $this->createScope('test:read', 'authorization_code');
+    $this->createScope('test:write', 'authorization_code');
+    $this->createScope('test:machine', 'client_credentials');
+    $this->clearAllTestCaches();
+
+    $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
+      RequestOptions::JSON => [
+        'client_name' => 'Scope Test Client',
+        'redirect_uris' => ['https://example.com/callback'],
+        'grant_types' => ['authorization_code'],
+        'scope' => 'test:read test:write test:machine unknown:scope',
+      ],
+      RequestOptions::HEADERS => [
+        'Content-Type' => 'application/json',
+        'Accept' => 'application/json',
+      ],
+    ]);
+
+    $this->assertEquals(200, $response->getStatusCode(), 'Registration with scopes succeeded');
+    $response->getBody()->rewind();
+    $data = Json::decode($response->getBody()->getContents());
+
+    // Only the scopes enabled for the client's grant type are registered, and
+    // an unknown scope name is dropped rather than rejected.
+    $this->assertArrayHasKey('scope', $data, 'Registration response reports the registered scope');
+    $registered = explode(' ', $data['scope']);
+    sort($registered);
+    $this->assertSame(['test:read', 'test:write'], $registered, 'Only known scopes valid for the grant type are registered');
+
+    // The scopes reached the consumer, which is what lets the client authorize
+    // without passing scope on the authorization request.
+    $consumers = $this->container->get('entity_type.manager')
+      ->getStorage('consumer')
+      ->loadByProperties(['client_id' => $data['client_id']]);
+    $consumer = reset($consumers);
+    $this->assertNotFalse($consumer, 'Consumer was created');
+    $this->assertCount(2, $consumer->get('authorization_code_scopes')->getScopes(), 'Scopes are stored on the authorization code field');
+    $this->assertTrue($consumer->get('scopes')->isEmpty(), 'Client credentials scopes stay empty for an authorization code client');
+
+    // The read endpoint reports the same registered scope.
+    $get_response = $this->httpClient->get($this->buildUrl("/oauth/register/{$data['client_id']}"), [
+      RequestOptions::HEADERS => [
+        'Authorization' => "Bearer {$data['registration_access_token']}",
+        'Accept' => 'application/json',
+      ],
+    ]);
+    $get_response->getBody()->rewind();
+    $get_data = Json::decode($get_response->getBody()->getContents());
+    $this->assertEquals($data['scope'], $get_data['scope'], 'Read endpoint reports the registered scope');
+
+    // An update replaces the selection rather than adding to it.
+    $put_response = $this->httpClient->put($this->buildUrl("/oauth/register/{$data['client_id']}"), [
+      RequestOptions::JSON => [
+        'client_name' => 'Scope Test Client',
+        'redirect_uris' => ['https://example.com/callback'],
+        'scope' => 'test:read',
+      ],
+      RequestOptions::HEADERS => [
+        'Authorization' => "Bearer {$data['registration_access_token']}",
+        'Content-Type' => 'application/json',
+        'Accept' => 'application/json',
+      ],
+    ]);
+
+    $this->assertEquals(200, $put_response->getStatusCode(), 'Updating the scope succeeded');
+    $put_response->getBody()->rewind();
+    $put_data = Json::decode($put_response->getBody()->getContents());
+    $this->assertEquals('test:read', $put_data['scope'], 'Update replaces the registered scope');
+  }
+
+  /**
+   * Creates an OAuth2 scope enabled for a single grant type.
+   *
+   * @param string $name
+   *   The scope name.
+   * @param string $grant_type
+   *   The grant type to enable the scope for.
+   */
+  protected function createScope(string $name, string $grant_type): void {
+    Oauth2Scope::create([
+      'name' => $name,
+      'description' => "Scope {$name}",
+      'grant_types' => [
+        $grant_type => [
+          'status' => TRUE,
+          'description' => "Scope {$name} for {$grant_type}",
+        ],
+      ],
+      'umbrella' => FALSE,
+      'granularity_id' => Oauth2ScopeInterface::GRANULARITY_PERMISSION,
+      'granularity_configuration' => [
+        'permission' => 'debug simple_oauth tokens',
+      ],
+    ])->save();
   }
 
 }
