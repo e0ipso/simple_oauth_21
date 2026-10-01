@@ -67,3 +67,11 @@ services:
     arguments: ['@logger.channel.simple_oauth']
     tags:
       - { name: event_subscriber }
+  simple_oauth_server_metadata.well_known_path_processor:
+    class: Drupal\simple_oauth_server_metadata\PathProcessor\WellKnownPathProcessor
+    tags:
+      # Inbound above path_processor_language (300) so the language prefix is
+      # still on the path, and outbound below it (100) so the prefix it just
+      # added can be taken off again.
+      - { name: path_processor_inbound, priority: 400 }
+      - { name: path_processor_outbound, priority: 50 }
