@@ -7,10 +7,14 @@ simple_oauth_device_flow.settings:
     _permission: 'administer simple_oauth entities'
   options:
     _admin_route: TRUE
+# Clients call these endpoints at fixed URLs. On a multilingual site,
+# _disable_route_normalizer keeps the Redirect module from sending them to a
+# language-prefixed copy.
 simple_oauth_device_flow.device_authorization:
   path: '/oauth/device_authorization'
   defaults:
     _controller: '\Drupal\simple_oauth_device_flow\Controller\DeviceAuthorizationController::authorize'
+    _disable_route_normalizer: TRUE
   methods: [POST]
   requirements:
     # RFC 8628 device authorization endpoint must be publicly accessible for OAuth clients.
@@ -22,6 +26,7 @@ simple_oauth_device_flow.device_verification_form:
   path: '/oauth/device'
   defaults:
     _controller: '\Drupal\simple_oauth_device_flow\Controller\DeviceVerificationController::form'
+    _disable_route_normalizer: TRUE
     _title: 'Device Authorization'
   methods: [GET]
   requirements:
@@ -35,6 +40,7 @@ simple_oauth_device_flow.device_verification_submit:
   path: '/oauth/device'
   defaults:
     _controller: '\Drupal\simple_oauth_device_flow\Controller\DeviceVerificationController::verify'
+    _disable_route_normalizer: TRUE
   methods: [POST]
   requirements:
     # Device verification submission must be publicly accessible for users to submit codes.

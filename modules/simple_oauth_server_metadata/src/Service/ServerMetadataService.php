@@ -150,13 +150,7 @@ class ServerMetadataService implements CacheableDependencyInterface {
 
       // Auto-derive registration endpoint if not configured and route exists.
       if ($field === 'registration_endpoint' && !$value) {
-        try {
-          $value = Url::fromRoute('simple_oauth_client_registration.register', [], ['absolute' => TRUE])
-            ->toString();
-        }
-        catch (\Exception $e) {
-          $value = NULL;
-        }
+        $value = $this->endpointDiscovery->getRegistrationEndpoint();
       }
 
       if (!empty($value)) {

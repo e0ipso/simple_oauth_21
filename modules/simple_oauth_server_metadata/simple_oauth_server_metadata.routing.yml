@@ -1,7 +1,11 @@
+# Clients call these endpoints at fixed URLs. On a multilingual site,
+# _disable_route_normalizer keeps the Redirect module from sending them to a
+# language-prefixed copy.
 simple_oauth_server_metadata.well_known:
   path: '/.well-known/oauth-authorization-server'
   defaults:
     _controller: '\Drupal\simple_oauth_server_metadata\Controller\ServerMetadataController'
+    _disable_route_normalizer: TRUE
     _title: 'OAuth 2.0 Authorization Server Metadata'
   methods: [GET]
   requirements:
@@ -15,6 +19,7 @@ simple_oauth_server_metadata.resource_metadata:
   path: '/.well-known/oauth-protected-resource'
   defaults:
     _controller: '\Drupal\simple_oauth_server_metadata\Controller\ResourceMetadataController'
+    _disable_route_normalizer: TRUE
     _title: 'OAuth 2.0 Protected Resource Metadata'
   methods: [GET]
   requirements:
@@ -28,6 +33,7 @@ simple_oauth_server_metadata.openid_configuration:
   path: '/.well-known/openid-configuration'
   defaults:
     _controller: '\Drupal\simple_oauth_server_metadata\Controller\OpenIdConfigurationController::configuration'
+    _disable_route_normalizer: TRUE
     _title: 'OpenID Connect Discovery'
   methods: [GET]
   requirements:
@@ -41,6 +47,7 @@ simple_oauth_server_metadata.revoke:
   path: '/oauth/revoke'
   defaults:
     _controller: '\Drupal\simple_oauth_server_metadata\Controller\TokenRevocationController::revoke'
+    _disable_route_normalizer: TRUE
     _title: 'OAuth 2.0 Token Revocation'
   methods: [POST]
   requirements:
@@ -51,6 +58,7 @@ simple_oauth_server_metadata.token_introspection:
   path: '/oauth/introspect'
   defaults:
     _controller: '\Drupal\simple_oauth_server_metadata\Controller\TokenIntrospectionController::introspect'
+    _disable_route_normalizer: TRUE
     _title: 'OAuth 2.0 Token Introspection'
   # Temporary workaround: Accepting GET to bypass simple_oauth PathValidator bug
   # with POST-only routes. GET requests are rejected in the controller.
