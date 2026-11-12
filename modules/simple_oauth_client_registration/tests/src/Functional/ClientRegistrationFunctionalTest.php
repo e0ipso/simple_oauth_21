@@ -1213,6 +1213,52 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
   }
 
   /**
+   * Tests scope updates without the authorization-code defaults field.
+   */
+  public function testScopesWithoutAuthorizationCodeField(): void {
+    $this->createRegistrationScope('test:legacy', ['authorization_code', 'client_credentials']);
+    $this->container->get('state')->set('simple_oauth_registration_test.legacy_scope_field', TRUE);
+    $this->container->get('entity_field.manager')->clearCachedFieldDefinitions();
+    $this->clearAllTestCaches();
+
+    foreach (['authorization_code', 'client_credentials'] as $grant_type) {
+      $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
+        RequestOptions::JSON => [
+          'redirect_uris' => ['https://example.com/callback'],
+          'grant_types' => [$grant_type],
+          'scope' => 'test:legacy',
+        ],
+        RequestOptions::HTTP_ERRORS => FALSE,
+      ]);
+      $this->assertSame(201, $response->getStatusCode());
+      $registration = Json::decode((string) $response->getBody());
+      $expected = $grant_type === 'client_credentials' ? 'test:legacy' : '';
+      $this->assertSame($expected, $registration['scope']);
+      $storage = $this->container->get('entity_type.manager')->getStorage('consumer');
+      $consumers = $storage->loadByProperties(['client_id' => $registration['client_id']]);
+      $consumer = reset($consumers);
+      $this->assertInstanceOf(ConsumerInterface::class, $consumer);
+      $this->assertFalse($consumer->hasField('authorization_code_scopes'));
+      $this->assertSame($grant_type === 'client_credentials' ? 1 : 0, $consumer->get('scopes')->count());
+
+      $uri = $this->buildUrl('/oauth/register/' . $registration['client_id']);
+      $headers = ['Authorization' => 'Bearer ' . $registration['registration_access_token']];
+      foreach (['test:legacy', '', 'unknown:scope'] as $scope) {
+        $response = $this->httpClient->put($uri, [
+          RequestOptions::JSON => ['scope' => $scope],
+          RequestOptions::HEADERS => $headers,
+          RequestOptions::HTTP_ERRORS => FALSE,
+        ]);
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame($expected, Json::decode((string) $response->getBody())['scope']);
+        $response = $this->httpClient->get($uri, [RequestOptions::HEADERS => $headers]);
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame($expected, Json::decode((string) $response->getBody())['scope']);
+      }
+    }
+  }
+
+  /**
    * Tests secret rollback after a real entity write and safe log contexts.
    */
   public function testSecretFailureAtomicityAndLogging(): void {
