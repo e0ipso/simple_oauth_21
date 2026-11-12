@@ -6,6 +6,7 @@ namespace Drupal\Tests\simple_oauth_device_flow\Functional;
 
 use Drupal\Component\Serialization\Json;
 use Drupal\consumers\Entity\Consumer;
+use Drupal\path_alias\Entity\PathAlias;
 use Drupal\simple_oauth_device_flow\Entity\DeviceCode;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\Tests\simple_oauth\Functional\SimpleOauthTestTrait;
@@ -42,6 +43,7 @@ final class DeviceFlowFunctionalTest extends BrowserTestBase {
     'options',
     'field',
     'text',
+    'path_alias',
   ];
 
   /**
@@ -82,6 +84,7 @@ final class DeviceFlowFunctionalTest extends BrowserTestBase {
 
     // Clear caches to ensure entity types are properly discovered.
     drupal_flush_all_caches();
+    $this->container = \Drupal::getContainer();
 
     // Set up OAuth keys for testing.
     $this->setUpKeys();
@@ -752,6 +755,194 @@ final class DeviceFlowFunctionalTest extends BrowserTestBase {
     $this->assertArrayNotHasKey('access_token', $error);
     $this->assertArrayNotHasKey('refresh_token', $error);
     $this->assertSame($token_count, $tokens->getQuery()->accessCheck(FALSE)->count()->execute());
+  }
+
+  /**
+   * Tests routed settings validation, persistence, issuance and access control.
+   */
+  public function testRoutedSettingsControlIssuance(): void {
+    $path = '/admin/config/people/simple_oauth/oauth-21/device-flow';
+    $this->drupalLogin($this->testUser);
+    $this->drupalGet($path);
+    $this->assertSession()->statusCodeEquals(403);
+    $admin = $this->drupalCreateUser(['administer simple_oauth entities']);
+    $this->drupalLogin($admin);
+    $this->drupalGet($path);
+    $this->assertSession()->statusCodeEquals(200);
+    $initial = $this->config('simple_oauth_device_flow.settings')->getRawData();
+    $invalid_values = [
+      ['device_code_lifetime' => 0],
+      ['device_code_lifetime' => 1.5],
+      ['polling_interval' => 0],
+      ['user_code_length' => 5],
+      ['user_code_length' => 13],
+      ['cleanup_retention_days' => 0],
+      ['max_cleanup_batch_size' => 0],
+      ['user_code_charset' => 'A'],
+      ['user_code_charset' => 'AA'],
+      ['user_code_charset' => 'A-'],
+      ['user_code_charset' => 'ab'],
+    ];
+    foreach ($invalid_values as $values) {
+      $this->drupalGet($path);
+      $this->submitForm($values, 'Save configuration');
+      $this->assertSession()->pageTextNotContains('The configuration options have been saved');
+      $this->assertSame($initial, $this->config('simple_oauth_device_flow.settings')->getRawData());
+    }
+    $saved = [
+      'device_code_lifetime' => 143,
+      'polling_interval' => 7,
+      'user_code_length' => 6,
+      'user_code_charset' => 'BCDFGHJKLMNPQRSTVWXYZ',
+      'cleanup_retention_days' => 3,
+      'max_cleanup_batch_size' => 50,
+    ];
+    $this->drupalGet($path);
+    $this->submitForm($saved, 'Save configuration');
+    $this->assertSession()->pageTextContains('The configuration options have been saved');
+    $this->drupalGet($path);
+    foreach ($saved as $name => $value) {
+      $this->assertSession()->fieldValueEquals($name, (string) $value);
+    }
+    $data = $this->requestDeviceAuthorization();
+    $this->assertSame(143, $data['expires_in']);
+    $this->assertSame(7, $data['interval']);
+    $this->assertSame(6, strlen(str_replace('-', '', $data['user_code'])));
+    $this->assertMatchesRegularExpression('/^[BCDFGHJKLMNPQRSTVWXYZ-]+$/D', $data['user_code']);
+    $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_device_code');
+    $device = $storage->load($data['device_code']);
+    $this->assertInstanceOf(DeviceCode::class, $device);
+    $this->assertSame(143, (int) $device->get('expires_at')->value - (int) $device->get('created_at')->value);
+    $this->drupalLogout();
+    $this->drupalGet($path);
+    $this->assertSession()->statusCodeEquals(403);
+  }
+
+  /**
+   * Tests saved response settings, canonical precedence and legacy defaults.
+   */
+  public function testVerificationResponseSettings(): void {
+    $alias = PathAlias::create([
+      'path' => '/oauth/device',
+      'alias' => '/oauth/device-local',
+    ]);
+    $alias->save();
+    $admin = $this->drupalCreateUser(['administer simple_oauth entities']);
+    $this->drupalLogin($admin);
+    $path = '/admin/config/people/simple_oauth/oauth-21/device-flow';
+    $this->drupalGet($path);
+    $this->submitForm([
+      'verification_uri' => '/oauth/device-local',
+      'verification_uri_complete' => FALSE,
+    ], 'Save configuration');
+    $this->assertSession()->pageTextContains('The configuration options have been saved');
+    $this->drupalGet($path);
+    $this->assertSession()->fieldValueEquals('verification_uri', '/oauth/device-local');
+    $this->assertSession()->checkboxNotChecked('verification_uri_complete');
+    $data = $this->requestDeviceAuthorization();
+    $this->assertSame($this->buildUrl('/oauth/device-local'), $data['verification_uri']);
+    $this->assertArrayNotHasKey('verification_uri_complete', $data);
+    $this->drupalGet($data['verification_uri']);
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->fieldExists('user_code');
+    $this->submitForm(['user_code' => $data['user_code']], 'Authorize Device');
+    $this->assertSession()->pageTextContains('Device authorized successfully');
+    $this->drupalGet($path);
+    $this->submitForm(['verification_uri_complete' => TRUE], 'Save configuration');
+    $this->assertSession()->pageTextContains('The configuration options have been saved');
+    $this->drupalGet($path);
+    $this->assertSession()->checkboxChecked('verification_uri_complete');
+    $config = $this->config('simple_oauth_device_flow.settings');
+    $this->assertTrue($config->get('verification_uri_complete'));
+    $this->assertTrue($config->get('verification_uri_complete_enabled'));
+
+    // Conflicting keys can be imported even though the form synchronizes them.
+    foreach ([
+      [TRUE, FALSE, TRUE],
+      [FALSE, TRUE, FALSE],
+      [NULL, FALSE, FALSE],
+      [NULL, TRUE, TRUE],
+      [NULL, NULL, TRUE],
+    ] as [$canonical, $legacy, $include_complete]) {
+      $config->clear('verification_uri_complete')->clear('verification_uri_complete_enabled');
+      if ($canonical !== NULL) {
+        $config->set('verification_uri_complete', $canonical);
+      }
+      if ($legacy !== NULL) {
+        $config->set('verification_uri_complete_enabled', $legacy);
+      }
+      $config->save();
+      $data = $this->requestDeviceAuthorization();
+      $this->assertSame($this->buildUrl('/oauth/device-local'), $data['verification_uri']);
+      if ($include_complete) {
+        $complete = $data['verification_uri_complete'];
+        $this->assertSame('/oauth/device-local', parse_url($complete, PHP_URL_PATH));
+        $this->assertSame(parse_url($data['verification_uri'], PHP_URL_HOST), parse_url($complete, PHP_URL_HOST));
+        parse_str((string) parse_url($complete, PHP_URL_QUERY), $query);
+        $this->assertSame(['user_code' => $data['user_code']], $query);
+        $this->drupalGet($complete);
+        $this->assertSession()->statusCodeEquals(200);
+        $this->assertSession()->fieldValueEquals('user_code', $data['user_code']);
+        $this->submitForm([], 'Authorize Device');
+        $this->assertSession()->pageTextContains('Device authorized successfully');
+      }
+      else {
+        $this->assertArrayNotHasKey('verification_uri_complete', $data);
+      }
+    }
+    $alias->delete();
+    $config->clear('verification_uri')->save();
+    $data = $this->requestDeviceAuthorization();
+    $this->assertSame($this->buildUrl('/oauth/device'), $data['verification_uri']);
+    $this->assertArrayHasKey('verification_uri_complete', $data);
+    $this->drupalGet($data['verification_uri_complete']);
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->fieldValueEquals('user_code', $data['user_code']);
+  }
+
+  /**
+   * Tests invalid imported destinations fail before issuing a device code.
+   */
+  public function testInvalidVerificationDestinationsDoNotIssueCodes(): void {
+    $config = $this->config('simple_oauth_device_flow.settings');
+    $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_device_code');
+    $admin = $this->drupalCreateUser(['administer simple_oauth entities']);
+    $this->drupalLogin($admin);
+    $path = '/admin/config/people/simple_oauth/oauth-21/device-flow';
+    foreach ([
+      'https://example.com/device',
+      '//example.com/device',
+      '/\\example.com',
+      '/' . rawurlencode('//example.com'),
+      '/oauth/device?redirect=evil',
+      '/oauth/device#fragment',
+      '',
+      '/oauth/../device',
+      '/device',
+      '/oauth/device-local',
+      '/',
+      '/user/login',
+      '/oauth/device_authorization',
+    ] as $invalid) {
+      $this->drupalGet($path);
+      $this->submitForm(['verification_uri' => $invalid], 'Save configuration');
+      $this->assertSession()->pageTextNotContains('The configuration options have been saved');
+      $config->set('verification_uri', $invalid)->save();
+      $before = $storage->getQuery()->accessCheck(FALSE)->count()->execute();
+      $response = $this->httpClient->post($this->buildUrl('/oauth/device_authorization'), [
+        RequestOptions::FORM_PARAMS => ['client_id' => $this->consumer->getClientId()],
+        RequestOptions::HTTP_ERRORS => FALSE,
+        RequestOptions::ALLOW_REDIRECTS => FALSE,
+      ]);
+      $this->assertSame(500, $response->getStatusCode());
+      $error = Json::decode((string) $response->getBody());
+      $this->assertSame('server_error', $error['error']);
+      $this->assertArrayNotHasKey('device_code', $error);
+      $this->assertArrayNotHasKey('verification_uri', $error);
+      $this->assertFalse($response->hasHeader('Location'));
+      $this->assertSame($before, $storage->getQuery()->accessCheck(FALSE)->count()->execute());
+      $config->set('verification_uri', '/oauth/device')->save();
+    }
   }
 
 }
