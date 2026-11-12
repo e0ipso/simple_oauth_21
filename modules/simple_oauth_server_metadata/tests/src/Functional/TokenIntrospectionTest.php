@@ -629,8 +629,9 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
 
     $parsedResponse = Json::decode((string) $response->getBody());
 
-    // Log out the user to clean up for next token request.
-    $this->drupalLogout();
+    // Clear browser authentication without revoking the issued tokens.
+    $this->getSession()->restart();
+    $this->loggedInUser = FALSE;
 
     return $parsedResponse['access_token'];
   }
