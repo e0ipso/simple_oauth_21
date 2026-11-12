@@ -4,8 +4,13 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\simple_oauth_client_registration\Functional;
 
+use Drupal\consumers\Entity\ConsumerInterface;
+use GuzzleHttp\ClientInterface;
 use Drupal\Component\Serialization\Json;
 use Drupal\Core\Cache\Cache;
+use Drupal\Core\Entity\EntityStorageException;
+use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
+use Psr\Log\LoggerInterface;
 use Drupal\Tests\BrowserTestBase;
 use GuzzleHttp\RequestOptions;
 use PHPUnit\Framework\Attributes\Group;
@@ -32,6 +37,7 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
     'simple_oauth',
     'simple_oauth_21',
     'simple_oauth_client_registration',
+    'simple_oauth_registration_test',
     'simple_oauth_server_metadata',
   ];
 
@@ -45,7 +51,7 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
    *
    * @var \GuzzleHttp\Client
    */
-  protected $httpClient;
+  protected ClientInterface $httpClient;
 
   /**
    * {@inheritdoc}
@@ -192,7 +198,7 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
     }
 
     // Validate RFC 7591 response.
-    $this->assertEquals(200, $response->getStatusCode(), 'Client registration succeeded');
+    $this->assertEquals(201, $response->getStatusCode(), 'Client registration succeeded');
 
     // Rewind stream before reading to ensure we get the full content.
     $response->getBody()->rewind();
@@ -559,6 +565,291 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
   }
 
   /**
+   * Rejects fragments anywhere in redirect lists without persisting changes.
+   */
+  public function testRedirectUriFragmentsAreAtomic(): void {
+    $storage = $this->container->get('entity_type.manager')->getStorage('consumer');
+    $redirects = [
+      'https://example.com/callback/path?state=one%23two',
+      'com.example.app://oauth/callback?source=registration',
+      'https://example.org/another/path?mode=login',
+    ];
+    $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
+      RequestOptions::JSON => [
+        'client_name' => 'Fragment-free redirects',
+        'application_type' => 'native',
+        'redirect_uris' => $redirects,
+      ],
+    ]);
+    $this->assertSame(201, $response->getStatusCode());
+    $registration = Json::decode((string) $response->getBody());
+    $this->assertSame($redirects, $registration['redirect_uris']);
+    $management_uri = $this->buildUrl('/oauth/register/' . $registration['client_id']);
+    $headers = ['Authorization' => 'Bearer ' . $registration['registration_access_token']];
+    $response = $this->httpClient->get($management_uri, [RequestOptions::HEADERS => $headers]);
+    $original_metadata = Json::decode((string) $response->getBody());
+    $storage->resetCache();
+    $count = count($storage->loadMultiple());
+
+    foreach (array_keys($redirects) as $position) {
+      foreach (['#fragment', '#'] as $fragment) {
+        $invalid_redirects = $redirects;
+        $invalid_redirects[$position] .= $fragment;
+        foreach (['POST', 'PUT'] as $method) {
+          $response = $this->httpClient->request($method, $method === 'POST' ? $this->buildUrl('/oauth/register') : $management_uri, [
+            RequestOptions::JSON => [
+              'client_name' => 'Rejected fragment update',
+              'application_type' => 'native',
+              'redirect_uris' => $invalid_redirects,
+            ],
+            RequestOptions::HEADERS => $method === 'PUT' ? $headers : [],
+            RequestOptions::HTTP_ERRORS => FALSE,
+          ]);
+          $this->assertSame(400, $response->getStatusCode(), $method . ' rejects a fragment at list position ' . $position);
+          $this->assertSame('invalid_client_metadata', Json::decode((string) $response->getBody())['error']);
+          $storage->resetCache();
+          $this->assertCount($count, $storage->loadMultiple(), 'Rejected metadata does not create a consumer.');
+          $response = $this->httpClient->get($management_uri, [RequestOptions::HEADERS => $headers]);
+          $this->assertSame($original_metadata, Json::decode((string) $response->getBody()), 'Rejected metadata does not change the registered client.');
+        }
+      }
+    }
+
+    $updated_redirects = array_reverse($redirects);
+    $response = $this->httpClient->put($management_uri, [
+      RequestOptions::JSON => ['redirect_uris' => $updated_redirects],
+      RequestOptions::HEADERS => $headers,
+    ]);
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame($updated_redirects, Json::decode((string) $response->getBody())['redirect_uris']);
+    $response = $this->httpClient->get($management_uri, [RequestOptions::HEADERS => $headers]);
+    $this->assertSame($updated_redirects, Json::decode((string) $response->getBody())['redirect_uris']);
+  }
+
+  /**
+   * Enforces redirect transport on creation and atomic metadata updates.
+   */
+  public function testRedirectTransportValidationIsAtomic(): void {
+    $registration = $this->helperClientRegistrationWorkflow();
+    $management_uri = $this->buildUrl('/oauth/register/' . $registration['client_id']);
+    $headers = ['Authorization' => 'Bearer ' . $registration['registration_access_token']];
+    $storage = $this->container->get('entity_type.manager')->getStorage('consumer');
+    $https = 'https://example.com/callback';
+    $custom = 'com.example.app://oauth/callback';
+    $ipv4 = 'http://127.0.0.1:49152/callback';
+    $ipv6 = 'http://[::1]:49153/callback';
+    $public_http = 'http://example.com/callback';
+    $cases = [
+      'inferred public HTTP' => [NULL, [$public_http], FALSE],
+      'web public HTTP' => ['web', [$public_http], FALSE],
+      'native public HTTP' => ['native', [$public_http], FALSE],
+      'mixed invalid last' => ['native', [$https, $public_http], FALSE],
+      'mixed invalid first' => ['native', [$public_http, $custom], FALSE],
+      'web custom scheme' => ['web', [$custom], FALSE],
+      'web IPv4 loopback' => ['web', [$ipv4], FALSE],
+      'web IPv6 loopback' => ['web', [$ipv6], FALSE],
+      'web HTTPS' => ['web', [$https], TRUE],
+      'native custom scheme' => ['native', [$custom], TRUE],
+      'native IPv4 loopback' => ['native', [$ipv4], TRUE],
+      'native IPv6 loopback' => ['native', [$ipv6], TRUE],
+      'inferred native redirects' => [NULL, [$custom, $ipv4, $ipv6], TRUE],
+    ];
+    foreach ($cases as $case => [$application_type, $redirects, $valid]) {
+      foreach (['POST', 'PUT'] as $method) {
+        $context = "$case / $method";
+        $response = $this->httpClient->get($management_uri, [RequestOptions::HEADERS => $headers]);
+        $original_metadata = Json::decode((string) $response->getBody());
+        $storage->resetCache();
+        $original_storage = [];
+        foreach ($storage->loadMultiple() as $id => $consumer) {
+          $original_storage[$id] = $consumer->toArray();
+        }
+        $metadata = [
+          'client_name' => $context,
+          'redirect_uris' => $redirects,
+        ];
+        if ($application_type !== NULL) {
+          $metadata['application_type'] = $application_type;
+        }
+        $response = $this->httpClient->request($method, $method === 'POST' ? $this->buildUrl('/oauth/register') : $management_uri, [
+          RequestOptions::JSON => $metadata,
+          RequestOptions::HEADERS => $method === 'PUT' ? $headers : [],
+          RequestOptions::HTTP_ERRORS => FALSE,
+        ]);
+        $this->assertSame($valid ? ($method === 'POST' ? 201 : 200) : 400, $response->getStatusCode(), $context);
+        $data = Json::decode((string) $response->getBody());
+        $storage->resetCache();
+        if (!$valid) {
+          $this->assertSame('invalid_client_metadata', $data['error'], $context);
+          $current_storage = [];
+          foreach ($storage->loadMultiple() as $id => $consumer) {
+            $current_storage[$id] = $consumer->toArray();
+          }
+          $this->assertSame($original_storage, $current_storage, $context . ': rejected metadata leaves storage unchanged.');
+          $response = $this->httpClient->get($management_uri, [RequestOptions::HEADERS => $headers]);
+          $this->assertSame($original_metadata, Json::decode((string) $response->getBody()), $context);
+          continue;
+        }
+        $this->assertSame($redirects, $data['redirect_uris'], $context);
+        $consumers = $storage->loadByProperties(['client_id' => $data['client_id']]);
+        $this->assertCount(1, $consumers, $context);
+        $consumer = reset($consumers);
+        $this->assertInstanceOf(ConsumerInterface::class, $consumer);
+        $this->assertSame($redirects, array_column($consumer->get('redirect')->getValue(), 'value'), $context);
+      }
+    }
+
+    // application_type applies to the current request. A name-only update must
+    // preserve the native redirects stored by the preceding inferred update.
+    $response = $this->httpClient->put($management_uri, [
+      RequestOptions::JSON => ['client_name' => 'Renamed native client'],
+      RequestOptions::HEADERS => $headers,
+    ]);
+    $this->assertSame(200, $response->getStatusCode());
+    $response = $this->httpClient->get($management_uri, [RequestOptions::HEADERS => $headers]);
+    $data = Json::decode((string) $response->getBody());
+    $this->assertSame('Renamed native client', $data['client_name']);
+    $this->assertSame([$custom, $ipv4, $ipv6], $data['redirect_uris']);
+    $storage->resetCache();
+    $consumers = $storage->loadByProperties(['client_id' => $registration['client_id']]);
+    $consumer = reset($consumers);
+    $this->assertInstanceOf(ConsumerInterface::class, $consumer);
+    $this->assertSame([$custom, $ipv4, $ipv6], array_column($consumer->get('redirect')->getValue(), 'value'));
+  }
+
+  /**
+   * Tests registration validation, secret rotation and administrative batches.
+   */
+  public function testClientManagementLifecycle(): void {
+    $storage = $this->container->get('entity_type.manager')->getStorage('consumer');
+    $initial_count = count($storage->loadMultiple());
+    foreach ([
+      ['client_name' => []],
+      ['redirect_uris' => 'https://example.com/callback'],
+      ['contacts' => ['admin@example.com', 17]],
+      ['grant_types' => [[]]],
+    ] as $invalid_metadata) {
+      $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
+        RequestOptions::JSON => $invalid_metadata + [
+          'client_name' => 'Invalid metadata',
+          'redirect_uris' => ['https://example.com/callback'],
+        ],
+        RequestOptions::HTTP_ERRORS => FALSE,
+      ]);
+      $this->assertSame(400, $response->getStatusCode());
+      $this->assertSame('invalid_client_metadata', Json::decode((string) $response->getBody())['error']);
+    }
+    $storage->resetCache();
+    $this->assertCount($initial_count, $storage->loadMultiple());
+
+    $registration = $this->helperClientRegistrationWorkflow();
+    $other_registration = $this->helperClientRegistrationWorkflow();
+    $client_id = $registration['client_id'];
+    $management_uri = $this->buildUrl('/oauth/register/' . $client_id);
+    $headers = [
+      'Authorization' => 'Bearer ' . $registration['registration_access_token'],
+      'Accept' => 'application/json',
+    ];
+
+    // Missing credentials and another client's token cannot rotate this secret.
+    foreach ([
+      [],
+      [
+        'Authorization' => 'Bearer ' . $other_registration['registration_access_token'],
+      ],
+    ] as $invalid_headers) {
+      $response = $this->httpClient->post($management_uri, [
+        RequestOptions::HEADERS => $invalid_headers,
+        RequestOptions::HTTP_ERRORS => FALSE,
+      ]);
+      $this->assertSame(400, $response->getStatusCode());
+      $this->assertSame('invalid_request', Json::decode((string) $response->getBody())['error']);
+    }
+
+    $response = $this->httpClient->post($management_uri, [
+      RequestOptions::HEADERS => $headers,
+    ]);
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertStringContainsString('no-store', $response->getHeaderLine('Cache-Control'));
+    $rotated = Json::decode((string) $response->getBody());
+    $this->assertSame($client_id, $rotated['client_id']);
+    $this->assertNotSame($registration['client_secret'], $rotated['client_secret']);
+    $storage->resetCache();
+    $consumers = $storage->loadByProperties(['client_id' => $client_id]);
+    $consumer = reset($consumers);
+    $this->assertInstanceOf(ConsumerInterface::class, $consumer);
+    $stored_secret = (string) $consumer->get('secret')->value;
+    $password = $this->container->get('password');
+    $this->assertTrue($password->check($rotated['client_secret'], $stored_secret));
+    $this->assertFalse($password->check($registration['client_secret'], $stored_secret));
+
+    // The original registration token works without disclosing the new secret.
+    $response = $this->httpClient->get($management_uri, [
+      RequestOptions::HEADERS => $headers,
+    ]);
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertArrayNotHasKey('client_secret', Json::decode((string) $response->getBody()));
+
+    $settings_path = '/admin/config/services/simple-oauth/oauth-21/client-registration';
+    $this->drupalGet($settings_path);
+    $this->assertSession()->statusCodeEquals(403);
+    $this->drupalLogin($this->drupalCreateUser());
+    $this->drupalGet($settings_path);
+    $this->assertSession()->statusCodeEquals(403);
+    $this->drupalLogin($this->drupalCreateUser(['administer simple_oauth entities']));
+    $this->drupalGet($settings_path);
+    $this->assertSession()->statusCodeEquals(200);
+    $settings_before = $this->config('simple_oauth_client_registration.settings')->getRawData();
+    $client_ids = $client_id . "\n" . str_repeat('x', 32) . "\n" . $other_registration['client_id'];
+    $update_values = [
+      'bulk_operations[operation]' => 'update',
+      'bulk_operations[client_ids]' => $client_ids,
+      'bulk_operations[metadata]' => Json::encode(['client_name' => 'Batch updated client']),
+    ];
+    $this->submitForm($update_values, 'Apply to listed clients');
+    $this->assertSession()->pageTextContains('access_denied');
+    $this->assertSession()->pageTextContains('not_found');
+    $storage->resetCache();
+    foreach ([$client_id, $other_registration['client_id']] as $denied_id) {
+      $consumers = $storage->loadByProperties(['client_id' => $denied_id]);
+      $this->assertSame('Test OAuth Client', reset($consumers)->label());
+    }
+
+    $this->drupalLogin($this->drupalCreateUser([
+      'administer simple_oauth entities',
+      'administer consumer entities',
+    ]));
+    $this->drupalGet($settings_path);
+    $this->submitForm($update_values, 'Apply to listed clients');
+    $this->assertSession()->pageTextContains('success');
+    $this->assertSession()->pageTextContains('not_found');
+    $storage->resetCache();
+    foreach ([$client_id, $other_registration['client_id']] as $updated_id) {
+      $consumers = $storage->loadByProperties(['client_id' => $updated_id]);
+      $this->assertSame('Batch updated client', reset($consumers)->label());
+    }
+    $this->assertSame($settings_before, $this->config('simple_oauth_client_registration.settings')->getRawData());
+
+    $delete_values = [
+      'bulk_operations[operation]' => 'delete',
+      'bulk_operations[client_ids]' => $client_ids,
+    ];
+    $this->submitForm($delete_values, 'Apply to listed clients');
+    $this->assertSession()->pageTextContains('Confirm deletion before applying this operation.');
+    $storage->resetCache();
+    $this->assertNotEmpty($storage->loadByProperties(['client_id' => $client_id]));
+    $this->submitForm($delete_values + [
+      'bulk_operations[confirm_delete]' => TRUE,
+    ], 'Apply to listed clients');
+    $this->assertSession()->pageTextContains('success');
+    $this->assertSession()->pageTextContains('not_found');
+    $storage->resetCache();
+    $this->assertEmpty($storage->loadByProperties(['client_id' => $client_id]));
+    $this->assertEmpty($storage->loadByProperties(['client_id' => $other_registration['client_id']]));
+    $this->assertSame($settings_before, $this->config('simple_oauth_client_registration.settings')->getRawData());
+  }
+
+  /**
    * Tests default grant types behavior based on configuration.
    *
    * Validates that the default_grant_types setting correctly controls
@@ -569,8 +860,6 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
    * 1. Default config (authorization_code + refresh_token): Should include both
    * 2. Single grant type configured: Should include only configured grant
    * 3. Explicit grant_types: Client-specified values respected regardless
-   *
-   * @covers \Drupal\simple_oauth_client_registration\Service\ClientRegistrationService::processClientRegistration
    */
   public function testDefaultRefreshTokenGrant(): void {
     // Scenario 1: Default config with both authorization_code and
@@ -593,7 +882,7 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
       ],
     ]);
 
-    $this->assertEquals(200, $response->getStatusCode(), 'Registration succeeded with default grants');
+    $this->assertEquals(201, $response->getStatusCode(), 'Registration succeeded with default grants');
     $response->getBody()->rewind();
     $response_data = Json::decode($response->getBody()->getContents());
 
@@ -622,7 +911,7 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
       ],
     ]);
 
-    $this->assertEquals(200, $response->getStatusCode(), 'Registration succeeded with single grant type');
+    $this->assertEquals(201, $response->getStatusCode(), 'Registration succeeded with single grant type');
     $response->getBody()->rewind();
     $response_data = Json::decode($response->getBody()->getContents());
 
@@ -652,7 +941,7 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
       ],
     ]);
 
-    $this->assertEquals(200, $response->getStatusCode(), 'Registration succeeded with explicit grant_types');
+    $this->assertEquals(201, $response->getStatusCode(), 'Registration succeeded with explicit grant_types');
     $response->getBody()->rewind();
     $response_data = Json::decode($response->getBody()->getContents());
 
@@ -661,6 +950,66 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
       'Explicit grant_types are respected exactly as specified');
     $this->assertNotContains('refresh_token', $response_data['grant_types'],
       'refresh_token is NOT added when client explicitly specifies grant_types');
+  }
+
+  /**
+   * Tests secret rollback after a real entity write and safe log contexts.
+   */
+  public function testSecretFailureAtomicityAndLogging(): void {
+    $records = [];
+    $logger = $this->createMock(LoggerInterface::class);
+    $logger->method('log')->willReturnCallback(static function ($level, $message, array $context) use (&$records): void {
+      $records[] = [(string) $message, $context];
+    });
+    $this->container->get('logger.factory')->addLogger($logger);
+    $service = $this->container->get('simple_oauth_client_registration.service.registration');
+    $sentinel = 'registration-credential-sentinel';
+    $registered = $service->registerClient(new ClientRegistration(
+      clientName: 'Atomic registration fixture',
+      redirectUris: ['https://client.example/callback'],
+      clientSecret: $sentinel,
+      registrationAccessToken: $sentinel . '-token',
+    ));
+    $storage = $this->container->get('entity_type.manager')->getStorage('consumer');
+    $matches = $storage->loadByProperties(['client_id' => $registered['client_id']]);
+    $consumer = reset($matches);
+    $this->assertInstanceOf(ConsumerInterface::class, $consumer);
+    $original_hash = $consumer->get('secret')->value;
+    $original_metadata = $service->getClientMetadata($registered['client_id']);
+    $this->container->get('state')->set('simple_oauth_registration_test.fail_update', TRUE);
+    try {
+      $service->rotateClientSecret($registered['client_id']);
+      $this->fail('The post-write fixture must reject secret persistence.');
+    }
+    catch (EntityStorageException $exception) {
+      $this->assertStringContainsString('Registration fixture persistence failure', $exception->getMessage());
+    }
+    finally {
+      $this->container->get('state')->delete('simple_oauth_registration_test.fail_update');
+    }
+    $storage->resetCache();
+    $matches = $storage->loadByProperties(['client_id' => $registered['client_id']]);
+    $reloaded = reset($matches);
+    $this->assertInstanceOf(ConsumerInterface::class, $reloaded);
+    $this->assertSame($original_hash, $reloaded->get('secret')->value);
+    $this->assertSame($original_hash, $consumer->get('secret')->value);
+    $this->assertTrue($this->container->get('simple_oauth.repositories.client')->validateClient(
+      $registered['client_id'], $registered['client_secret'], 'authorization_code'
+    ));
+    $this->assertSame($original_metadata, $service->getClientMetadata($registered['client_id']));
+    $this->assertTrue($service->validateRegistrationToken($registered['client_id'], $registered['registration_access_token']));
+    try {
+      $service->registerClient(new ClientRegistration(redirectUris: [$sentinel]));
+      $this->fail('The invalid redirect fixture must be rejected.');
+    }
+    catch (\InvalidArgumentException) {
+      $this->assertNotEmpty($records);
+    }
+    $serialized = serialize($records);
+    foreach ([$sentinel, $registered['client_secret'], $registered['registration_access_token']] as $credential) {
+      $this->assertStringNotContainsString($credential, $serialized);
+    }
+    $this->assertStringContainsString($registered['client_id'], $serialized);
   }
 
 }

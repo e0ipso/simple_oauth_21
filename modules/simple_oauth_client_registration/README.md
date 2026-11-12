@@ -19,12 +19,15 @@ The Simple OAuth Client Registration module provides a complete implementation o
 
 ### Drupal Core
 
-- Drupal 10.x or 11.x
+- Drupal 10.2 or later in the 10.x series, or Drupal 11.x
+
+Selected dependency releases may require a newer Drupal version. Use PHP and
+dependency versions supported by the chosen Drupal release.
 
 ### Module Dependencies
 
 - `simple_oauth_21` - Main OAuth 2.1 umbrella module
-- `simple_oauth` - Core OAuth 2.0 functionality
+- `simple_oauth` - OAuth 2.0 functionality, version >=6.0.3,<7.0
 - `consumers` - OAuth consumer entity management
 - `serialization` - JSON serialization support
 
@@ -39,7 +42,7 @@ The Simple OAuth Client Registration module provides a complete implementation o
 1. **Install via Composer** (recommended):
 
    ```bash
-   composer require drupal/simple_oauth_21
+   composer require e0ipso/simple_oauth_21
    ```
 
 2. **Enable the module**:
@@ -73,12 +76,13 @@ The Simple OAuth Client Registration module provides a complete implementation o
    - RFC 7591 metadata fields are added to Consumer entities
    - Registration endpoint is configured in server metadata (if available)
 
-### Permissions
+### Access control
 
-Configure access permissions at **Administration » People » Permissions**:
+`POST /oauth/register` is public and does not require authentication. The module does not provide a registration-access permission or a setting to require authentication for client creation.
 
-- **Access OAuth client registration**: Controls access to registration endpoints
-- **Administer OAuth consumers**: Manage registered clients via admin interface
+Client management at `/oauth/register/{client_id}` requires `Authorization: Bearer {registration_access_token}` using the token returned when that client was registered. Client credentials and OAuth access tokens do not replace this token, and a registration token cannot manage another client.
+
+The settings page at `/admin/config/services/simple-oauth/oauth-21/client-registration` requires `administer simple_oauth entities`.
 
 ### Field Configuration
 
@@ -93,37 +97,28 @@ The module adds the following RFC 7591 metadata fields to Consumer entities:
 - **Software ID**: Unique application identifier
 - **Software Version**: Application version string
 
-### Automatic Refresh Token Configuration
+### Default grant types
 
-The module provides OAuth 2.1-compliant automatic refresh token enablement via the **Configuration » People » Simple OAuth Client Registration** settings page.
+Configure **Default grant types for DCR clients** on the settings page at `/admin/config/services/simple-oauth/oauth-21/client-registration`.
 
-#### Setting: Auto-enable Refresh Token Grant
+- **Installed default**: `[authorization_code, refresh_token]`
+- **Configuration key**: `simple_oauth_client_registration.settings.default_grant_types`
+- **Value**: A sequence of grant type IDs. The settings form offers the grant types available from the server's grant plugins.
+- **Scope**: Dynamic client registration only; this setting does not change clients created through the administrative Consumer form.
 
-- **Default Value**: `true` (enabled)
-- **Configuration Key**: `simple_oauth_client_registration.settings.auto_enable_refresh_token`
-- **Scope**: Dynamic Client Registration (DCR) endpoint only - does NOT affect admin UI client creation
-
-**RFC 7591 Compliance**: Per RFC 7591 Section 3.2.1, when a client omits the `grant_types` parameter during registration, the authorization server determines the default set of grant types. This setting implements OAuth 2.1 best practices by automatically including `refresh_token` in the default grant types.
-
-**OAuth 2.1 Rationale**: OAuth 2.1 mandates refresh tokens for most authorization flows to improve security through token rotation and expiration. This default aligns with modern OAuth security recommendations while maintaining backward compatibility through explicit client control.
+Choose grant IDs supported by the installation. Use the settings form to select available options; when changing configuration with Drush, supply a YAML sequence rather than a boolean.
 
 #### Behavior
 
-**When enabled** (default):
-
-- If client registration request omits `grant_types`, the server automatically includes `refresh_token` alongside other default grant types (e.g., `authorization_code`)
-- Clients explicitly specifying `grant_types` are NOT modified - their request is honored exactly as provided
-- Ensures OAuth 2.1-compliant token lifecycle management by default
-
-**When disabled**:
-
-- Server uses base OAuth 2.0 defaults only when `grant_types` is omitted
-- Clients must explicitly request `refresh_token` in their registration request
-- Provides compatibility with OAuth 2.0-only implementations
+- Requests that omit `grant_types` use `default_grant_types`. The registration service also uses these defaults for an empty grant list.
+- An explicit, nonempty `grant_types` list takes precedence. The service does not append `refresh_token` to that list.
+- Including `refresh_token` in the defaults gives registrations that use those defaults both `authorization_code` and `refresh_token` with the installed configuration.
+- To omit `refresh_token` from defaults, select only `authorization_code`. Clients may still request an explicit supported grant list.
+- If the configuration key is absent, the service falls back to `[authorization_code, refresh_token]`.
 
 #### Registration Examples
 
-**Example 1: Omitted grant_types (auto_enable_refresh_token: true)**
+**Example 1: Omitted grant_types with installed defaults**
 
 Request:
 
@@ -134,7 +129,7 @@ Request:
 }
 ```
 
-Response (server adds refresh_token automatically):
+Response (server uses the configured defaults):
 
 ```json
 {
@@ -145,7 +140,7 @@ Response (server adds refresh_token automatically):
 }
 ```
 
-**Example 2: Explicit grant_types (auto_enable_refresh_token: ignored)**
+**Example 2: Explicit grant_types override configured defaults**
 
 Request:
 
@@ -168,7 +163,7 @@ Response (server honors explicit request, no refresh_token added):
 }
 ```
 
-**Example 3: Omitted grant_types (auto_enable_refresh_token: false)**
+**Example 3: Omitted grant_types with defaults set to [authorization_code]**
 
 Request:
 
@@ -179,7 +174,7 @@ Request:
 }
 ```
 
-Response (server uses base defaults only):
+Response (server uses the configured authorization_code default):
 
 ```json
 {
@@ -193,14 +188,14 @@ Response (server uses base defaults only):
 #### Configuration via Drush
 
 ```bash
-# Check current setting
-drush config:get simple_oauth_client_registration.settings auto_enable_refresh_token
+# Check the current default grant list
+drush config:get simple_oauth_client_registration.settings default_grant_types
 
-# Enable automatic refresh token (OAuth 2.1 recommended)
-drush config:set simple_oauth_client_registration.settings auto_enable_refresh_token true
+# Restore the installed defaults
+drush config:set --input-format=yaml simple_oauth_client_registration.settings default_grant_types '[authorization_code, refresh_token]'
 
-# Disable automatic refresh token (OAuth 2.0 compatibility)
-drush config:set simple_oauth_client_registration.settings auto_enable_refresh_token false
+# Use authorization_code without adding refresh_token to defaults
+drush config:set --input-format=yaml simple_oauth_client_registration.settings default_grant_types '[authorization_code]'
 ```
 
 ## API Reference
@@ -272,7 +267,7 @@ Content-Type: application/json
 
 ### Client Management Endpoints
 
-All client management operations require the `registration_access_token` obtained during registration.
+All client management operations require the `registration_access_token` obtained when the client identified by `{client_id}` was registered. Send it as a Bearer token; it is separate from the client secret and OAuth access tokens.
 
 #### Get Client Configuration
 
@@ -338,6 +333,34 @@ Authorization: Bearer {registration_access_token}
 #### Response (204 No Content)
 
 Empty response body on successful deletion.
+
+#### Replace Client Secret
+
+`POST /oauth/register/{client_id}` replaces a confidential client's
+secret. Send the same `Authorization: Bearer {registration_access_token}`
+header used for GET, PUT and DELETE. No request body is required.
+
+The 200 response contains the existing client metadata, the new `client_secret`
+and `client_secret_expires_at: 0`. Store the replacement securely: ordinary GET
+responses never return it. After a successful save the old secret stops
+authenticating. The client ID, metadata and registration access token remain
+unchanged. A failed save preserves the previous credential. Public clients
+receive an `invalid_request` error because they do not use a secret.
+
+### Administrative Bulk Management
+
+The existing Client Registration Settings page includes **Bulk client
+management** for metadata updates and registration deletion. It requires
+`administer simple_oauth entities`; each listed client also requires the
+corresponding consumer update or delete access.
+
+Select an operation and enter up to 100 dynamically registered client IDs, one
+per line. For updates, supply a JSON metadata object such as
+`{"client_name":"Updated name"}`. Deletion requires the confirmation checkbox.
+Select **Apply to listed clients** to execute the operations without saving
+registration settings. Each input receives its own result. Validation or access
+failures for one item do not prevent later items from running. Results contain
+status codes without credentials or other clients' metadata.
 
 ### Error Responses
 
@@ -782,6 +805,6 @@ This module is licensed under the GNU General Public License v2.0 or later.
 
 ---
 
-**Version**: Compatible with Drupal 10.x and 11.x
+**Version**: Compatible with Drupal 10.2 or later in the 10.x series, or Drupal 11.x, subject to dependency requirements
 **Maintained by**: Simple OAuth 2.1 project maintainers
 **Last Updated**: September 2025
