@@ -257,6 +257,8 @@ final class DeviceCodeGrantTest extends UnitTestCase {
    *   The configured lifetime, or NULL for the default.
    * @param int $expected_lifetime
    *   The expected response and persisted lifetime in seconds.
+   *
+   * @dataProvider deviceLifetimeProvider
    */
   #[DataProvider('deviceLifetimeProvider')]
   public function testGrantResponseUsesCanonicalLifetime(?int $configured_lifetime, int $expected_lifetime): void {

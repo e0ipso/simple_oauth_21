@@ -108,6 +108,11 @@ jobs:
         working-directory: ${{ env.DRUPAL_ROOT }}/${{ env.MODULE_PATH }}
         run: |
           composer config --no-plugins allow-plugins.phpstan/extension-installer true
+          composer config vendor-dir "${{ github.workspace }}/module-vendor"
+          composer config repositories.drupal composer https://packages.drupal.org/8
+          # The parent project owns Drupal scaffold and runtime files.
+          composer config --no-plugins allow-plugins.drupal/core-composer-scaffold false
+          composer config --no-plugins allow-plugins.symfony/runtime false
           composer --no-interaction --no-progress install
 
           npm install --include=dev
@@ -115,7 +120,8 @@ jobs:
       - name: Run PHPCS
         working-directory: ${{ env.DRUPAL_ROOT }}/${{ env.MODULE_PATH }}
         run: |
-          composer run-script lint:check
+          composer run-script syntax:check
+          php "${{ github.workspace }}/module-vendor/bin/phpcs" --ignore=vendor/*,node_modules/* --standard=Drupal,DrupalPractice --extensions=php,module/php,install/php,inc/php,yml .
 
       - name: Run PHPStan
         working-directory: ${{ env.DRUPAL_ROOT }}
@@ -199,9 +205,9 @@ jobs:
           echo "ChromeDriver is ready!"
 
       - name: Start web server for functional tests
-        working-directory: ${{ env.DRUPAL_ROOT }}
+        working-directory: ${{ env.DRUPAL_ROOT }}/web
         run: |
-          php -S 127.0.0.1:8080 -t web "${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/.ht.router.php" > /dev/null 2>&1 &
+          php -S 127.0.0.1:8080 .ht.router.php > /dev/null 2>&1 &
           sleep 2
 
       - name: Run Unit tests

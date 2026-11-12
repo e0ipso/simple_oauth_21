@@ -84,6 +84,7 @@ final class DeviceFlowFunctionalTest extends BrowserTestBase {
 
     // Clear caches to ensure entity types are properly discovered.
     drupal_flush_all_caches();
+    $this->container = \Drupal::getContainer();
 
     // Set up OAuth keys for testing.
     $this->setUpKeys();
