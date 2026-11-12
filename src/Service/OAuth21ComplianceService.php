@@ -8,6 +8,7 @@ use Drupal\Core\Config\Config;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Routing\RouteProviderInterface;
+use Drupal\simple_oauth_server_metadata\Service\ServerMetadataService;
 use Symfony\Component\Routing\Exception\RouteNotFoundException;
 
 /**
@@ -55,11 +56,14 @@ final class OAuth21ComplianceService {
    *   The configuration factory service.
    * @param \Drupal\Core\Routing\RouteProviderInterface $routeProvider
    *   The route provider service.
+   * @param \Drupal\simple_oauth_server_metadata\Service\ServerMetadataService|null $serverMetadata
+   *   The server metadata service, when the optional submodule is installed.
    */
   public function __construct(
     private readonly ModuleHandlerInterface $moduleHandler,
     private readonly ConfigFactoryInterface $configFactory,
     private readonly RouteProviderInterface $routeProvider,
+    private readonly ?ServerMetadataService $serverMetadata = NULL,
   ) {}
 
   /**
@@ -82,11 +86,14 @@ final class OAuth21ComplianceService {
 
     // RFC 8414 - Server Metadata.
     $metadata_status = $this->getModuleStatus('simple_oauth_server_metadata');
+    $metadata_issues = $metadata_status['enabled'] ? $this->getServerMetadataIssues() : [];
     $rfcs['rfc_8414'] = [
-      'status' => $this->determineRfcStatus('simple_oauth_server_metadata'),
+      'status' => !$metadata_status['enabled'] ? 'not_available' : ($metadata_issues !== [] ? 'needs_attention' : 'configured'),
       'module' => 'simple_oauth_server_metadata',
       'enabled' => $metadata_status['enabled'],
-      'recommendation' => $metadata_status['enabled'] ? 'Server metadata is available for discovery' : 'Enable server metadata module for better client integration',
+      'recommendation' => !$metadata_status['enabled']
+        ? 'Enable server metadata module for better client integration'
+        : ($metadata_issues !== [] ? implode('; ', $metadata_issues) : 'Server metadata is available for discovery'),
     ];
 
     // RFC 8252 - Native Apps.
@@ -160,7 +167,6 @@ final class OAuth21ComplianceService {
     // Basic configuration checks by module.
     return match ($module_name) {
       'simple_oauth_pkce' => $this->checkPkceStatus($config),
-      'simple_oauth_server_metadata' => $this->checkServerMetadataStatus($config),
       'simple_oauth_native_apps' => $this->checkNativeAppsStatus($config),
       default => 'configured',
     };
@@ -183,20 +189,32 @@ final class OAuth21ComplianceService {
   }
 
   /**
-   * Checks server metadata configuration status.
+   * Checks the endpoints exposed by server metadata discovery.
    *
-   * @param \Drupal\Core\Config\Config $config
-   *   Server metadata configuration object.
-   *
-   * @return string
-   *   Status: 'configured', 'needs_attention', or 'not_available'.
+   * @return string[]
+   *   Actionable issues, or an empty array when required endpoints are valid.
    */
-  private function checkServerMetadataStatus(Config $config): string {
-    $issuer = $config->get('issuer') ?? '';
-    $authorization_endpoint = $config->get('authorization_endpoint') ?? '';
-    $token_endpoint = $config->get('token_endpoint') ?? '';
+  private function getServerMetadataIssues(): array {
+    if ($this->serverMetadata === NULL) {
+      return ['Server metadata discovery is unavailable; check the metadata module service registration'];
+    }
 
-    return (!empty($issuer) && !empty($authorization_endpoint) && !empty($token_endpoint)) ? 'configured' : 'needs_attention';
+    try {
+      $metadata = $this->serverMetadata->getServerMetadata();
+    }
+    catch (\Exception $e) {
+      return ['Unable to generate server metadata; check OAuth endpoint discovery'];
+    }
+
+    $issues = [];
+    foreach (['issuer', 'authorization_endpoint', 'token_endpoint'] as $field) {
+      $value = $metadata[$field] ?? NULL;
+      if (!is_string($value) || !filter_var($value, FILTER_VALIDATE_URL) || parse_url($value, PHP_URL_SCHEME) !== 'https') {
+        $issues[] = "Discover a valid HTTPS URL for $field in server metadata";
+      }
+    }
+
+    return $issues;
   }
 
   /**

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_server_metadata\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
@@ -12,7 +14,7 @@ use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
 /**
  * Controller for RFC 9728 Protected Resource Metadata endpoint.
  */
-class ResourceMetadataController extends ControllerBase {
+final class ResourceMetadataController extends ControllerBase {
 
   /**
    * Constructs a ResourceMetadataController object.

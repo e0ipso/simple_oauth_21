@@ -1,18 +1,30 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\Tests\simple_oauth_server_metadata\Kernel\Service;
 
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\simple_oauth\Plugin\Oauth2Grant\AuthorizationCode;
+use Drupal\simple_oauth\Plugin\Oauth2Grant\ClientCredentials;
+use Drupal\simple_oauth\Plugin\Oauth2Grant\RefreshToken;
+use Drupal\simple_oauth\Plugin\Oauth2GrantManager;
 use Drupal\simple_oauth_server_metadata\Service\GrantTypeDiscoveryService;
+use Drupal\simple_oauth_server_metadata\Service\OpenIdConfigurationService;
+use Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService;
+use Drupal\simple_oauth_server_metadata\Service\ScopeDiscoveryService;
+use Drupal\simple_oauth_server_metadata\Service\ClaimsAuthDiscoveryService;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
- * Kernel tests for the GrantTypeDiscoveryService.
+ * Tests discovery against real OAuth grant plugins in the service container.
  *
  * @coversDefaultClass \Drupal\simple_oauth_server_metadata\Service\GrantTypeDiscoveryService
  */
 #[Group('simple_oauth_server_metadata')]
-class GrantTypeDiscoveryServiceKernelTest extends KernelTestBase {
+#[RunTestsInSeparateProcesses]
+final class GrantTypeDiscoveryServiceKernelTest extends KernelTestBase {
 
   /**
    * {@inheritdoc}
@@ -20,6 +32,7 @@ class GrantTypeDiscoveryServiceKernelTest extends KernelTestBase {
   protected static $modules = [
     'user',
     'system',
+    'file',
     'simple_oauth',
     'simple_oauth_server_metadata',
     'consumers',
@@ -31,74 +44,139 @@ class GrantTypeDiscoveryServiceKernelTest extends KernelTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
-
-    // Install minimal config required for OAuth2 functionality.
     $this->installConfig(['simple_oauth']);
   }
 
   /**
-   * Tests that the service can be instantiated.
+   * Tests container discovery and instantiation of the real grant plugins.
    *
    * @covers ::__construct
-   */
-  public function testServiceInstantiation() {
-    $service = $this->container->get('simple_oauth_server_metadata.grant_type_discovery');
-    $this->assertInstanceOf(GrantTypeDiscoveryService::class, $service);
-  }
-
-  /**
-   * Tests getGrantTypesSupported() with default configuration.
-   *
    * @covers ::getGrantTypesSupported
    */
-  public function testGetGrantTypesSupportedDefault() {
+  public function testGetGrantTypesSupportedDefault(): void {
     $service = $this->container->get('simple_oauth_server_metadata.grant_type_discovery');
-    $grant_types = $service->getGrantTypesSupported();
-
-    // In kernel test environment, plugins may not instantiate due to missing
-    // entity types. Verify the service works and returns an array.
-    $this->assertIsArray($grant_types);
-
-    // Verify the service can handle cases where no plugins are available.
-    // This is valid behavior when dependencies are not properly installed.
-    $this->assertGreaterThanOrEqual(0, count($grant_types));
+    $manager = $this->container->get('plugin.manager.oauth2_grant.processor');
+    self::assertInstanceOf(AuthorizationCode::class, $manager->createInstance('authorization_code'));
+    self::assertInstanceOf(ClientCredentials::class, $manager->createInstance('client_credentials'));
+    self::assertInstanceOf(RefreshToken::class, $manager->createInstance('refresh_token'));
+    self::assertEqualsCanonicalizing([
+      'authorization_code',
+      'client_credentials',
+      'refresh_token',
+    ], $service->getGrantTypesSupported());
+    self::assertNotContains('implicit', $service->getGrantTypesSupported());
+    self::assertNotContains('urn:ietf:params:oauth:grant-type:device_code', $service->getGrantTypesSupported());
   }
 
   /**
-   * Tests getResponseTypesSupported() with default configuration.
+   * Tests that code flow has a positive response capability with OIDC enabled.
    *
    * @covers ::getResponseTypesSupported
-   * @covers ::isOpenIdConnectDisabled
    */
-  public function testGetResponseTypesSupportedDefault() {
+  public function testGetResponseTypesSupportedDefault(): void {
+    $this->config('simple_oauth.settings')->set('disable_openid_connect', FALSE)->save();
     $service = $this->container->get('simple_oauth_server_metadata.grant_type_discovery');
-    $response_types = $service->getResponseTypesSupported();
-
-    // In kernel test, verify the service works and returns an array.
-    $this->assertIsArray($response_types);
-    $this->assertGreaterThanOrEqual(0, count($response_types));
+    self::assertSame(['code'], $service->getResponseTypesSupported());
+    self::assertEqualsCanonicalizing([
+      'query',
+      'fragment',
+      'form_post',
+    ], $service->getResponseModesSupported());
   }
 
   /**
-   * Tests with OpenID Connect disabled.
+   * Tests that disabling OIDC retains the supported OAuth authorization flow.
    *
    * @covers ::getResponseTypesSupported
-   * @covers ::isOpenIdConnectDisabled
    */
-  public function testWithOpenIdConnectDisabled() {
-    // Disable OIDC.
-    $config = $this->config('simple_oauth.settings');
-    $config->set('disable_openid_connect', TRUE);
-    $config->save();
-
+  public function testWithOpenIdConnectDisabled(): void {
+    $this->config('simple_oauth.settings')->set('disable_openid_connect', TRUE)->save();
     $service = $this->container->get('simple_oauth_server_metadata.grant_type_discovery');
-    $response_types = $service->getResponseTypesSupported();
+    self::assertSame(['code'], $service->getResponseTypesSupported());
+  }
 
-    // Verify OIDC-specific response types are not available when disabled.
-    $this->assertNotContains('id_token', $response_types);
-    $this->assertNotContains('id_token token', $response_types);
+  /**
+   * Tests that token-endpoint grants do not advertise authorization responses.
+   *
+   * @covers ::getGrantTypesSupported
+   * @covers ::getResponseTypesSupported
+   * @covers ::getResponseModesSupported
+   */
+  public function testWithoutAuthorizationGrant(): void {
+    $service = $this->createDiscoveryWithGrants(['client_credentials', 'refresh_token']);
+    self::assertEqualsCanonicalizing([
+      'client_credentials',
+      'refresh_token',
+    ], $service->getGrantTypesSupported());
+    self::assertSame([], $service->getResponseTypesSupported());
+    self::assertSame([], $service->getResponseModesSupported());
+  }
 
-    $this->assertTrue(TRUE, 'All test scenarios completed successfully');
+  /**
+   * Tests the explicit absence of all grant capabilities.
+   *
+   * @covers ::getGrantTypesSupported
+   * @covers ::getResponseTypesSupported
+   * @covers ::getResponseModesSupported
+   */
+  public function testWithoutGrants(): void {
+    $service = $this->createDiscoveryWithGrants([]);
+    self::assertSame([], $service->getGrantTypesSupported());
+    self::assertSame([], $service->getResponseTypesSupported());
+    self::assertSame([], $service->getResponseModesSupported());
+  }
+
+  /**
+   * Builds a real plugin manager with a subset of discovered plugins.
+   *
+   * @param string[] $grant_ids
+   *   The real grant plugins available in this scenario.
+   *
+   * @return \Drupal\simple_oauth_server_metadata\Service\GrantTypeDiscoveryService
+   *   Discovery backed by real plugins and the kernel configuration factory.
+   */
+  private function createDiscoveryWithGrants(array $grant_ids): GrantTypeDiscoveryService {
+    $definitions = $this->container->get('plugin.manager.oauth2_grant.processor')->getDefinitions();
+    $cache = $this->container->get('cache.discovery');
+    $cache->set('test.oauth2_grant_plugins', array_intersect_key($definitions, array_flip($grant_ids)));
+    $manager = new Oauth2GrantManager(
+      $this->container->get('container.namespaces'),
+      $cache,
+      $this->container->get('module_handler'),
+    );
+    $manager->setCacheBackend($cache, 'test.oauth2_grant_plugins');
+    return new GrantTypeDiscoveryService($manager, $this->container->get('config.factory'));
+  }
+
+  /**
+   * Tests public OpenID metadata against the same real grant capabilities.
+   */
+  public function testOpenIdResponseCapabilities(): void {
+    $endpoints = $this->createMock(EndpointDiscoveryService::class);
+    foreach (['getIssuer', 'getAuthorizationEndpoint', 'getTokenEndpoint', 'getUserInfoEndpoint', 'getJwksUri'] as $method) {
+      $endpoints->method($method)->willReturn('https://issuer.example/' . $method);
+    }
+    $scopes = $this->createMock(ScopeDiscoveryService::class);
+    $scopes->method('getScopesSupported')->willReturn(['openid']);
+    $claims = $this->createMock(ClaimsAuthDiscoveryService::class);
+    $claims->method('getSubjectTypesSupported')->willReturn(['public']);
+    $claims->method('getIdTokenSigningAlgValuesSupported')->willReturn(['RS256']);
+    foreach ([FALSE, TRUE] as $disabled) {
+      $this->config('simple_oauth.settings')->set('disable_openid_connect', $disabled)->save();
+      $grants = $this->createDiscoveryWithGrants(['authorization_code']);
+      $openid = new OpenIdConfigurationService($this->container->get('config.factory'), $endpoints, $scopes, $grants, $claims, ['sub']);
+      $metadata = $openid->getOpenIdConfiguration();
+      self::assertSame(['code'], $metadata['response_types_supported']);
+      self::assertSame($grants->getResponseTypesSupported(), $metadata['response_types_supported']);
+      self::assertFalse($metadata['implicit_flow_enabled']);
+      self::assertTrue($metadata['authorization_code_flow_enabled']);
+    }
+    $grants = $this->createDiscoveryWithGrants(['client_credentials']);
+    self::assertSame([], $grants->getResponseTypesSupported());
+    $openid = new OpenIdConfigurationService($this->container->get('config.factory'), $endpoints, $scopes, $grants, $claims, ['sub']);
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('response_types_supported');
+    $openid->getOpenIdConfiguration();
   }
 
 }

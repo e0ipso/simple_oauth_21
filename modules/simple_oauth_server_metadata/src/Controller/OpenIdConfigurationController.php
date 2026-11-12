@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_server_metadata\Controller;
 
 use Drupal\Core\Cache\CacheableJsonResponse;
@@ -14,7 +16,7 @@ use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
 /**
  * Controller for OpenID Connect Discovery endpoint.
  */
-class OpenIdConfigurationController extends ControllerBase {
+final class OpenIdConfigurationController extends ControllerBase {
 
   /**
    * Constructs an OpenIdConfigurationController object.
