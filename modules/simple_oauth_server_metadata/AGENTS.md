@@ -203,31 +203,66 @@ services:
       - '@your_module.resource_metadata.inner'
       - '@config.factory'
       - '@simple_oauth_server_metadata.endpoint_discovery'
+      - '@event_dispatcher'
 ```
 
+Save the following class in `src/Service/CustomResourceMetadataService.php`.
+The constructor initializes inherited validation and cacheability, while metadata
+generation delegates to the inner service so its event extensions still run.
+
 ```php
-// src/Service/CustomResourceMetadataService.php
 <?php
 
 declare(strict_types=1);
 
 namespace Drupal\your_module\Service;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService;
 use Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
+/**
+ * Adds resource capabilities while preserving the decorated metadata service.
+ */
 final class CustomResourceMetadataService extends ResourceMetadataService {
 
-  public function getResourceMetadata(array $config_override = []): array {
-    // Get base metadata from parent
-    $metadata = parent::getResourceMetadata($config_override);
+  /**
+   * Constructs the decorator with the base service's dependencies.
+   *
+   * @param \Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService $inner
+   *   The decorated resource metadata service.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The configuration factory.
+   * @param \Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService $endpoint_discovery
+   *   The endpoint discovery service.
+   * @param \Symfony\Contracts\EventDispatcher\EventDispatcherInterface $event_dispatcher
+   *   The resource metadata event dispatcher.
+   */
+  public function __construct(
+    private readonly ResourceMetadataService $inner,
+    ConfigFactoryInterface $config_factory,
+    EndpointDiscoveryService $endpoint_discovery,
+    EventDispatcherInterface $event_dispatcher,
+  ) {
+    parent::__construct($config_factory, $endpoint_discovery, $event_dispatcher);
+    $this->setCacheability($inner);
+  }
 
-    // Add custom RFC 9728 fields
+  /**
+   * {@inheritdoc}
+   */
+  public function getResourceMetadata(array $config_override = []): array {
+    // Preserve metadata and event extensions from the decorated service.
+    $metadata = $this->inner->getResourceMetadata($config_override);
+
+    // Add custom RFC 9728 fields.
     $metadata['resource_signing_alg_values_supported'] = ['RS256', 'ES256'];
 
-    // Add custom scope claim mapping
+    // Add custom scope claim mapping.
     $metadata['scope_claim_name'] = 'scope';
 
-    // Add resource-specific capabilities
+    // Add resource-specific capabilities.
     $metadata['resource_capabilities'] = [
       'versioning' => 'v1',
       'rate_limiting' => TRUE,
@@ -235,6 +270,7 @@ final class CustomResourceMetadataService extends ResourceMetadataService {
 
     return $metadata;
   }
+
 }
 ```
 
@@ -252,11 +288,12 @@ final class CustomResourceMetadataService extends ResourceMetadataService {
 
 **Available Events:**
 
-The module dispatches events during metadata generation:
+The resource metadata service dispatches `ResourceMetadataEvents::BUILD` with a
+`ResourceMetadataEvent` payload while generating resource metadata. Subscribe to
+that named event to change the generated fields.
 
-- `ResourceMetadataEvent::class` - Fired when resource metadata is being generated
-- `ServerMetadataEvent::class` - Fired when server metadata is being generated
-- `OpenIdConfigurationEvent::class` - Fired when OpenID Connect configuration is being generated
+Server metadata and OpenID Connect configuration do not dispatch extension events.
+Use their configuration options or service decoration for those services.
 
 **Example: Event Subscriber Implementation**
 
@@ -270,6 +307,7 @@ declare(strict_types=1);
 namespace Drupal\your_module\EventSubscriber;
 
 use Drupal\simple_oauth_server_metadata\Event\ResourceMetadataEvent;
+use Drupal\simple_oauth_server_metadata\Event\ResourceMetadataEvents;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
@@ -282,7 +320,7 @@ final class ResourceMetadataSubscriber implements EventSubscriberInterface {
    */
   public static function getSubscribedEvents(): array {
     return [
-      ResourceMetadataEvent::class => ['onResourceMetadata', 0],
+      ResourceMetadataEvents::BUILD => ['onResourceMetadata', 0],
     ];
   }
 
@@ -384,7 +422,7 @@ Control the order of execution using priority values (higher = earlier):
 public static function getSubscribedEvents(): array {
   return [
     // Run early to set defaults (priority 100).
-    ResourceMetadataEvent::class => ['onResourceMetadata', 100],
+    ResourceMetadataEvents::BUILD => ['onResourceMetadata', 100],
   ];
 }
 ```
@@ -394,34 +432,6 @@ public static function getSubscribedEvents(): array {
 - **100+**: Early processing, set defaults or base values
 - **0**: Normal processing (default)
 - **-100 or lower**: Late processing, final modifications or cleanup
-
-**Multiple Event Handlers in One Subscriber:**
-
-```php
-final class MetadataSubscriber implements EventSubscriberInterface {
-
-  public static function getSubscribedEvents(): array {
-    return [
-      ResourceMetadataEvent::class => ['onResourceMetadata', 0],
-      ServerMetadataEvent::class => ['onServerMetadata', 0],
-      OpenIdConfigurationEvent::class => ['onOpenIdConfiguration', 0],
-    ];
-  }
-
-  public function onResourceMetadata(ResourceMetadataEvent $event): void {
-    // Handle resource metadata.
-  }
-
-  public function onServerMetadata(ServerMetadataEvent $event): void {
-    // Handle server metadata.
-  }
-
-  public function onOpenIdConfiguration(OpenIdConfigurationEvent $event): void {
-    // Handle OpenID configuration.
-  }
-
-}
-```
 
 **Best Practices:**
 
@@ -1473,4 +1483,4 @@ curl -s https://your-site.com/.well-known/oauth-protected-resource | jq .
 
 **Last Updated:** 2025-11-03
 **Module Version:** Compatible with simple_oauth_21 current
-**Drupal Version:** 9.x, 10.x, 11.x
+**Drupal Version:** Drupal 10.2 or later in the 10.x series, or Drupal 11.x, subject to dependency requirements

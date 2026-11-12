@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_server_metadata\Form;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -9,15 +11,12 @@ use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Routing\RouteProviderInterface;
 use Drupal\Core\Url;
-use Drupal\simple_oauth_server_metadata\Service\ServerMetadataService;
-use Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService;
-use Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Configuration form for RFC 8414 Server Metadata settings.
  */
-class ServerMetadataSettingsForm extends ConfigFormBase {
+final class ServerMetadataSettingsForm extends ConfigFormBase {
 
   /**
    * Constructs a ServerMetadataSettingsForm object.
@@ -26,12 +25,6 @@ class ServerMetadataSettingsForm extends ConfigFormBase {
    *   The configuration factory.
    * @param \Drupal\Core\Config\TypedConfigManagerInterface $typed_config_manager
    *   The typed configuration manager.
-   * @param \Drupal\simple_oauth_server_metadata\Service\ServerMetadataService $serverMetadataService
-   *   The server metadata service.
-   * @param \Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService $resourceMetadataService
-   *   The resource metadata service.
-   * @param \Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService $endpointDiscoveryService
-   *   The endpoint discovery service.
    * @param \Drupal\Core\Extension\ModuleHandlerInterface $moduleHandler
    *   The module handler.
    * @param \Drupal\Core\Routing\RouteProviderInterface $routeProvider
@@ -40,11 +33,8 @@ class ServerMetadataSettingsForm extends ConfigFormBase {
   public function __construct(
     ConfigFactoryInterface $config_factory,
     TypedConfigManagerInterface $typed_config_manager,
-    private readonly ServerMetadataService $serverMetadataService,
-    private readonly ResourceMetadataService $resourceMetadataService,
-    private readonly EndpointDiscoveryService $endpointDiscoveryService,
-    private readonly ModuleHandlerInterface $moduleHandler,
-    private readonly RouteProviderInterface $routeProvider,
+    protected readonly ModuleHandlerInterface $moduleHandler,
+    protected readonly RouteProviderInterface $routeProvider,
   ) {
     parent::__construct($config_factory, $typed_config_manager);
   }
@@ -56,9 +46,6 @@ class ServerMetadataSettingsForm extends ConfigFormBase {
     return new self(
       $container->get('config.factory'),
       $container->get('config.typed'),
-      $container->get('simple_oauth_server_metadata.server_metadata'),
-      $container->get('simple_oauth_server_metadata.resource_metadata'),
-      $container->get('simple_oauth_server_metadata.endpoint_discovery'),
       $container->get('module_handler'),
       $container->get('router.route_provider')
     );

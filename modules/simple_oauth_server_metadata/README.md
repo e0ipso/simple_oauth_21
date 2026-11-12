@@ -70,9 +70,12 @@ This module implements multiple OAuth discovery standards:
 
 ### Requirements
 
-- Drupal 9.0+ or Drupal 10.0+
-- Simple OAuth module (contrib or core)
+- Drupal 10.2 or later in the 10.x series, or Drupal 11.x
+- Simple OAuth 2.1 umbrella module with Simple OAuth >=6.0.3,<7.0
 - PHP 8.1+
+
+Selected dependency releases may require a newer Drupal version. Use PHP and
+dependency versions supported by the chosen Drupal release.
 
 ### Installation Steps
 
