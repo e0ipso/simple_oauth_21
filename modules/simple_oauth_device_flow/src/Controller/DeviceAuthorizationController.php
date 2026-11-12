@@ -128,11 +128,22 @@ final class DeviceAuthorizationController extends ControllerBase {
     $server_response = new Response();
 
     try {
-      // Extract and validate client_id parameter.
-      $client_id = $request->attributes->get('client_id', $request->query->get('client_id', $request->request->get('client_id', NULL)));
-      if (empty($client_id)) {
-        $this->logger->notice('Device authorization request missing client_id parameter');
+      // Use body credentials or HTTP Basic, retaining legacy ID locations.
+      $basic_id = $basic_secret = NULL;
+      $header = $server_request->getHeaderLine('Authorization');
+      if (stripos($header, 'Basic ') === 0) {
+        $decoded = base64_decode(substr($header, 6), TRUE);
+        if ($decoded !== FALSE && str_contains($decoded, ':')) {
+          [$basic_id, $basic_secret] = explode(':', $decoded, 2);
+        }
+      }
+      $client_id = $request->attributes->get('client_id', $request->query->get('client_id', $request->request->get('client_id', $basic_id)));
+      $client_secret = $request->request->get('client_secret', $basic_secret);
+      if (!is_string($client_id) || $client_id === '') {
         throw OAuthServerException::invalidRequest('client_id');
+      }
+      if ($client_secret !== NULL && !is_string($client_secret)) {
+        throw OAuthServerException::invalidRequest('client_secret');
       }
 
       // Validate client exists and is authorized for device flow.
@@ -145,6 +156,11 @@ final class DeviceAuthorizationController extends ControllerBase {
         $exception = new OAuthServerException('Client identifier is invalid', 4, 'invalid_client', 400);
         $exception->setServerRequest($server_request);
         throw $exception;
+      }
+
+      if ($client_entity->isConfidential()
+        && !$this->clientRepository->validateClient($client_id, $client_secret, 'urn:ietf:params:oauth:grant-type:device_code')) {
+        throw OAuthServerException::invalidClient($server_request);
       }
 
       $client_drupal_entity = $client_entity->getDrupalEntity();
@@ -171,7 +187,7 @@ final class DeviceAuthorizationController extends ControllerBase {
       if (!$verification_url || !$verification_url->isRouted() || $verification_url->getRouteName() !== 'simple_oauth_device_flow.device_verification_form') {
         throw new \UnexpectedValueException('Device verification path does not resolve to the verification form.');
       }
-      $verification_uri = $request->getSchemeAndHttpHost() . $verification_url->toString();
+      $verification_uri = $verification_url->setAbsolute()->toString();
 
       // Generate device and user codes using the service.
       $authorization_data = $this->deviceCodeService->generateDeviceAuthorization(
@@ -205,7 +221,7 @@ final class DeviceAuthorizationController extends ControllerBase {
       // Add CORS headers for cross-origin requests.
       $response->headers->set('Access-Control-Allow-Origin', '*');
       $response->headers->set('Access-Control-Allow-Methods', Request::METHOD_POST);
-      $response->headers->set('Access-Control-Allow-Headers', 'Content-Type');
+      $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
       return $response;
     }
@@ -264,7 +280,7 @@ final class DeviceAuthorizationController extends ControllerBase {
     // Add CORS headers for error responses.
     $response->headers->set('Access-Control-Allow-Origin', '*');
     $response->headers->set('Access-Control-Allow-Methods', Request::METHOD_POST);
-    $response->headers->set('Access-Control-Allow-Headers', 'Content-Type');
+    $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
     return $response;
   }

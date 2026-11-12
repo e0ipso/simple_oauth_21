@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Drupal\simple_oauth_device_flow\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Path\PathValidatorInterface;
+use Drupal\Core\Url;
 
 /**
  * Service for managing Device Flow settings and configuration.
@@ -23,8 +25,10 @@ final class DeviceFlowSettingsService {
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The config factory.
+   * @param \Drupal\Core\Path\PathValidatorInterface|null $pathValidator
+   *   The path validator, or NULL to use the container.
    */
-  public function __construct(ConfigFactoryInterface $configFactory) {
+  public function __construct(ConfigFactoryInterface $configFactory, private readonly ?PathValidatorInterface $pathValidator = NULL) {
     $this->configFactory = $configFactory;
   }
 
@@ -96,7 +100,30 @@ final class DeviceFlowSettingsService {
    *   The verification URI.
    */
   public function getVerificationUri(): string {
-    return $this->getConfig()->get('verification_uri') ?? '/oauth/device/verify';
+    return $this->getConfig()->get('verification_uri') ?? '/oauth/device';
+  }
+
+  /**
+   * Resolves the configured local verification destination as an absolute URL.
+   *
+   * @return string
+   *   The absolute verification URL, including the base path and alias.
+   *
+   * @throws \UnexpectedValueException
+   *   If the configured path does not resolve to the verification form.
+   */
+  public function getAbsoluteVerificationUri(): string {
+    $path = $this->getVerificationUri();
+    if (!preg_match('@^/(?!/)[A-Za-z0-9/_-]*$@D', $path)) {
+      throw new \UnexpectedValueException('Invalid local device verification path.');
+    }
+    // phpcs:ignore DrupalPractice.Objects.GlobalDrupal.GlobalDrupal -- Preserve the original constructor for external callers.
+    $validator = $this->pathValidator ?? \Drupal::service('path.validator');
+    $url = $validator->getUrlIfValid($path);
+    if (!$url instanceof Url || !$url->isRouted() || $url->getRouteName() !== 'simple_oauth_device_flow.device_verification_form') {
+      throw new \UnexpectedValueException('Device verification path does not resolve to the verification form.');
+    }
+    return $url->setAbsolute()->toString();
   }
 
   /**

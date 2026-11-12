@@ -12,7 +12,7 @@ services:
 
   simple_oauth_device_flow.settings:
     class: Drupal\simple_oauth_device_flow\Service\DeviceFlowSettingsService
-    arguments: ['@config.factory']
+    arguments: ['@config.factory', '@path.validator']
 
   simple_oauth_device_flow.device_code_repository:
     class: Drupal\simple_oauth_device_flow\Repository\DeviceCodeRepository
@@ -22,6 +22,8 @@ services:
         '@simple_oauth_device_flow.settings',
         '@simple_oauth_device_flow.logger_factory',
         '@simple_oauth.repositories.client',
+        '@lock',
+        '@datetime.time',
       ]
 
   simple_oauth_device_flow.user_code_generator:
@@ -39,3 +41,4 @@ services:
       - '@simple_oauth_device_flow.settings'
       - '@datetime.time'
       - '@simple_oauth_device_flow.logger_factory'
+      - '@simple_oauth.repositories.scope'
