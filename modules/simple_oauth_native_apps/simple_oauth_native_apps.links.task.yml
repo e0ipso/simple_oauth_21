@@ -1,0 +1,6 @@
+# Native Apps tab under OAuth 2.1 Compliance
+simple_oauth_21.native_apps:
+  route_name: simple_oauth_native_apps.settings
+  title: 'Native Apps'
+  parent_id: simple_oauth_21.oauth21_compliance
+  weight: 20

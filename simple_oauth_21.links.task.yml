@@ -11,31 +11,3 @@ simple_oauth_21.dashboard:
   title: 'Dashboard'
   parent_id: simple_oauth_21.oauth21_compliance
   weight: 0
-
-# Server Metadata tab under OAuth 2.1 Compliance
-simple_oauth_21.server_metadata:
-  route_name: simple_oauth_server_metadata.settings
-  title: 'Server Metadata'
-  parent_id: simple_oauth_21.oauth21_compliance
-  weight: 10
-
-# Native Apps tab under OAuth 2.1 Compliance
-simple_oauth_21.native_apps:
-  route_name: simple_oauth_native_apps.settings
-  title: 'Native Apps'
-  parent_id: simple_oauth_21.oauth21_compliance
-  weight: 20
-
-# PKCE tab under OAuth 2.1 Compliance
-simple_oauth_21.pkce:
-  route_name: simple_oauth_pkce.settings
-  title: 'PKCE'
-  parent_id: simple_oauth_21.oauth21_compliance
-  weight: 30
-
-# Client Registration tab under OAuth 2.1 Compliance
-simple_oauth_21.client_registration:
-  route_name: simple_oauth_client_registration.settings
-  title: 'Client Registration'
-  parent_id: simple_oauth_21.oauth21_compliance
-  weight: 40
