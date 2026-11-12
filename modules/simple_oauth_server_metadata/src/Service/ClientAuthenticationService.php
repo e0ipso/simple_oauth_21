@@ -58,7 +58,7 @@ final class ClientAuthenticationService {
 
     // Lookup client entity.
     $client_entity = $this->clientRepository->getClientEntity($credentials['client_id']);
-    if (!$client_entity) {
+    if (!$client_entity instanceof ClientEntityInterface) {
       // Client not found - use timing-safe comparison to prevent enumeration.
       $this->preventTimingAttack();
       return NULL;
@@ -171,11 +171,7 @@ final class ClientAuthenticationService {
     }
 
     // Confidential clients MUST provide a secret.
-    if ($is_confidential) {
-      return FALSE;
-    }
-
-    return TRUE;
+    return FALSE;
   }
 
   /**
@@ -208,13 +204,16 @@ final class ClientAuthenticationService {
    * the response time is similar to when a client is found but fails
    * authentication. This prevents attackers from determining which
    * client IDs exist.
+   *
+   * @return bool
+   *   The result of the dummy comparison.
    */
-  private function preventTimingAttack(): void {
+  private function preventTimingAttack(): bool {
     // Perform a dummy hash comparison with random data to maintain
     // consistent timing regardless of whether the client exists.
     $dummy_secret = bin2hex(random_bytes(32));
     $dummy_hash = bin2hex(random_bytes(32));
-    hash_equals($dummy_secret, $dummy_hash);
+    return hash_equals($dummy_secret, $dummy_hash);
   }
 
 }
