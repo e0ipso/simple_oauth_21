@@ -399,6 +399,11 @@ final class ClientRegistrationService {
     if ($metadata->scope !== NULL) {
       $grant_types = array_column($consumer->get('grant_types')->getValue(), 'value');
       foreach ($this->buildScopeFieldValues($metadata->scope, $grant_types) as $field_name => $value) {
+        // Client credentials use an administrative allowlist. Clearing it also
+        // removes its restriction, so clients must not rewrite this field.
+        if ($field_name === self::SCOPE_FIELDS['client_credentials']) {
+          continue;
+        }
         $consumer->set($field_name, $value);
       }
     }
@@ -606,6 +611,10 @@ final class ClientRegistrationService {
         continue;
       }
       $scope_ids = array_column($consumer->get($field_name)->getValue(), 'scope_id');
+      // The static provider interprets an empty ID list as every known scope.
+      if ($scope_ids === []) {
+        continue;
+      }
       foreach ($this->scopeProvider->loadMultiple($scope_ids) as $scope) {
         $names[$scope->getName()] = TRUE;
       }
