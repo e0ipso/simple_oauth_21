@@ -395,13 +395,14 @@ final class ClientRegistrationService {
       $consumer->set('redirect', $redirectUris);
     }
 
-    // Omission preserves scopes; an explicit empty value clears them.
+    // Omission preserves authorization defaults; an empty value clears them.
     if ($metadata->scope !== NULL) {
       $grant_types = array_column($consumer->get('grant_types')->getValue(), 'value');
       foreach ($this->buildScopeFieldValues($metadata->scope, $grant_types) as $field_name => $value) {
         // Client credentials use an administrative allowlist. Clearing it also
         // removes its restriction, so clients must not rewrite this field.
-        if ($field_name === self::SCOPE_FIELDS['client_credentials']) {
+        // Supported schemas before 6.0.6 lack authorization-code defaults.
+        if (!$consumer->hasField($field_name) || $field_name === self::SCOPE_FIELDS['client_credentials']) {
           continue;
         }
         $consumer->set($field_name, $value);
@@ -564,7 +565,8 @@ final class ClientRegistrationService {
    *
    * Unknown scopes and scopes disabled for the client's grants are omitted.
    * RFC 7591 section 2 permits overriding requested scopes when the response
-   * reports the registered selection. Empty selections clear existing values.
+   * reports the registered selection. Empty selections return empty field
+   * lists; callers decide which fields are writable.
    *
    * @param string|null $scope
    *   The requested space-delimited scope names, or NULL when omitted.
