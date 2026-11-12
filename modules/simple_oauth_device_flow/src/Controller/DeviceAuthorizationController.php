@@ -6,6 +6,7 @@ namespace Drupal\simple_oauth_device_flow\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Url;
+use Drupal\simple_oauth\Entities\ClientEntityInterface;
 use Drupal\simple_oauth_device_flow\Service\DeviceCodeService;
 use GuzzleHttp\Psr7\Response;
 use League\OAuth2\Server\Exception\OAuthServerException;
@@ -78,7 +79,7 @@ final class DeviceAuthorizationController extends ControllerBase {
       $container->get('psr7.http_message_factory'),
       $container->get('simple_oauth.repositories.client'),
       $container->get('simple_oauth_device_flow.device_code_service'),
-      $container->get('logger.channel.simple_oauth')
+      $container->get('logger.channel.simple_oauth_device_flow')
     );
   }
 
@@ -104,7 +105,7 @@ final class DeviceAuthorizationController extends ControllerBase {
 
     try {
       // Extract and validate client_id parameter.
-      $client_id = $request->get('client_id');
+      $client_id = $request->attributes->get('client_id', $request->query->get('client_id', $request->request->get('client_id', NULL)));
       if (empty($client_id)) {
         $this->logger->notice('Device authorization request missing client_id parameter');
         throw OAuthServerException::invalidRequest('client_id');
@@ -112,10 +113,8 @@ final class DeviceAuthorizationController extends ControllerBase {
 
       // Validate client exists and is authorized for device flow.
       $client_entity = $this->clientRepository->getClientEntity($client_id);
-      if (empty($client_entity)) {
-        $this->logger->notice('Device authorization request with invalid client_id: @client_id', [
-          '@client_id' => $client_id,
-        ]);
+      if (!$client_entity instanceof ClientEntityInterface) {
+        $this->logger->notice('Device authorization request with invalid client_id');
         // For device flow, invalid client_id is a bad request (400), not auth
         // failure (401). Use code 4 like invalidClient() but with 400 status
         // code per RFC 8628.
@@ -131,13 +130,13 @@ final class DeviceAuthorizationController extends ControllerBase {
       $grant_types = array_column($client_drupal_entity->get('grant_types')->getValue(), 'value');
       if (!in_array('urn:ietf:params:oauth:grant-type:device_code', $grant_types, TRUE)) {
         $this->logger->notice('Client @client_id not configured for device_code grant', [
-          '@client_id' => $client_id,
+          '@client_id' => $client_entity->getIdentifier(),
         ]);
         throw OAuthServerException::unauthorizedClient('Client not authorized for device code grant');
       }
 
       // Extract optional scope parameter.
-      $scope = $request->get('scope', '');
+      $scope = $request->attributes->get('scope', $request->query->get('scope', $request->request->get('scope', '')));
 
       // Generate device and user codes using the service.
       $authorization_data = $this->deviceCodeService->generateDeviceAuthorization(
@@ -164,9 +163,8 @@ final class DeviceAuthorizationController extends ControllerBase {
         'interval' => $authorization_data['interval'],
       ];
 
-      $this->logger->info('Device authorization successful for client @client_id, user_code: @user_code', [
-        '@client_id' => $client_id,
-        '@user_code' => $authorization_data['user_code'],
+      $this->logger->info('Device authorization successful for client @client_id', [
+        '@client_id' => $client_entity->getIdentifier(),
       ]);
 
       // Create JSON response with proper headers.
@@ -184,9 +182,8 @@ final class DeviceAuthorizationController extends ControllerBase {
     catch (OAuthServerException $exception) {
       // Log OAuth server exceptions appropriately.
       $log_level = $exception->getCode() < 500 ? 'notice' : 'error';
-      $this->logger->log($log_level, 'Device authorization error: @message. Hint: @hint', [
-        '@message' => $exception->getMessage(),
-        '@hint' => $exception->getHint(),
+      $this->logger->log($log_level, 'Device authorization error: @exception_type', [
+        '@exception_type' => get_class($exception),
       ]);
 
       // Convert OAuth exception to JSON response.
@@ -194,8 +191,8 @@ final class DeviceAuthorizationController extends ControllerBase {
     }
     catch (\Exception $exception) {
       // Log unexpected exceptions.
-      $this->logger->error('Unexpected error in device authorization: @message', [
-        '@message' => $exception->getMessage(),
+      $this->logger->error('Unexpected error in device authorization: @exception_type', [
+        '@exception_type' => get_class($exception),
       ]);
 
       // Return generic server error for unexpected exceptions.
