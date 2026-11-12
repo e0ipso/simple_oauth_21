@@ -1,7 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\Tests\simple_oauth_native_apps\Functional;
 
+use Drupal\Component\Serialization\Json;
+use Drupal\Core\Url;
 use Drupal\Tests\simple_oauth\Functional\TokenBearerFunctionalTestBase;
 use Drupal\simple_oauth_21\Trait\DebugLoggingTrait;
 use PHPUnit\Framework\Attributes\Group;
@@ -10,7 +14,7 @@ use PHPUnit\Framework\Attributes\Group;
  * Tests native app configuration and validation features.
  */
 #[Group('simple_oauth_native_apps')]
-class NativeAppConfigurationTest extends TokenBearerFunctionalTestBase {
+final class NativeAppConfigurationTest extends TokenBearerFunctionalTestBase {
 
   use DebugLoggingTrait;
 
@@ -50,6 +54,61 @@ class NativeAppConfigurationTest extends TokenBearerFunctionalTestBase {
     $this->helperConfigurationSchemaValidation();
     $this->helperFormDocumentation();
     $this->helperModuleDependencies();
+  }
+
+  /**
+   * Tests malformed PKCE parameters through the authorization and token routes.
+   *
+   * Both native policies must reject array parameters before grant processing,
+   * with an OAuth JSON response that cannot be cached after kernel handling.
+   *
+   * @throws \GuzzleHttp\Exception\GuzzleException
+   *   If an HTTP request fails.
+   */
+  public function testMalformedNativePkceParameters(): void {
+    $this->client->set('native_app_override', 'native')->save();
+    $authorization_url = Url::fromRoute('oauth2_token.authorize');
+    $authorization_parameters = [
+      'client_id' => $this->client->getClientId(),
+      'response_type' => 'code',
+      'redirect_uri' => $this->redirectUri,
+      'code_challenge' => str_repeat('a', 43),
+      'code_challenge_method' => 'S256',
+    ];
+    $token_parameters = [
+      'client_id' => $this->client->getClientId(),
+      'grant_type' => 'authorization_code',
+      'redirect_uri' => $this->redirectUri,
+      'code' => 'unused-malformed-pkce-code',
+    ];
+
+    foreach (['enhanced', 'auto-detect'] as $policy) {
+      $this->config('simple_oauth_native_apps.settings')
+        ->set('native.enhanced_pkce', $policy)
+        ->save();
+      foreach (['code_challenge', 'code_challenge_method', 'code_verifier'] as $parameter) {
+        foreach (['list' => ['S256'], 'nested' => ['value' => ['S256']]] as $shape => $value) {
+          $message = "$policy: $parameter ($shape)";
+          if ($parameter === 'code_verifier') {
+            $response = $this->post($this->url, [$parameter => $value] + $token_parameters);
+          }
+          else {
+            $response = $this->get($authorization_url, [
+              'query' => [$parameter => $value] + $authorization_parameters,
+              'allow_redirects' => FALSE,
+            ]);
+          }
+
+          $this->assertSame(400, $response->getStatusCode(), $message);
+          $this->assertStringStartsWith('application/json', $response->getHeaderLine('Content-Type'), $message);
+          $error = Json::decode((string) $response->getBody());
+          $this->assertSame('invalid_request', $error['error'], $message);
+          $this->assertStringContainsString("$parameter parameter must be a string", $error['error_description'], $message);
+          $this->assertStringContainsString('no-store', $response->getHeaderLine('Cache-Control'), $message);
+          $this->assertSame('no-cache', $response->getHeaderLine('Pragma'), $message);
+        }
+      }
+    }
   }
 
   /**

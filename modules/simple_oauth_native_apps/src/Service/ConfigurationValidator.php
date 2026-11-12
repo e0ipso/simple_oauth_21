@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_native_apps\Service;
 
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
@@ -19,7 +21,7 @@ use Drupal\Core\StringTranslation\TranslationInterface;
  * All validation methods accept nested configuration arrays directly without
  * requiring transformation or mapping from form structures.
  */
-class ConfigurationValidator {
+final class ConfigurationValidator {
 
   use StringTranslationTrait;
 
@@ -56,7 +58,7 @@ class ConfigurationValidator {
       }
 
       // Test the regex pattern.
-      $result = @preg_match('/' . $pattern . '/', '');
+      $result = @preg_match(UserAgentAnalyzer::getRegexPattern($pattern), '');
       if ($result === FALSE) {
         $errors[] = $this->t('Invalid regular expression at line @line: @pattern', [
           '@line' => $index + 1,
@@ -120,6 +122,15 @@ class ConfigurationValidator {
   public function validateRedirectUriConfig(array $config): array {
     $errors = [];
 
+    $valid_policies = ['auto-detect', 'native', 'web'];
+    foreach (['custom_uri_schemes', 'loopback_redirects'] as $setting) {
+      if (array_key_exists($setting, $config['allow'] ?? []) && !in_array($config['allow'][$setting], $valid_policies, TRUE)) {
+        $errors[] = $this->t('Invalid redirect policy for @setting. Must be one of: auto-detect, native, web.', [
+          '@setting' => $setting,
+        ]);
+      }
+    }
+
     // Check for logical conflicts.
     // Consider 'web' as not allowing the feature, 'native' and 'auto-detect'
     // as allowing it.
@@ -150,7 +161,7 @@ class ConfigurationValidator {
     $errors = [];
 
     // Validate enforce method setting if present.
-    if (isset($config['native']['enforce'])) {
+    if (array_key_exists('enforce', $config['native'] ?? [])) {
       $valid_methods = ['off', 'S256', 'plain'];
       if (!in_array($config['native']['enforce'], $valid_methods, TRUE)) {
         $errors[] = $this->t('Invalid PKCE enforcement method. Must be one of: @methods', [
@@ -160,7 +171,7 @@ class ConfigurationValidator {
     }
 
     // Validate enhanced PKCE setting if present.
-    if (isset($config['native']['enhanced_pkce'])) {
+    if (array_key_exists('enhanced_pkce', $config['native'] ?? [])) {
       $valid_enhanced = ['auto-detect', 'enhanced', 'not-enhanced'];
       if (!in_array($config['native']['enhanced_pkce'], $valid_enhanced, TRUE)) {
         $errors[] = $this->t('Invalid enhanced PKCE setting. Must be one of: @settings', [

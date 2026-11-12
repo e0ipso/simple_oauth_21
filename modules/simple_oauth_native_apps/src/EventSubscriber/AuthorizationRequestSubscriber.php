@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_native_apps\EventSubscriber;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -17,7 +19,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
  * webviews in OAuth authorization flows and applying configurable
  * security responses (warn, block).
  */
-class AuthorizationRequestSubscriber implements EventSubscriberInterface {
+final class AuthorizationRequestSubscriber implements EventSubscriberInterface {
 
   /**
    * The user agent analyzer service.
@@ -61,8 +63,8 @@ class AuthorizationRequestSubscriber implements EventSubscriberInterface {
    */
   public static function getSubscribedEvents(): array {
     $events = [];
-    // Priority 100 to run before OAuth processing.
-    $events[KernelEvents::REQUEST][] = ['onAuthorizationRequest', 100];
+    // Run after routing, before OAuth policy and controller processing.
+    $events[KernelEvents::REQUEST][] = ['onAuthorizationRequest', 29];
     return $events;
   }
 
@@ -76,7 +78,7 @@ class AuthorizationRequestSubscriber implements EventSubscriberInterface {
     $request = $event->getRequest();
 
     // Only process OAuth authorization requests.
-    if (!$this->isOauthAuthorizationRequest($request)) {
+    if ($request->attributes->get('_route') !== 'oauth2_token.authorize') {
       return;
     }
 
@@ -97,42 +99,6 @@ class AuthorizationRequestSubscriber implements EventSubscriberInterface {
   }
 
   /**
-   * Checks if the request is an OAuth authorization request.
-   *
-   * @param \Symfony\Component\HttpFoundation\Request $request
-   *   The request object.
-   *
-   * @return bool
-   *   TRUE if this is an OAuth authorization request.
-   */
-  private function isOauthAuthorizationRequest($request): bool {
-    $path = $request->getPathInfo();
-
-    // Check if this is the OAuth authorization endpoint.
-    if (strpos($path, '/oauth/authorize') !== FALSE) {
-      return TRUE;
-    }
-
-    // Check for OAuth parameters that indicate authorization request.
-    $oauthParams = [
-      'response_type',
-      'client_id',
-      'redirect_uri',
-      'scope',
-    ];
-
-    $hasOAuthParams = FALSE;
-    foreach ($oauthParams as $param) {
-      if ($request->query->has($param) || $request->request->has($param)) {
-        $hasOAuthParams = TRUE;
-        break;
-      }
-    }
-
-    return $hasOAuthParams;
-  }
-
-  /**
    * Handles webview detection based on configuration.
    *
    * @param \Symfony\Component\HttpKernel\Event\RequestEvent $event
@@ -141,8 +107,7 @@ class AuthorizationRequestSubscriber implements EventSubscriberInterface {
    *   The user agent string.
    */
   private function handleWebviewDetection(RequestEvent $event, string $userAgent): void {
-    $config = $this->configFactory->get('simple_oauth_native_apps.settings');
-    $webviewDetection = $config->get('webview.detection', 'warn');
+    $webviewDetection = $this->userAgentAnalyzer->getDetectionMode();
 
     $webviewInfo = $this->userAgentAnalyzer->getWebviewType($userAgent);
     $webviewType = $webviewInfo['category'] ?? 'generic';
@@ -181,7 +146,7 @@ class AuthorizationRequestSubscriber implements EventSubscriberInterface {
     $whitelist = $config->get('webview.whitelist') ?? [];
 
     foreach ($whitelist as $pattern) {
-      if (preg_match('/' . preg_quote($pattern, '/') . '/i', $userAgent)) {
+      if (@preg_match(UserAgentAnalyzer::getRegexPattern($pattern), $userAgent) === 1) {
         return TRUE;
       }
     }

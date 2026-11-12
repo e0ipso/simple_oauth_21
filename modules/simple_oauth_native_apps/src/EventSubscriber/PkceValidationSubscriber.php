@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_native_apps\EventSubscriber;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -13,6 +15,7 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Event subscriber for enhanced PKCE validation in OAuth flows.
@@ -21,7 +24,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
  * method enforcement, entropy validation, and native client specific security
  * checks for OAuth authorization and token exchange flows.
  */
-class PkceValidationSubscriber implements EventSubscriberInterface {
+final class PkceValidationSubscriber implements EventSubscriberInterface {
 
   /**
    * The PKCE enhancement service.
@@ -153,8 +156,22 @@ class PkceValidationSubscriber implements EventSubscriberInterface {
   protected function validateAuthorizationRequest(RequestEvent $event, Consumer $client): void {
     $request = $event->getRequest();
 
-    $code_challenge = $request->query->get('code_challenge') ?? $request->request->get('code_challenge');
-    $code_challenge_method = $request->query->get('code_challenge_method') ?? $request->request->get('code_challenge_method', 'S256');
+    $query = $request->query->all();
+    $parameters = $request->request->all();
+    $parameters += ['code_challenge_method' => 'S256'];
+    $code_challenge = $query['code_challenge'] ?? $parameters['code_challenge'] ?? NULL;
+    $code_challenge_method = $query['code_challenge_method'] ?? $parameters['code_challenge_method'];
+
+    foreach (['code_challenge' => $code_challenge, 'code_challenge_method' => $code_challenge_method] as $parameter => $value) {
+      if ($value !== NULL && !is_string($value)) {
+        $this->handleValidationFailure($event, [
+          'valid' => FALSE,
+          'errors' => ["The $parameter parameter must be a string."],
+          'enhanced_applied' => TRUE,
+        ], 'authorization', $client, 'invalid_request');
+        return;
+      }
+    }
 
     // Perform enhanced PKCE validation for authorization requests.
     $validation_result = $this->pkceEnhancementService->validatePkceParameters(
@@ -199,7 +216,15 @@ class PkceValidationSubscriber implements EventSubscriberInterface {
       return;
     }
 
-    $code_verifier = $request->request->get('code_verifier');
+    $code_verifier = $request->request->all()['code_verifier'] ?? NULL;
+    if ($code_verifier !== NULL && !is_string($code_verifier)) {
+      $this->handleValidationFailure($event, [
+        'valid' => FALSE,
+        'errors' => ['The code_verifier parameter must be a string.'],
+        'enhanced_applied' => TRUE,
+      ], 'token', $client, 'invalid_request');
+      return;
+    }
 
     // For native clients, code_verifier is mandatory.
     if (empty($code_verifier)) {
@@ -250,12 +275,14 @@ class PkceValidationSubscriber implements EventSubscriberInterface {
    *   The flow type ('authorization' or 'token').
    * @param \Drupal\consumers\Entity\Consumer $client
    *   The OAuth client.
+   * @param string|null $error_code
+   *   The OAuth error code, or NULL to use the flow's validation error.
    */
-  protected function handleValidationFailure(RequestEvent $event, array $validation_result, string $flow_type, Consumer $client): void {
+  protected function handleValidationFailure(RequestEvent $event, array $validation_result, string $flow_type, Consumer $client, ?string $error_code = NULL): void {
     $request = $event->getRequest();
 
     // Create comprehensive error response.
-    $error_code = $flow_type === 'authorization' ? 'invalid_request' : 'invalid_grant';
+    $error_code ??= $flow_type === 'authorization' ? 'invalid_request' : 'invalid_grant';
     $error_description = 'PKCE validation failed: ' . implode(', ', $validation_result['errors']);
 
     $error_data = [
@@ -323,7 +350,7 @@ class PkceValidationSubscriber implements EventSubscriberInterface {
   }
 
   /**
-   * Extracts client ID from the request.
+   * Extracts the client ID using the credentials consumed by the grant.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The request object.
@@ -331,26 +358,27 @@ class PkceValidationSubscriber implements EventSubscriberInterface {
    * @return string|null
    *   The client ID if found.
    */
-  protected function extractClientId($request): ?string {
-    // Try query parameters first (authorization requests).
-    $client_id = $request->query->get('client_id');
-    if ($client_id) {
+  protected function extractClientId(Request $request): ?string {
+    // Authorization processing consumes query parameters.
+    if (strpos($request->getPathInfo(), '/oauth/authorize') !== FALSE) {
+      $client_id = trim($request->query->getString('client_id'));
+      return $client_id !== '' ? $client_id : NULL;
+    }
+
+    // League uses a nonempty body client_id before the Basic username. Query
+    // parameters must never select the client for enhanced token validation.
+    $client_id = trim($request->request->getString('client_id'));
+    if ($client_id !== '') {
       return $client_id;
     }
 
-    // Try POST parameters (token requests).
-    $client_id = $request->request->get('client_id');
-    if ($client_id) {
-      return $client_id;
-    }
-
-    // Try HTTP Basic authentication.
     $auth_header = $request->headers->get('Authorization');
-    if ($auth_header && strpos($auth_header, 'Basic ') === 0) {
-      $credentials = base64_decode(substr($auth_header, 6));
-      if ($credentials && strpos($credentials, ':') !== FALSE) {
+    if ($auth_header !== NULL && stripos($auth_header, 'Basic ') === 0) {
+      $credentials = base64_decode(substr($auth_header, 6), TRUE);
+      if ($credentials !== FALSE && strpos($credentials, ':') !== FALSE) {
         [$client_id] = explode(':', $credentials, 2);
-        return $client_id;
+        $client_id = trim($client_id);
+        return $client_id !== '' ? $client_id : NULL;
       }
     }
 
@@ -370,7 +398,8 @@ class PkceValidationSubscriber implements EventSubscriberInterface {
     $storage = $this->entityTypeManager->getStorage('consumer');
     $clients = $storage->loadByProperties(['client_id' => $client_id]);
 
-    return $clients ? reset($clients) : NULL;
+    $client = $clients ? reset($clients) : NULL;
+    return $client instanceof Consumer ? $client : NULL;
   }
 
   /**

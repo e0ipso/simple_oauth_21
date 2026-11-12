@@ -37,5 +37,8 @@
       "dealerdirect/phpcodesniffer-composer-installer": true,
       "phpstan/extension-installer": true
     }
+  },
+  "require": {
+    "drupal/simple_oauth": ">=6.0.3 <7.0"
   }
 }
