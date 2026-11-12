@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_device_flow\Service;
 
 use Drupal\Component\Datetime\TimeInterface;
@@ -17,7 +19,7 @@ use Psr\Log\LoggerInterface;
  * - Usage statistics collection
  * - Performance-optimized database operations.
  */
-class DeviceCodeService {
+final class DeviceCodeService {
 
   /**
    * The logger instance.
@@ -91,8 +93,8 @@ class DeviceCodeService {
       return $count;
     }
     catch (\Exception $e) {
-      $this->logger->error('Failed to cleanup expired device codes: @message', [
-        '@message' => $e->getMessage(),
+      $this->logger->error('Failed to cleanup expired device codes: @exception_type', [
+        '@exception_type' => get_class($e),
       ]);
       return 0;
     }
@@ -144,8 +146,8 @@ class DeviceCodeService {
       return $count;
     }
     catch (\Exception $e) {
-      $this->logger->error('Failed to cleanup old authorized device codes: @message', [
-        '@message' => $e->getMessage(),
+      $this->logger->error('Failed to cleanup old authorized device codes: @exception_type', [
+        '@exception_type' => get_class($e),
       ]);
       return 0;
     }
@@ -177,8 +179,8 @@ class DeviceCodeService {
       if ($time_since_last_poll < $polling_interval) {
         $remaining_time = $polling_interval - $time_since_last_poll;
 
-        $this->logger->debug('Client polling too frequently for device code @device_code. Time since last poll: @time_since, Required interval: @interval', [
-          '@device_code' => $deviceCode->getIdentifier(),
+        $this->logger->debug('Client polling too frequently for device code entity @entity_id. Time since last poll: @time_since, Required interval: @interval', [
+          '@entity_id' => $deviceCode->id(),
           '@time_since' => $time_since_last_poll,
           '@interval' => $polling_interval,
         ]);
@@ -200,9 +202,9 @@ class DeviceCodeService {
       return ['valid' => TRUE];
     }
     catch (\Exception $e) {
-      $this->logger->error('Failed to validate polling interval for device code @device_code: @message', [
-        '@device_code' => $deviceCode->getIdentifier(),
-        '@message' => $e->getMessage(),
+      $this->logger->error('Failed to validate polling interval for device code entity @entity_id: @exception_type', [
+        '@entity_id' => $deviceCode->id(),
+        '@exception_type' => get_class($e),
       ]);
 
       return [
@@ -273,8 +275,8 @@ class DeviceCodeService {
       return $statistics;
     }
     catch (\Exception $e) {
-      $this->logger->error('Failed to generate device code statistics: @message', [
-        '@message' => $e->getMessage(),
+      $this->logger->error('Failed to generate device code statistics: @exception_type', [
+        '@exception_type' => get_class($e),
       ]);
 
       return [
@@ -340,10 +342,8 @@ class DeviceCodeService {
       // Persist the device code with all fields set.
       $this->deviceCodeRepository->persistDeviceCode($device_code_entity);
 
-      $this->logger->info('Device authorization generated for client @client_id: device_code=@device_code, user_code=@user_code', [
+      $this->logger->info('Device authorization generated for client @client_id', [
         '@client_id' => $client_entity->getIdentifier(),
-        '@device_code' => $device_code,
-        '@user_code' => $user_code,
       ]);
 
       return [
@@ -354,8 +354,8 @@ class DeviceCodeService {
       ];
     }
     catch (\Exception $e) {
-      $this->logger->error('Failed to generate device authorization: @message', [
-        '@message' => $e->getMessage(),
+      $this->logger->error('Failed to generate device authorization: @exception_type', [
+        '@exception_type' => get_class($e),
       ]);
       throw new \RuntimeException('Device authorization generation failed: ' . $e->getMessage(), 0, $e);
     }
@@ -463,9 +463,9 @@ class DeviceCodeService {
         ]);
       }
       catch (\Exception $e) {
-        $this->logger->error('Error generating device code on attempt @attempt: @message', [
+        $this->logger->error('Error generating device code on attempt @attempt: @exception_type', [
           '@attempt' => $attempts,
-          '@message' => $e->getMessage(),
+          '@exception_type' => get_class($e),
         ]);
       }
     }

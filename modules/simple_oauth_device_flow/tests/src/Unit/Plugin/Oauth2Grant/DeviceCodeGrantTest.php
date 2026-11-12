@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\Tests\simple_oauth_device_flow\Unit\Plugin\Oauth2Grant;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -8,8 +10,16 @@ use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\simple_oauth\Repositories\OptionalRefreshTokenRepositoryInterface;
 use Drupal\simple_oauth_device_flow\Plugin\Oauth2Grant\DeviceCodeGrant;
+use Drupal\simple_oauth_device_flow\Service\DeviceFlowSettingsService;
 use Drupal\Tests\UnitTestCase;
+use GuzzleHttp\Psr7\Response;
+use GuzzleHttp\Psr7\ServerRequest;
+use League\OAuth2\Server\Entities\ClientEntityInterface;
+use League\OAuth2\Server\Entities\DeviceCodeEntityInterface;
 use League\OAuth2\Server\Grant\DeviceCodeGrant as LeagueDeviceCodeGrant;
+use League\OAuth2\Server\Repositories\ClientRepositoryInterface;
+use League\OAuth2\Server\Repositories\ScopeRepositoryInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use League\OAuth2\Server\Repositories\DeviceCodeRepositoryInterface;
 use PHPUnit\Framework\Attributes\Group;
 use Prophecy\PhpUnit\ProphecyTrait;
@@ -20,7 +30,7 @@ use Prophecy\PhpUnit\ProphecyTrait;
  * @coversDefaultClass \Drupal\simple_oauth_device_flow\Plugin\Oauth2Grant\DeviceCodeGrant
  */
 #[Group('simple_oauth_device_flow')]
-class DeviceCodeGrantTest extends UnitTestCase {
+final class DeviceCodeGrantTest extends UnitTestCase {
 
   use ProphecyTrait;
 
@@ -87,7 +97,7 @@ class DeviceCodeGrantTest extends UnitTestCase {
       ['label' => 'Device Code'],
       $this->deviceCodeRepository->reveal(),
       $this->refreshTokenRepository->reveal(),
-      $this->configFactory->reveal()
+      new DeviceFlowSettingsService($this->configFactory->reveal())
     );
   }
 
@@ -98,7 +108,7 @@ class DeviceCodeGrantTest extends UnitTestCase {
    */
   public function testGetGrantTypeWithDefaults(): void {
     // Setup default configuration.
-    $this->config->get('device_code_expiration')->willReturn(NULL);
+    $this->config->get('device_code_lifetime')->willReturn(NULL);
     $this->config->get('verification_uri')->willReturn(NULL);
     $this->config->get('polling_interval')->willReturn(NULL);
 
@@ -122,7 +132,7 @@ class DeviceCodeGrantTest extends UnitTestCase {
    */
   public function testGetGrantTypeWithRefreshTokens(): void {
     // Setup default configuration.
-    $this->config->get('device_code_expiration')->willReturn(1800);
+    $this->config->get('device_code_lifetime')->willReturn(1800);
     $this->config->get('verification_uri')->willReturn('/oauth/device/verify');
     $this->config->get('polling_interval')->willReturn(5);
 
@@ -181,7 +191,7 @@ class DeviceCodeGrantTest extends UnitTestCase {
    * @covers ::getDeviceFlowConfig
    */
   public function testGetDeviceFlowConfig(): void {
-    $this->config->get('device_code_expiration')->willReturn(3600);
+    $this->config->get('device_code_lifetime')->willReturn(3600);
     $this->config->get('verification_uri')->willReturn('/custom/verify');
     $this->config->get('polling_interval')->willReturn(10);
     $this->config->get('user_code_length')->willReturn(6);
@@ -238,6 +248,76 @@ class DeviceCodeGrantTest extends UnitTestCase {
     $this->assertArrayHasKey('threat_mitigation', $info);
 
     $this->assertContains('RFC 8628', $info['rfc_compliance']);
+  }
+
+  /**
+   * Tests actual League issuance uses the canonical lifetime and fallback.
+   *
+   * @param int|null $configured_lifetime
+   *   The configured lifetime, or NULL for the default.
+   * @param int $expected_lifetime
+   *   The expected response and persisted lifetime in seconds.
+   */
+  #[DataProvider('deviceLifetimeProvider')]
+  public function testGrantResponseUsesCanonicalLifetime(?int $configured_lifetime, int $expected_lifetime): void {
+    // User-code fixtures intentionally use the valid consonant-only alphabet.
+    // cspell:ignore BCDF GHJK
+    $this->config->get('device_code_lifetime')->willReturn($configured_lifetime);
+    $this->config->get('verification_uri')->willReturn(NULL);
+    $this->config->get('polling_interval')->willReturn(NULL);
+    $grant_types = $this->prophesize(FieldItemListInterface::class);
+    $grant_types->getValue()->willReturn([
+      ['value' => 'urn:ietf:params:oauth:grant-type:device_code'],
+    ]);
+    $this->consumer->get('grant_types')->willReturn($grant_types->reveal());
+    $this->refreshTokenRepository->disableRefreshToken()->shouldBeCalledOnce();
+    $expiry = new \DateTimeImmutable();
+    $device = $this->createMock(DeviceCodeEntityInterface::class);
+    $device->method('setExpiryDateTime')->willReturnCallback(static function (\DateTimeImmutable $value) use (&$expiry): void {
+      $expiry = $value;
+    });
+    $device->method('getExpiryDateTime')->willReturnCallback(static function () use (&$expiry): \DateTimeImmutable {
+      return $expiry;
+    });
+    $device->method('getIdentifier')->willReturn('opaque-device-code');
+    $device->method('getUserCode')->willReturn('BCDF-GHJK');
+    $device->method('getVerificationUri')->willReturn('/oauth/device/verify');
+    $this->deviceCodeRepository->getNewDeviceCode()->willReturn($device);
+    $this->deviceCodeRepository->persistDeviceCode($device)->shouldBeCalledOnce();
+    $client = $this->createMock(ClientEntityInterface::class);
+    $client->method('getIdentifier')->willReturn('grant-lifetime-client');
+    $clients = $this->createMock(ClientRepositoryInterface::class);
+    $clients->method('getClientEntity')->with('grant-lifetime-client')->willReturn($client);
+    $grant = $this->deviceCodeGrant->getGrantType($this->consumer->reveal());
+    $this->assertInstanceOf(LeagueDeviceCodeGrant::class, $grant);
+    $grant->setClientRepository($clients);
+    $grant->setScopeRepository($this->createMock(ScopeRepositoryInterface::class));
+    $grant->setDefaultScope('');
+    $request = (new ServerRequest('POST', '/oauth/device_authorization'))
+      ->withParsedBody(['client_id' => 'grant-lifetime-client']);
+    $before = time();
+    $response = $grant->respondToDeviceAuthorizationRequest($request)
+      ->generateHttpResponse(new Response());
+    $after = time();
+    $data = json_decode((string) $response->getBody(), TRUE, 512, JSON_THROW_ON_ERROR);
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertGreaterThanOrEqual($before + $expected_lifetime, $expiry->getTimestamp());
+    $this->assertLessThanOrEqual($after + $expected_lifetime, $expiry->getTimestamp());
+    $this->assertGreaterThanOrEqual($expected_lifetime - ($after - $before), $data['expires_in']);
+    $this->assertLessThanOrEqual($expected_lifetime, $data['expires_in']);
+  }
+
+  /**
+   * Provides configured and fallback device lifetimes.
+   *
+   * @return array<string, array{int|null, int}>
+   *   Lifetime inputs and expected expiry deltas.
+   */
+  public static function deviceLifetimeProvider(): array {
+    return [
+      'nondefault lifetime' => [143, 143],
+      'default lifetime' => [NULL, 1800],
+    ];
   }
 
 }

@@ -55,7 +55,7 @@ final class DeviceVerificationController extends ControllerBase {
     return new static(
       $container->get('form_builder'),
       $container->get('current_user'),
-      $container->get('logger.channel.simple_oauth')
+      $container->get('logger.channel.simple_oauth_device_flow')
     );
   }
 
@@ -81,9 +81,7 @@ final class DeviceVerificationController extends ControllerBase {
         'query' => ['destination' => $destination],
       ]);
 
-      $this->logger->info('Redirecting anonymous user to login for device verification. Destination: @destination', [
-        '@destination' => $destination,
-      ]);
+      $this->logger->info('Redirecting anonymous user to login for device verification.');
 
       // Return redirect response to login page.
       return new RedirectResponse($login_url->toString());

@@ -1,4 +1,15 @@
 services:
+  # Device logging omits request metadata that may contain credentials.
+  simple_oauth_device_flow.logger_factory:
+    class: Drupal\simple_oauth_device_flow\Service\DeviceFlowLoggerChannelFactory
+    tags:
+      - { name: service_collector, tag: logger, call: addLogger }
+
+  logger.channel.simple_oauth_device_flow:
+    parent: logger.channel_base
+    factory: ['@simple_oauth_device_flow.logger_factory', 'get']
+    arguments: ['simple_oauth_device_flow']
+
   simple_oauth_device_flow.settings:
     class: Drupal\simple_oauth_device_flow\Service\DeviceFlowSettingsService
     arguments: ['@config.factory']
@@ -9,7 +20,7 @@ services:
       [
         '@entity_type.manager',
         '@simple_oauth_device_flow.settings',
-        '@logger.factory',
+        '@simple_oauth_device_flow.logger_factory',
         '@simple_oauth.repositories.client',
       ]
 
@@ -18,7 +29,7 @@ services:
     arguments:
       - '@config.factory'
       - '@simple_oauth_device_flow.device_code_repository'
-      - '@logger.factory'
+      - '@simple_oauth_device_flow.logger_factory'
 
   simple_oauth_device_flow.device_code_service:
     class: Drupal\simple_oauth_device_flow\Service\DeviceCodeService
@@ -27,4 +38,4 @@ services:
       - '@simple_oauth_device_flow.user_code_generator'
       - '@simple_oauth_device_flow.settings'
       - '@datetime.time'
-      - '@logger.factory'
+      - '@simple_oauth_device_flow.logger_factory'

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\simple_oauth_device_flow\Repository;
 
-use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityStorageException;
+use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\simple_oauth_device_flow\Entity\DeviceCode;
@@ -23,14 +23,7 @@ use Psr\Log\LoggerInterface;
  * Implements the DeviceCodeRepositoryInterface required by league/oauth2-server
  * for the Device Authorization Grant (RFC 8628).
  */
-class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
-
-  /**
-   * The entity storage for device codes.
-   *
-   * @var \Drupal\Core\Entity\EntityStorageInterface
-   */
-  private EntityStorageInterface $deviceCodeStorage;
+final class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
 
   /**
    * The logger instance.
@@ -59,17 +52,11 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
    *   The client repository.
    */
   public function __construct(
-    EntityTypeManagerInterface $entityTypeManager,
+    private readonly EntityTypeManagerInterface $entityTypeManager,
     protected DeviceFlowSettingsService $settings,
     LoggerChannelFactoryInterface $loggerFactory,
     ClientRepositoryInterface $clientRepository,
   ) {
-    try {
-      $this->deviceCodeStorage = $entityTypeManager->getStorage('oauth2_device_code');
-    }
-    catch (\Exception $e) {
-      throw new \RuntimeException('Failed to initialize device code storage: ' . $e->getMessage(), 0, $e);
-    }
     $this->logger = $loggerFactory->get('simple_oauth_device_flow');
     $this->clientRepository = $clientRepository;
   }
@@ -77,9 +64,9 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
   /**
    * {@inheritdoc}
    */
-  public function getNewDeviceCode(): DeviceCodeEntityInterface {
+  public function getNewDeviceCode(): DeviceCode {
     try {
-      $device_code = $this->deviceCodeStorage->create();
+      $device_code = $this->entityTypeManager->getStorage('oauth2_device_code')->create();
 
       if (!$device_code instanceof DeviceCode) {
         throw new \RuntimeException('Failed to create device code entity: invalid entity type');
@@ -88,8 +75,8 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
       return $device_code;
     }
     catch (\Exception $e) {
-      $this->logger->error('Failed to create new device code entity: @message', [
-        '@message' => $e->getMessage(),
+      $this->logger->error('Failed to create new device code entity: @exception_type', [
+        '@exception_type' => get_class($e),
       ]);
       throw new \RuntimeException('Failed to create device code entity', 0, $e);
     }
@@ -121,26 +108,21 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
 
       $deviceCodeEntity->save();
 
-      $this->logger->info('Device code persisted: @device_code with user code @user_code', [
-        '@device_code' => $deviceCodeEntity->getIdentifier(),
-        '@user_code' => $deviceCodeEntity->getUserCode(),
-      ]);
+      $this->logger->info('Device code persisted');
     }
     catch (UniqueTokenIdentifierConstraintViolationException $e) {
       // Re-throw constraint violations as-is.
       throw $e;
     }
     catch (EntityStorageException $e) {
-      $this->logger->error('Failed to persist device code @device_code: @message', [
-        '@device_code' => $deviceCodeEntity->getIdentifier(),
-        '@message' => $e->getMessage(),
+      $this->logger->error('Failed to persist device code entity: @exception_type', [
+        '@exception_type' => get_class($e),
       ]);
       throw new \RuntimeException('Failed to persist device code', 0, $e);
     }
     catch (\Exception $e) {
-      $this->logger->error('Unexpected error persisting device code @device_code: @message', [
-        '@device_code' => $deviceCodeEntity->getIdentifier(),
-        '@message' => $e->getMessage(),
+      $this->logger->error('Unexpected error persisting device code entity: @exception_type', [
+        '@exception_type' => get_class($e),
       ]);
       throw new \RuntimeException('Unexpected error during device code persistence', 0, $e);
     }
@@ -151,7 +133,7 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
    */
   public function getDeviceCodeEntityByDeviceCode(string $deviceCode): ?DeviceCodeEntityInterface {
     try {
-      $entities = $this->deviceCodeStorage->loadByProperties([
+      $entities = $this->entityTypeManager->getStorage('oauth2_device_code')->loadByProperties([
         'device_code' => $deviceCode,
       ]);
 
@@ -161,9 +143,7 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
 
       $entity = reset($entities);
       if (!$entity instanceof DeviceCode) {
-        $this->logger->warning('Retrieved entity is not a DeviceCode instance for device code: @device_code', [
-          '@device_code' => $deviceCode,
-        ]);
+        $this->logger->warning('Retrieved entity is not a DeviceCode instance during device code lookup');
         return NULL;
       }
 
@@ -171,9 +151,8 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
       return $entity;
     }
     catch (\Exception $e) {
-      $this->logger->error('Failed to retrieve device code entity @device_code: @message', [
-        '@device_code' => $deviceCode,
-        '@message' => $e->getMessage(),
+      $this->logger->error('Failed to retrieve device code entity: @exception_type', [
+        '@exception_type' => get_class($e),
       ]);
       return NULL;
     }
@@ -185,12 +164,12 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
    * @param string $userCode
    *   The user code to search for.
    *
-   * @return \League\OAuth2\Server\Entities\DeviceCodeEntityInterface|null
+   * @return \Drupal\simple_oauth_device_flow\Entity\DeviceCode|null
    *   The device code entity or NULL if not found.
    */
-  public function getDeviceCodeEntityByUserCode(string $userCode): ?DeviceCodeEntityInterface {
+  public function getDeviceCodeEntityByUserCode(string $userCode): ?DeviceCode {
     try {
-      $entities = $this->deviceCodeStorage->loadByProperties([
+      $entities = $this->entityTypeManager->getStorage('oauth2_device_code')->loadByProperties([
         'user_code' => $userCode,
       ]);
 
@@ -200,9 +179,7 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
 
       $entity = reset($entities);
       if (!$entity instanceof DeviceCode) {
-        $this->logger->warning('Retrieved entity is not a DeviceCode instance for user code: @user_code', [
-          '@user_code' => $userCode,
-        ]);
+        $this->logger->warning('Retrieved entity is not a DeviceCode instance during user code lookup');
         return NULL;
       }
 
@@ -210,9 +187,8 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
       return $entity;
     }
     catch (\Exception $e) {
-      $this->logger->error('Failed to retrieve device code entity by user code @user_code: @message', [
-        '@user_code' => $userCode,
-        '@message' => $e->getMessage(),
+      $this->logger->error('Failed to retrieve device code entity by user code: @exception_type', [
+        '@exception_type' => get_class($e),
       ]);
       return NULL;
     }
@@ -226,9 +202,7 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
       $entity = $this->getDeviceCodeEntityByDeviceCode($codeId);
 
       if ($entity === NULL) {
-        $this->logger->warning('Attempted to revoke non-existent device code: @code_id', [
-          '@code_id' => $codeId,
-        ]);
+        $this->logger->warning('Attempted to revoke non-existent device code');
         return;
       }
 
@@ -236,19 +210,20 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
         throw new \RuntimeException('Entity is not a DeviceCode instance');
       }
 
-      // Mark as revoked by setting authorized to FALSE and clearing user_id.
+      // Retain a decision timestamp even when revoking a pending code.
+      // This distinguishes terminal codes from unused pending codes.
+      if (empty($entity->get('authorized_at')->value)) {
+        $entity->set('authorized_at', time());
+      }
       $entity->set('authorized', FALSE);
       $entity->set('user_id', NULL);
       $entity->save();
 
-      $this->logger->info('Device code revoked: @code_id', [
-        '@code_id' => $codeId,
-      ]);
+      $this->logger->info('Device code revoked');
     }
     catch (\Exception $e) {
-      $this->logger->error('Failed to revoke device code @code_id: @message', [
-        '@code_id' => $codeId,
-        '@message' => $e->getMessage(),
+      $this->logger->error('Failed to revoke device code: @exception_type', [
+        '@exception_type' => get_class($e),
       ]);
       throw new \RuntimeException('Failed to revoke device code', 0, $e);
     }
@@ -267,9 +242,7 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
       }
 
       if (!$entity instanceof DeviceCode) {
-        $this->logger->warning('Retrieved entity is not a DeviceCode instance when checking revocation for: @code_id', [
-          '@code_id' => $codeId,
-        ]);
+        $this->logger->warning('Retrieved entity is not a DeviceCode instance when checking revocation');
         return TRUE;
       }
 
@@ -278,24 +251,16 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
         return TRUE;
       }
 
-      // Check if explicitly revoked (authorized = FALSE and no user_id).
+      // Revocation retains a decision timestamp and clears the user.
       $authorized = $entity->get('authorized')->value;
       $user_id = $entity->get('user_id')->target_id;
       $authorized_at = $entity->get('authorized_at')->value;
 
-      // Device code is revoked if not authorized and has no user.
-      // Note: authorized can be FALSE during pending authorization, but a
-      // missing user while still unauthorized indicates revocation. During
-      // initial authorization this can cause the code to appear revoked
-      // when someone visits a URL with the code in it, so we also check
-      // authorized_at to make sure we only revoke codes that have been
-      // previously authorized.
       return !$authorized && !empty($authorized_at) && empty($user_id);
     }
     catch (\Exception $e) {
-      $this->logger->error('Failed to check device code revocation status for @code_id: @message', [
-        '@code_id' => $codeId,
-        '@message' => $e->getMessage(),
+      $this->logger->error('Failed to check device code revocation status: @exception_type', [
+        '@exception_type' => get_class($e),
       ]);
       // Assume revoked on error for security.
       return TRUE;
@@ -312,7 +277,7 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
     try {
       $current_time = time();
 
-      $query = $this->deviceCodeStorage->getQuery()
+      $query = $this->entityTypeManager->getStorage('oauth2_device_code')->getQuery()
         ->accessCheck(FALSE);
       $query->condition('expires_at', $current_time, '<');
 
@@ -322,8 +287,8 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
         return 0;
       }
 
-      $expired_entities = $this->deviceCodeStorage->loadMultiple($expired_ids);
-      $this->deviceCodeStorage->delete($expired_entities);
+      $expired_entities = $this->entityTypeManager->getStorage('oauth2_device_code')->loadMultiple($expired_ids);
+      $this->entityTypeManager->getStorage('oauth2_device_code')->delete($expired_entities);
 
       $count = count($expired_entities);
       $this->logger->info('Cleaned up @count expired device codes', [
@@ -333,8 +298,8 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
       return $count;
     }
     catch (\Exception $e) {
-      $this->logger->error('Failed to cleanup expired device codes: @message', [
-        '@message' => $e->getMessage(),
+      $this->logger->error('Failed to cleanup expired device codes: @exception_type', [
+        '@exception_type' => get_class($e),
       ]);
       return 0;
     }
@@ -377,7 +342,7 @@ class DeviceCodeRepository implements DeviceCodeRepositoryInterface {
    *   The device code entity storage.
    */
   public function getStorage(): EntityStorageInterface {
-    return $this->deviceCodeStorage;
+    return $this->entityTypeManager->getStorage('oauth2_device_code');
   }
 
   /**

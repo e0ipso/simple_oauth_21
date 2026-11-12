@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_device_flow\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -7,7 +9,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 /**
  * Service for managing Device Flow settings and configuration.
  */
-class DeviceFlowSettingsService {
+final class DeviceFlowSettingsService {
 
   /**
    * The config factory.
@@ -44,7 +46,7 @@ class DeviceFlowSettingsService {
    */
   public function getDeviceCodeExpiration(): int {
     // 30 minutes default.
-    return $this->getConfig()->get('device_code_expiration') ?? 1800;
+    return $this->getConfig()->get('device_code_lifetime') ?? 1800;
   }
 
   /**

@@ -88,7 +88,7 @@ function simple_oauth_device_flow_cron() {
 
     // Log cleanup results if any codes were deleted.
     if ($result['total_deleted'] > 0) {
-      \Drupal::logger('simple_oauth_device_flow')->info(
+      \Drupal::service('logger.channel.simple_oauth_device_flow')->info(
         'Cron cleanup: @total device codes deleted (@expired expired, @authorized old authorized) in @time ms',
         [
           '@total' => $result['total_deleted'],
@@ -100,7 +100,7 @@ function simple_oauth_device_flow_cron() {
     }
   }
   catch (\Exception $e) {
-    \Drupal::logger('simple_oauth_device_flow')->error(
+    \Drupal::service('logger.channel.simple_oauth_device_flow')->error(
       'Failed to perform device code cleanup during cron: @message',
       ['@message' => $e->getMessage()]
     );

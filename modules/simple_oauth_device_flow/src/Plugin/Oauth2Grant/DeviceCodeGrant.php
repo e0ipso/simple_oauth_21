@@ -1,11 +1,13 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_device_flow\Plugin\Oauth2Grant;
 
-use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\simple_oauth\Plugin\Oauth2GrantBase;
+use Drupal\simple_oauth_device_flow\Service\DeviceFlowSettingsService;
 use League\OAuth2\Server\Grant\DeviceCodeGrant as LeagueDeviceCodeGrant;
 use League\OAuth2\Server\Grant\GrantTypeInterface;
 use League\OAuth2\Server\Repositories\DeviceCodeRepositoryInterface;
@@ -24,7 +26,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *   label = @Translation("Device Code"),
  * )
  */
-class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryPluginInterface {
+final class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryPluginInterface {
 
   /**
    * The device code repository.
@@ -41,11 +43,11 @@ class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryPluginI
   protected RefreshTokenRepositoryInterface $refreshTokenRepository;
 
   /**
-   * The configuration factory.
+   * The device flow settings service.
    *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
+   * @var \Drupal\simple_oauth_device_flow\Service\DeviceFlowSettingsService
    */
-  protected ConfigFactoryInterface $configFactory;
+  protected DeviceFlowSettingsService $settings;
 
   /**
    * Constructs a DeviceCodeGrant plugin.
@@ -60,8 +62,8 @@ class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryPluginI
    *   The device code repository.
    * @param \League\OAuth2\Server\Repositories\RefreshTokenRepositoryInterface $refresh_token_repository
    *   The refresh token repository.
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
-   *   The configuration factory.
+   * @param \Drupal\simple_oauth_device_flow\Service\DeviceFlowSettingsService $settings
+   *   The device flow settings service.
    */
   public function __construct(
     array $configuration,
@@ -69,12 +71,12 @@ class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryPluginI
     $plugin_definition,
     DeviceCodeRepositoryInterface $device_code_repository,
     RefreshTokenRepositoryInterface $refresh_token_repository,
-    ConfigFactoryInterface $config_factory,
+    DeviceFlowSettingsService $settings,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
     $this->deviceCodeRepository = $device_code_repository;
     $this->refreshTokenRepository = $refresh_token_repository;
-    $this->configFactory = $config_factory;
+    $this->settings = $settings;
   }
 
   /**
@@ -87,7 +89,7 @@ class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryPluginI
       $plugin_definition,
       $container->get('simple_oauth_device_flow.device_code_repository'),
       $container->get('simple_oauth.repositories.refresh_token'),
-      $container->get('config.factory')
+      $container->get('simple_oauth_device_flow.settings')
     );
   }
 
@@ -95,10 +97,10 @@ class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryPluginI
    * {@inheritdoc}
    */
   public function getGrantType(Consumer $client): GrantTypeInterface {
-    $config = $this->configFactory->get('simple_oauth_device_flow.settings');
+    $config = $this->settings->getConfig();
 
     // Get device code TTL (default 30 minutes).
-    $device_code_lifetime = $config->get('device_code_expiration') ?? 1800;
+    $device_code_lifetime = $this->settings->getDeviceCodeExpiration();
     $device_code_ttl = new \DateInterval(sprintf('PT%dS', $device_code_lifetime));
 
     // Get verification URI (default path).
@@ -164,10 +166,10 @@ class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryPluginI
    *   Array of device flow configuration values.
    */
   public function getDeviceFlowConfig(): array {
-    $config = $this->configFactory->get('simple_oauth_device_flow.settings');
+    $config = $this->settings->getConfig();
 
     return [
-      'device_code_lifetime' => $config->get('device_code_expiration') ?? 1800,
+      'device_code_lifetime' => $this->settings->getDeviceCodeExpiration(),
       'verification_uri' => $config->get('verification_uri') ?? '/oauth/device/verify',
       'polling_interval' => $config->get('polling_interval') ?? 5,
       'user_code_length' => $config->get('user_code_length') ?? 8,

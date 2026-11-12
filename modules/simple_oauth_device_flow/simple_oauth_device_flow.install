@@ -113,7 +113,7 @@ function simple_oauth_device_flow_install($is_syncing) {
     $config->save();
 
     // Log successful installation.
-    \Drupal::logger('simple_oauth_device_flow')->info('Simple OAuth Device Flow module installed successfully.');
+    \Drupal::service('logger.channel.simple_oauth_device_flow')->info('Simple OAuth Device Flow module installed successfully.');
   }
 }
 
@@ -132,7 +132,7 @@ function simple_oauth_device_flow_uninstall($is_syncing) {
     }
 
     // Log successful uninstallation.
-    \Drupal::logger('simple_oauth_device_flow')->info('Simple OAuth Device Flow module uninstalled successfully.');
+    \Drupal::service('logger.channel.simple_oauth_device_flow')->info('Simple OAuth Device Flow module uninstalled successfully.');
   }
 }
 
