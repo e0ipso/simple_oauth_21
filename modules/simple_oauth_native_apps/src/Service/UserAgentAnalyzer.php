@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\simple_oauth_native_apps\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Psr\Log\NullLogger;
 
 /**
  * Service for analyzing user-agent strings to detect embedded webviews.
@@ -13,6 +14,13 @@ use Drupal\Core\Config\ConfigFactoryInterface;
  * embedded webviews that may compromise OAuth 2.0 security for native apps.
  */
 final class UserAgentAnalyzer {
+
+  /**
+   * The shared native security policy resolver.
+   *
+   * @var \Drupal\simple_oauth_native_apps\Service\NativeClientDetector
+   */
+  private readonly NativeClientDetector $policyResolver;
 
   /**
    * Compiled regular expressions for efficient pattern matching.
@@ -146,10 +154,14 @@ final class UserAgentAnalyzer {
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The configuration factory.
+   * @param \Drupal\simple_oauth_native_apps\Service\NativeClientDetector|null $nativeClientDetector
+   *   The shared resolver, optional for existing constructor callers.
    */
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
+    ?NativeClientDetector $nativeClientDetector = NULL,
   ) {
+    $this->policyResolver = $nativeClientDetector ?? new NativeClientDetector($configFactory, new NullLogger());
     $this->compilePatterns();
   }
 
@@ -163,33 +175,7 @@ final class UserAgentAnalyzer {
    *   TRUE if embedded webview detected.
    */
   public function isEmbeddedWebview(string $userAgent): bool {
-    if (empty($userAgent)) {
-      return FALSE;
-    }
-
-    // First check if this is a known safe browser.
-    if ($this->isSafeBrowser($userAgent)) {
-      return FALSE;
-    }
-
-    // Check against webview patterns.
-    foreach ($this->compiledPatterns as $patterns) {
-      foreach ($patterns as $pattern) {
-        if (preg_match($pattern, $userAgent)) {
-          return TRUE;
-        }
-      }
-    }
-
-    // Check custom patterns from configuration.
-    $customPatterns = $this->getCustomPatterns();
-    foreach ($customPatterns as $pattern) {
-      if (@preg_match(self::getRegexPattern($pattern), $userAgent) === 1) {
-        return TRUE;
-      }
-    }
-
-    return FALSE;
+    return $this->getWebviewType($userAgent) !== NULL;
   }
 
   /**
@@ -225,12 +211,33 @@ final class UserAgentAnalyzer {
    *   Array with 'category' and 'pattern', or NULL if not detected.
    */
   public function getWebviewType(string $userAgent): ?array {
-    if (empty($userAgent) || $this->isSafeBrowser($userAgent)) {
+    if (empty($userAgent)) {
       return NULL;
     }
 
+    // Administrator rules and explicit markers precede generic browser hints.
+    foreach ($this->getCustomPatterns() as $pattern) {
+      if (@preg_match(self::getRegexPattern($pattern), $userAgent) === 1) {
+        return [
+          'category' => 'custom',
+          'pattern' => $pattern,
+          'user_agent' => $userAgent,
+        ];
+      }
+    }
+
+    $safe_browser = $this->isSafeBrowser($userAgent);
+    $ambiguous_patterns = [
+      '/Android.*AppleWebKit.*\(KHTML.*Chrome.*Mobile.*Safari.*\)$/i',
+      '/SamsungBrowser/i',
+      '/YaBrowser/i',
+      '/MobileSafari.*Version.*Safari/i',
+    ];
     foreach ($this->compiledPatterns as $category => $patterns) {
       foreach ($patterns as $pattern) {
+        if ($safe_browser && in_array($pattern, $ambiguous_patterns, TRUE)) {
+          continue;
+        }
         if (preg_match($pattern, $userAgent)) {
           return [
             'category' => $category,
@@ -238,18 +245,6 @@ final class UserAgentAnalyzer {
             'user_agent' => $userAgent,
           ];
         }
-      }
-    }
-
-    // Check custom patterns.
-    $customPatterns = $this->getCustomPatterns();
-    foreach ($customPatterns as $pattern) {
-      if (@preg_match(self::getRegexPattern($pattern), $userAgent) === 1) {
-        return [
-          'category' => 'custom',
-          'pattern' => $pattern,
-          'user_agent' => $userAgent,
-        ];
       }
     }
 
@@ -263,12 +258,7 @@ final class UserAgentAnalyzer {
    *   The detection mode: 'off', 'warn', or 'block'.
    */
   public function getDetectionMode(): string {
-    $config = $this->configFactory->get('simple_oauth_native_apps.settings');
-    if (!(bool) $config->get('enforce_native_security')) {
-      return 'off';
-    }
-
-    return $config->get('webview.detection') ?? 'warn';
+    return $this->policyResolver->getEffectivePolicy()['webview'];
   }
 
   /**

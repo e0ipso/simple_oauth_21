@@ -15,6 +15,9 @@ use Drupal\simple_oauth_native_apps\Service\PKCEEnhancementService;
 use Drupal\simple_oauth_native_apps\Service\RedirectUriValidator;
 use Drupal\simple_oauth_native_apps\Service\UserAgentAnalyzer;
 use PHPUnit\Framework\Attributes\Group;
+use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Psr\Log\LoggerInterface;
+use Drupal\simple_oauth_native_apps\Plugin\Validation\Constraint\NativeAppRedirectUri;
 
 /**
  * Tests service integration for native apps module.
@@ -173,6 +176,189 @@ final class ServiceIntegrationTest extends KernelTestBase {
     $invalid_global['webview']['detection'] = 'invalid-policy';
     $this->assertNotEmpty($validator->validateConfiguration($invalid_global));
     $state->clearErrors();
+  }
+
+  /**
+   * Tests entity PKCE controls, explicit config inheritance and master policy.
+   */
+  public function testEntityPolicyPrecedenceAndMasterSwitch(): void {
+    $client = Consumer::create([
+      'label' => 'Entity policy client',
+      'client_id' => 'entity-policy-client',
+      'confidential' => TRUE,
+      'redirect' => ['https://example.com/callback'],
+    ]);
+    $client->save();
+    $detector = $this->container->get('simple_oauth_native_apps.native_client_detector');
+    $config = $this->config('simple_oauth_native_apps.settings');
+    $override = $this->config('simple_oauth_native_apps.consumer.' . $client->id());
+    foreach (['enhanced', 'not-enhanced', 'auto-detect'] as $global) {
+      $config->set('native.enhanced_pkce', $global)->save();
+      foreach (['native', 'web', 'auto-detect', ''] as $field) {
+        $client->set('native_app_enhanced_pkce', $field);
+        foreach (['', 'enhanced', 'not-enhanced', 'auto-detect'] as $value) {
+          $override->set('enhanced_pkce_override', $value)->save();
+          $effective = $value !== '' ? $value : match ($field) {
+            'native' => 'enhanced',
+            'web' => 'not-enhanced',
+            default => $global,
+          };
+          $this->assertSame($effective === 'enhanced', $detector->requiresEnhancedPkce($client), "$global / $field / $value");
+        }
+      }
+    }
+    $config->set('enforce_native_security', FALSE)->save();
+    $override->set('enhanced_pkce_override', 'enhanced')->save();
+    $this->assertFalse($detector->requiresEnhancedPkce($client));
+    $pkce = $this->container->get('simple_oauth_native_apps.pkce_enhancement');
+    $this->assertFalse($pkce->getConfiguration()['enhanced_pkce_enabled']);
+    $this->assertFalse($pkce->requiresS256Method($client));
+  }
+
+  /**
+   * Tests redirect constraint attachment and consumer policy context.
+   */
+  public function testConsumerRedirectValidation(): void {
+    $client = Consumer::create([
+      'label' => 'Entity redirect client',
+      'client_id' => 'entity-redirect-client',
+      'confidential' => FALSE,
+      'redirect' => ['com.example.policy://callback'],
+      'native_app_override' => 'native',
+    ]);
+    $client->save();
+    $validator = $this->container->get('simple_oauth_native_apps.redirect_uri_validator');
+    $override = $this->config('simple_oauth_native_apps.consumer.' . $client->id());
+    $this->config('simple_oauth_native_apps.settings')->set('allow.custom_uri_schemes', 'web')->set('allow.loopback_redirects', 'web')->save();
+    foreach (['', 'native', 'web'] as $permission) {
+      $override->set('allow_custom_schemes_override', $permission)->set('allow_loopback_override', $permission)->save();
+      $uris = [
+        'com.example.policy://callback',
+        'com.example.policy:/callback',
+        'http://127.0.0.1:43210/callback',
+        'http://[::1]:43210/callback',
+        'https://example.com/callback',
+      ];
+      foreach ($uris as $uri) {
+        $allowed = $permission === 'native' || $uri === 'https://example.com/callback';
+        $this->assertSame($allowed, $validator->validateConsumerRedirectUri($uri, $client), "$permission / $uri");
+        $client->set('redirect', [$uri]);
+        // Validate just this field to exclude unrelated consumer requirements.
+        $violations = $client->get('redirect')->validate();
+        $native_violations = array_filter(iterator_to_array($violations), static fn ($violation) => $violation->getConstraint() instanceof NativeAppRedirectUri);
+        $this->assertSame(!$allowed, $native_violations !== [], "$permission / $uri");
+      }
+    }
+    $this->assertFalse($validator->validateConsumerRedirectUri('http://localhost:43210/callback', $client));
+  }
+
+  /**
+   * Tests pending form overrides validate without overwriting stored policy.
+   */
+  public function testConsumerFormUsesSubmittedRedirectPolicy(): void {
+    $consumer = Consumer::create([
+      'label' => 'Submitted policy client',
+      'client_id' => 'submitted-policy-client',
+      'confidential' => FALSE,
+      'redirect' => ['com.example.submitted://callback'],
+      'native_app_override' => 'native',
+    ]);
+    $consumer->save();
+    $this->config('simple_oauth_native_apps.settings')->set('allow.custom_uri_schemes', 'web')->save();
+    $form_object = $this->createMock(EntityFormInterface::class);
+    $form_object->method('getEntity')->willReturn($consumer);
+    $state = (new FormState())->setFormObject($form_object);
+    $state->setValue('native_apps', ['allow_custom_schemes_override' => 'native']);
+    $handler = $this->container->get('simple_oauth_native_apps.consumer_form_alter');
+    $form = [];
+    $handler->alterForm($form, $state, 'consumer_edit_form');
+    $this->assertCount(1, $consumer->get('redirect')->validate());
+    // EntityForm builds a clone, so pending overrides must stay on that clone.
+    $built = clone $consumer;
+    foreach ($form['#entity_builders'] as $builder) {
+      $builder('consumer', $built, $form, $state);
+    }
+    $this->assertCount(0, $built->get('redirect')->validate());
+    $this->assertCount(1, $consumer->get('redirect')->validate());
+    $name = 'simple_oauth_native_apps.consumer.' . $consumer->id();
+    $this->assertTrue($this->container->get('config.factory')->get($name)->isNew());
+    $handler->submitConsumerNativeAppsSettings($form, $state);
+    $this->assertSame('native', $this->container->get('config.factory')->get($name)->get('allow_custom_schemes_override'));
+    $this->assertCount(0, $consumer->get('redirect')->validate());
+    $state->setValue('native_apps', ['allow_custom_schemes_override' => 'web']);
+    $denied = clone $consumer;
+    foreach ($form['#entity_builders'] as $builder) {
+      $builder('consumer', $denied, $form, $state);
+    }
+    $this->assertCount(1, $denied->get('redirect')->validate());
+    $this->assertCount(0, $consumer->get('redirect')->validate());
+    $this->assertSame('native', $this->container->get('config.factory')->get($name)->get('allow_custom_schemes_override'));
+  }
+
+  /**
+   * Tests deleting one consumer removes only its own numeric override config.
+   */
+  public function testConsumerOverrideDeletion(): void {
+    $this->installEntitySchema('oauth2_token');
+    $client = Consumer::create(['label' => 'Deleted policy', 'client_id' => 'deleted-policy']);
+    $client->save();
+    $override = $this->config('simple_oauth_native_apps.consumer.' . $client->id());
+    $override->set('enhanced_pkce_override', 'enhanced')->save();
+    $other = Consumer::create(['label' => 'Retained policy', 'client_id' => 'retained-policy']);
+    $other->save();
+    $other_name = 'simple_oauth_native_apps.consumer.' . $other->id();
+    $this->config($other_name)->set('enhanced_pkce_override', 'enhanced')->save();
+    $name = $override->getName();
+    $client->delete();
+    $this->assertTrue($this->container->get('config.factory')->get($name)->isNew());
+    $this->assertSame('enhanced', $this->container->get('config.factory')->get($other_name)->get('enhanced_pkce_override'));
+  }
+
+  /**
+   * Tests validation logging honors its flag and failures remain logged.
+   */
+  public function testPkceValidationLoggingPolicy(): void {
+    $client = Consumer::create([
+      'label' => 'Logging policy client',
+      'client_id' => 'logging-policy-client',
+      'native_app_override' => 'native',
+    ]);
+    $detector = $this->container->get('simple_oauth_native_apps.native_client_detector');
+    foreach ([FALSE, TRUE] as $enabled) {
+      $this->config('simple_oauth_native_apps.settings')->set('log.pkce_validations', $enabled)->save();
+      $logger = $this->createMock(LoggerInterface::class);
+      $logger->expects($this->exactly($enabled ? 2 : 1))->method('log');
+      $factory = $this->createMock(LoggerChannelFactoryInterface::class);
+      $factory->method('get')->willReturn($logger);
+      $service = new PKCEEnhancementService($this->container->get('config.factory'), $detector, $factory);
+      $this->assertTrue($service->validatePkceParameters($client, 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk', 'S256')['valid']);
+      $this->assertFalse($service->validatePkceParameters($client)['valid']);
+      $this->assertSame($enabled, $service->getConfiguration()['log_validations']);
+    }
+  }
+
+  /**
+   * Tests client advice uses web schemes and announces AJAX results.
+   */
+  public function testClientAdviceAndAccessibleAjax(): void {
+    $detector = $this->container->get('simple_oauth_native_apps.native_client_detector');
+    foreach ([
+      'https://example.com/callback' => 'web',
+      'http://example.com/callback' => 'web',
+      'com.example.policy:/callback' => 'mobile',
+      'http://127.0.0.1:43210/callback' => 'terminal',
+    ] as $uri => $expected) {
+      $this->assertSame($expected, $detector->detectClientType([$uri])['type']);
+      $this->assertSame($expected !== 'web', $detector->detectNativeFromRedirectUris([$uri]));
+    }
+    $handler = $this->container->get('simple_oauth_native_apps.consumer_form_alter');
+    $form = [];
+    foreach ([[], ['redirect' => [['value' => 'https://example.com/callback']]]] as $values) {
+      $state = (new FormState())->setValues($values);
+      $commands = $handler->detectClientTypeAjax($form, $state)->getCommands();
+      $this->assertSame('announce', $commands[1]['command']);
+      $this->assertNotSame('', $commands[1]['text']);
+    }
   }
 
   /**

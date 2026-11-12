@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\simple_oauth_native_apps\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\consumers\Entity\Consumer;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -17,7 +18,7 @@ class RedirectUriValidator {
    *
    * Following RFC 3986 and reverse domain notation patterns.
    */
-  const CUSTOM_SCHEME_PATTERN = '/^[a-z][a-z0-9+.-]*:\/\//i';
+  const CUSTOM_SCHEME_PATTERN = '/^[a-z][a-z0-9+.-]*:\//i';
 
   /**
    * Regular expression for reverse domain notation validation.
@@ -33,11 +34,50 @@ class RedirectUriValidator {
    *   The config factory.
    * @param \Psr\Log\LoggerInterface $logger
    *   The logger.
+   * @param \Drupal\simple_oauth_native_apps\Service\NativeClientDetector|null $nativeClientDetector
+   *   The policy resolver, optional for existing callers.
    */
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
     private readonly LoggerInterface $logger,
+    private readonly ?NativeClientDetector $nativeClientDetector = NULL,
   ) {}
+
+  /**
+   * Applies consumer policy in addition to the parent grant's URI matching.
+   *
+   * HTTPS web redirects remain governed by the parent module. Private schemes
+   * and literal loopback redirects use the effective consumer policy. This does
+   * not compare registered URIs or change League's loopback port matching.
+   *
+   * @param string $uri
+   *   The proposed redirect URI.
+   * @param \Drupal\consumers\Entity\Consumer $client
+   *   The consumer whose policy applies.
+   *
+   * @return bool
+   *   TRUE if the additional native policy permits the URI.
+   */
+  public function validateConsumerRedirectUri(string $uri, Consumer $client): bool {
+    $detector = $this->nativeClientDetector ?? new NativeClientDetector($this->configFactory, $this->logger);
+    $policy = $detector->getEffectivePolicy($client);
+    if (!$policy['enabled']) {
+      return TRUE;
+    }
+    $parsed = parse_url($uri);
+    if (!$parsed || !isset($parsed['scheme']) || isset($parsed['fragment']) || isset($parsed['user']) || isset($parsed['pass'])) {
+      return FALSE;
+    }
+    $scheme = strtolower($parsed['scheme']);
+    $host = strtolower(trim($parsed['host'] ?? '', '[]'));
+    if (in_array($scheme, ['http', 'https'], TRUE)) {
+      if (in_array($host, ['127.0.0.1', '::1', '0:0:0:0:0:0:0:1', 'localhost'], TRUE)) {
+        return $this->validateLoopbackInterfaceWithPolicy($uri, $policy['loopback']);
+      }
+      return $this->validateStandardRedirectUri($uri);
+    }
+    return $this->validateCustomSchemeWithPolicy($uri, $policy['custom_schemes']);
+  }
 
   /**
    * Validates a redirect URI for native apps.
@@ -100,9 +140,26 @@ class RedirectUriValidator {
    *   TRUE if valid custom scheme.
    */
   public function validateCustomScheme(string $uri): bool {
+    return $this->validateCustomSchemeWithPolicy($uri, NULL);
+  }
+
+  /**
+   * Validates custom schemes with a resolved permission.
+   *
+   * @param string $uri
+   *   The custom redirect URI.
+   * @param bool|null $allowed
+   *   Resolved consumer permission, or NULL to use global policy.
+   *
+   * @return bool
+   *   TRUE if the URI is permitted and valid.
+   */
+  private function validateCustomSchemeWithPolicy(string $uri, ?bool $allowed): bool {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
-    $custom_schemes_setting = $config->get('allow.custom_uri_schemes') ?? 'auto-detect';
+    $custom_schemes_setting = $allowed === NULL
+      ? ($config->get('allow.custom_uri_schemes') ?? 'auto-detect')
+      : ($allowed ? 'native' : 'web');
 
     // Handle 'auto-detect', 'native', 'web' enum values.
     if ($custom_schemes_setting === 'web') {
@@ -157,9 +214,26 @@ class RedirectUriValidator {
    *   TRUE if valid loopback interface.
    */
   public function validateLoopbackInterface(string $uri): bool {
+    return $this->validateLoopbackInterfaceWithPolicy($uri, NULL);
+  }
+
+  /**
+   * Validates loopback syntax with a resolved permission.
+   *
+   * @param string $uri
+   *   The loopback redirect URI.
+   * @param bool|null $allowed
+   *   Resolved consumer permission, or NULL to use global policy.
+   *
+   * @return bool
+   *   TRUE if the URI is permitted and valid.
+   */
+  private function validateLoopbackInterfaceWithPolicy(string $uri, ?bool $allowed): bool {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
-    $loopback_setting = $config->get('allow.loopback_redirects') ?? 'auto-detect';
+    $loopback_setting = $allowed === NULL
+      ? ($config->get('allow.loopback_redirects') ?? 'auto-detect')
+      : ($allowed ? 'native' : 'web');
 
     // Handle 'auto-detect', 'native', 'web' enum values.
     if ($loopback_setting === 'web') {

@@ -111,7 +111,7 @@ final class NativeAppAuthorizationCode extends Oauth2GrantBase implements Contai
    */
   public function getGrantType(Consumer $client): GrantTypeInterface {
     // Validate this is a native client that requires enhanced PKCE.
-    if (!$this->nativeClientDetector->requiresEnhancedPkce($client)) {
+    if (!$this->isClientEligible($client)) {
       throw new \InvalidArgumentException('Native app authorization code grant is only available for native clients requiring enhanced PKCE.');
     }
 
@@ -224,7 +224,8 @@ final class NativeAppAuthorizationCode extends Oauth2GrantBase implements Contai
    */
   public function isClientEligible(Consumer $client): bool {
     // Only native clients requiring enhanced PKCE can use this grant.
-    return $this->nativeClientDetector->requiresEnhancedPkce($client);
+    return !$this->nativeClientDetector->getEffectivePolicy($client)['enabled']
+      || $this->nativeClientDetector->requiresEnhancedPkce($client);
   }
 
   /**

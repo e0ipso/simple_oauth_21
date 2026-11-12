@@ -32,13 +32,20 @@ class NativeClientDetector {
   protected array $detectionCache = [];
 
   /**
+   * Submitted overrides scoped to an unsaved form entity, never persisted here.
+   *
+   * @var \WeakMap<\Drupal\consumers\Entity\Consumer, array>
+   */
+  private \WeakMap $submittedOverrides;
+
+  /**
    * Native client URI scheme patterns.
    *
    * @var array
    */
   protected array $nativeUriPatterns = [
     // Custom URI schemes (excluding common web schemes)
-    'custom_scheme' => '/^(?!https?:\/\/)[a-z][a-z0-9+.-]*:\/\/.+$/i',
+    'custom_scheme' => '/^(?!https?:)[a-z][a-z0-9+.-]*:\/.+$/i',
     // Mobile deep links.
     'mobile_deep_link' => '/^(app|myapp|[a-z]+-[a-z]+):\/\/.+$/i',
     // Platform-specific schemes.
@@ -74,14 +81,55 @@ class NativeClientDetector {
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The configuration factory.
-   * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
-   *   The logger channel factory.
+   * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface|\Psr\Log\LoggerInterface $logger_factory
+   *   The logger channel factory or an existing channel.
    */
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
-    LoggerChannelFactoryInterface $logger_factory,
+    LoggerChannelFactoryInterface|LoggerInterface $logger_factory,
   ) {
-    $this->logger = $logger_factory->get('simple_oauth_native_apps');
+    $this->submittedOverrides = new \WeakMap();
+    $this->logger = $logger_factory instanceof LoggerInterface
+      ? $logger_factory
+      : $logger_factory->get('simple_oauth_native_apps');
+  }
+
+  /**
+   * Sets pending form overrides on the entity being validated.
+   *
+   * The form saves these values through its existing config submit handler.
+   * Weak references keep pending policy separate from stored consumer entities.
+   *
+   * @param \Drupal\consumers\Entity\Consumer $client
+   *   The form entity built for validation.
+   * @param array $overrides
+   *   Submitted overrides, including explicit empty inheritance values.
+   *
+   * @internal
+   */
+  public function setSubmittedOverrides(Consumer $client, array $overrides): void {
+    $this->submittedOverrides[$client] = $overrides;
+  }
+
+  /**
+   * Reads a submitted override or the consumer's stored override configuration.
+   *
+   * @param \Drupal\consumers\Entity\Consumer $client
+   *   The consumer being validated or used at runtime.
+   * @param string $key
+   *   The existing override config key.
+   *
+   * @return string|null
+   *   The override, or NULL to inherit.
+   */
+  private function getConsumerOverride(Consumer $client, string $key): ?string {
+    if (isset($this->submittedOverrides[$client])) {
+      return $this->submittedOverrides[$client][$key] ?? NULL;
+    }
+    if ($client->isNew()) {
+      return NULL;
+    }
+    return $this->configFactory->get('simple_oauth_native_apps.consumer.' . $client->id())->get($key);
   }
 
   /**
@@ -152,54 +200,57 @@ class NativeClientDetector {
    *   TRUE if enhanced PKCE is required.
    */
   public function requiresEnhancedPkce(Consumer $client): bool {
+    return $this->getEffectivePolicy($client)['enhanced_pkce'];
+  }
+
+  /**
+   * Resolves native security policy without changing stored overrides.
+   *
+   * Explicit config overrides take precedence over entity controls, then global
+   * settings. Empty config values inherit. The entity's automatic default also
+   * inherits, so existing global policies retain their meaning.
+   *
+   * @param \Drupal\consumers\Entity\Consumer|null $client
+   *   The consumer, or NULL for global capability reporting.
+   *
+   * @return array
+   *   Effective enabled, enhanced_pkce, custom_schemes, loopback and webview
+   *   values.
+   */
+  public function getEffectivePolicy(?Consumer $client = NULL): array {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
-
-    // Get global setting: 'auto-detect', 'enhanced', or 'not-enhanced'.
-    $global_setting = $config->get('native.enhanced_pkce') ?? 'auto-detect';
-
-    // Defensive programming: validate config value before use.
-    if (empty($global_setting) || !in_array($global_setting, ['auto-detect', 'enhanced', 'not-enhanced'], TRUE)) {
-      // Fallback to safe default if config is invalid/missing.
-      $global_setting = 'auto-detect';
-      $this->logger->warning('Invalid or missing native.enhanced_pkce configuration, falling back to auto-detect');
+    $enabled = (bool) $config->get('enforce_native_security');
+    $enhanced = $client !== NULL ? $this->getConsumerEnhancedPkceOverride($client) : NULL;
+    if (($enhanced === NULL || $enhanced === '') && $client?->hasField('native_app_enhanced_pkce')) {
+      $enhanced = match ($client->get('native_app_enhanced_pkce')->value) {
+        'native' => 'enhanced',
+        'web' => 'not-enhanced',
+        default => NULL,
+      };
+    }
+    if ($enhanced === NULL || $enhanced === '') {
+      $enhanced = $config->get('native.enhanced_pkce') ?? 'auto-detect';
+    }
+    $requires_enhanced = match ($enhanced) {
+      'enhanced' => TRUE,
+      'not-enhanced' => FALSE,
+      default => $client !== NULL ? $this->isNativeClient($client) : TRUE,
+    };
+    $webview = NULL;
+    if ($client !== NULL) {
+      $webview = $this->getConsumerOverride($client, 'webview_detection_override');
+    }
+    if ($webview === NULL || $webview === '') {
+      $webview = $config->get('webview.detection') ?? 'warn';
     }
 
-    // If globally disabled, return FALSE unless overridden.
-    if ($global_setting === 'not-enhanced') {
-      // Still check for consumer override.
-      $consumer_override = $this->getConsumerEnhancedPkceOverride($client);
-      if ($consumer_override === 'enhanced') {
-        return TRUE;
-      }
-      elseif ($consumer_override === 'auto-detect') {
-        return $this->isNativeClient($client);
-      }
-      return FALSE;
-    }
-
-    // If globally enabled, return TRUE unless overridden.
-    if ($global_setting === 'enhanced') {
-      $consumer_override = $this->getConsumerEnhancedPkceOverride($client);
-      if ($consumer_override === 'not-enhanced') {
-        return FALSE;
-      }
-      elseif ($consumer_override === 'auto-detect') {
-        return $this->isNativeClient($client);
-      }
-      return TRUE;
-    }
-
-    // If global setting is 'auto-detect' or any other value.
-    $consumer_override = $this->getConsumerEnhancedPkceOverride($client);
-    if ($consumer_override === 'enhanced') {
-      return TRUE;
-    }
-    elseif ($consumer_override === 'not-enhanced') {
-      return FALSE;
-    }
-
-    // Default: auto-detect based on client type.
-    return $this->isNativeClient($client);
+    return [
+      'enabled' => $enabled,
+      'enhanced_pkce' => $enabled && $requires_enhanced,
+      'custom_schemes' => $this->resolveCustomUriSchemesAllowed($config, $client),
+      'loopback' => $this->resolveLoopbackRedirectsAllowed($config, $client),
+      'webview' => $enabled ? $webview : 'off',
+    ];
   }
 
   /**
@@ -212,13 +263,7 @@ class NativeClientDetector {
    *   The override value or NULL if not set.
    */
   protected function getConsumerEnhancedPkceOverride(Consumer $client): ?string {
-    $consumer_id = $client->id();
-    if (!$consumer_id) {
-      return NULL;
-    }
-
-    $consumer_config = $this->configFactory->get("simple_oauth_native_apps.consumer.$consumer_id");
-    return $consumer_config->get('enhanced_pkce_override') ?? NULL;
+    return $this->getConsumerOverride($client, 'enhanced_pkce_override');
   }
 
   /**
@@ -283,13 +328,7 @@ class NativeClientDetector {
    *   The override value or NULL if not set.
    */
   protected function getConsumerCustomUriSchemesOverride(Consumer $client): ?string {
-    $consumer_id = $client->id();
-    if (!$consumer_id) {
-      return NULL;
-    }
-
-    $consumer_config = $this->configFactory->get("simple_oauth_native_apps.consumer.$consumer_id");
-    return $consumer_config->get('allow_custom_schemes_override') ?? NULL;
+    return $this->getConsumerOverride($client, 'allow_custom_schemes_override');
   }
 
   /**
@@ -302,13 +341,7 @@ class NativeClientDetector {
    *   The override value or NULL if not set.
    */
   protected function getConsumerLoopbackRedirectsOverride(Consumer $client): ?string {
-    $consumer_id = $client->id();
-    if (!$consumer_id) {
-      return NULL;
-    }
-
-    $consumer_config = $this->configFactory->get("simple_oauth_native_apps.consumer.$consumer_id");
-    return $consumer_config->get('allow_loopback_override') ?? NULL;
+    return $this->getConsumerOverride($client, 'allow_loopback_override');
   }
 
   /**
@@ -800,17 +833,12 @@ class NativeClientDetector {
    *   TRUE if mobile application URI.
    */
   protected function isMobileRedirectUri(string $uri): bool {
-    $mobile_patterns = [
-      '/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//',
-      '/^(app|myapp|com\.[a-zA-Z0-9.]+):\/\//',
-    ];
-
-    // Exclude localhost schemes (those are desktop)
-    if (preg_match('/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/(127\.0\.0\.1|localhost|\[::1\])/', $uri)) {
-      return FALSE;
-    }
-
-    return $this->matchesPatterns($uri, $mobile_patterns);
+    $scheme = parse_url($uri, PHP_URL_SCHEME);
+    $host = parse_url($uri, PHP_URL_HOST);
+    return $this->isNativeRedirectUri($uri)
+      && is_string($scheme)
+      && !in_array(strtolower($scheme), ['http', 'https'], TRUE)
+      && !in_array($host, ['127.0.0.1', 'localhost', '[::1]'], TRUE);
   }
 
   /**
@@ -823,19 +851,9 @@ class NativeClientDetector {
    *   TRUE if desktop application URI.
    */
   protected function isDesktopRedirectUri(string $uri): bool {
-    // First check if it's a localhost scheme (desktop)
-    if (preg_match('/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/(127\.0\.0\.1|localhost)/', $uri)) {
-      return TRUE;
-    }
-
-    // Then check if it's a custom scheme but not terminal or mobile.
-    if (preg_match('/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//', $uri) &&
-        !$this->isTerminalRedirectUri($uri) &&
-        !$this->isMobileRedirectUri($uri)) {
-      return TRUE;
-    }
-
-    return FALSE;
+    return $this->isNativeRedirectUri($uri)
+      && !$this->isTerminalRedirectUri($uri)
+      && !$this->isMobileRedirectUri($uri);
   }
 
   /**
