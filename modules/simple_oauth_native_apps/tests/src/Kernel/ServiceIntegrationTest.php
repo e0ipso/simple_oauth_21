@@ -1,7 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\Tests\simple_oauth_native_apps\Kernel;
 
+use Drupal\Core\Entity\EntityFormInterface;
+use Drupal\Core\Form\FormState;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\simple_oauth_native_apps\Service\ConfigurationValidator;
@@ -16,7 +20,7 @@ use PHPUnit\Framework\Attributes\Group;
  * Tests service integration for native apps module.
  */
 #[Group('simple_oauth_native_apps')]
-class ServiceIntegrationTest extends KernelTestBase {
+final class ServiceIntegrationTest extends KernelTestBase {
 
   /**
    * {@inheritdoc}
@@ -43,6 +47,132 @@ class ServiceIntegrationTest extends KernelTestBase {
     $this->installEntitySchema('file');
     $this->installEntitySchema('consumer');
     $this->installConfig(['simple_oauth', 'simple_oauth_native_apps']);
+  }
+
+  /**
+   * Tests capability outputs describe enum policies and consumer overrides.
+   */
+  public function testCapabilityPolicyEnumsAndConsumerOverrides(): void {
+    $native = Consumer::create([
+      'label' => 'Native capability client',
+      'client_id' => 'native-capability-client',
+      'confidential' => FALSE,
+      'redirect' => ['com.example.native://callback'],
+    ]);
+    $native->save();
+    $ordinary = Consumer::create([
+      'label' => 'Web capability client',
+      'client_id' => 'web-capability-client',
+      'confidential' => TRUE,
+      'redirect' => ['https://example.com/callback'],
+    ]);
+    $ordinary->save();
+    $config = $this->config('simple_oauth_native_apps.settings');
+    $provider = $this->container->get('simple_oauth_native_apps.metadata_provider');
+    $pkce = $this->container->get('simple_oauth_native_apps.pkce_enhancement');
+    $cases = [
+      'disabled' => ['web', 'web', 'not-enhanced', 'off', FALSE, FALSE, FALSE, FALSE],
+      'native' => ['native', 'native', 'enhanced', 'S256', TRUE, TRUE, TRUE, TRUE],
+      'automatic' => [
+        'auto-detect', 'auto-detect', 'auto-detect', 'S256',
+        TRUE, TRUE, TRUE, TRUE,
+      ],
+      'plain' => ['native', 'web', 'enhanced', 'plain', TRUE, FALSE, TRUE, FALSE],
+    ];
+    foreach ($cases as $name => $case) {
+      [
+        $custom, $loopback, $enhanced, $method,
+        $custom_expected, $loopback_expected, $pkce_expected, $s256_expected,
+      ] = $case;
+      $config->set('enforce_native_security', TRUE)
+        ->set('allow.custom_uri_schemes', $custom)
+        ->set('allow.loopback_redirects', $loopback)
+        ->set('native.enhanced_pkce', $enhanced)
+        ->set('native.enforce', $method)
+        ->save();
+      $metadata = $provider->getMetadata();
+      $this->assertSame($custom_expected, $metadata['custom_uri_schemes_supported'], $name);
+      $this->assertSame($custom_expected, $metadata['private_use_uri_schemes_allowed'], $name);
+      $this->assertSame($loopback_expected, $metadata['loopback_redirects_supported'], $name);
+      $this->assertSame($loopback_expected, $metadata['terminal_applications_supported'], $name);
+      $this->assertSame($pkce_expected, $metadata['pkce_required'], $name);
+      $this->assertSame($pkce_expected, $metadata['native_apps_pkce_required'], $name);
+      $this->assertSame($s256_expected, $metadata['pkce_s256_enforced'], $name);
+      $this->assertSame($pkce_expected, $pkce->getConfiguration()['enhanced_pkce_enabled'], $name);
+      $this->assertSame($method, $pkce->getConfiguration()['enforce_method'], $name);
+      $this->assertSame($pkce_expected, $pkce->getConfiguration($native)['enhanced_pkce_enabled'], $name);
+      $this->assertSame($s256_expected, $pkce->requiresS256Method($native), $name);
+      $ordinary_expected = $enhanced === 'enhanced';
+      $this->assertSame($ordinary_expected, $pkce->getConfiguration($ordinary)['enhanced_pkce_enabled'], $name);
+      $this->assertFalse($pkce->requiresS256Method($ordinary), $name);
+    }
+
+    foreach ([
+      ['not-enhanced', 'enhanced', TRUE],
+      ['enhanced', 'not-enhanced', FALSE],
+      ['auto-detect', 'not-enhanced', FALSE],
+      ['not-enhanced', 'auto-detect', TRUE],
+      ['enhanced', 'auto-detect', TRUE],
+    ] as [$global, $override, $expected]) {
+      $config->set('native.enhanced_pkce', $global)->set('native.enforce', 'S256')->save();
+      $this->config('simple_oauth_native_apps.consumer.' . $native->id())
+        ->set('enhanced_pkce_override', $override)->save();
+      $this->assertSame($expected, $pkce->getConfiguration($native)['enhanced_pkce_enabled']);
+      $this->assertSame($expected, $pkce->requiresS256Method($native));
+    }
+  }
+
+  /**
+   * Tests isolated overrides validate, persist and retain inherited settings.
+   */
+  public function testPartialConsumerOverridesPersistIndependently(): void {
+    $consumer = Consumer::create([
+      'label' => 'Partial override client',
+      'client_id' => 'partial-override-client',
+      'confidential' => FALSE,
+      'redirect' => ['com.example.override://callback'],
+    ]);
+    $consumer->save();
+    $form_object = $this->createMock(EntityFormInterface::class);
+    $form_object->method('getEntity')->willReturn($consumer);
+    $handler = $this->container->get('simple_oauth_native_apps.consumer_form_alter');
+    $validator = $this->container->get('simple_oauth_native_apps.configuration_validator');
+    $global = $this->config('simple_oauth_native_apps.settings')->get();
+    $this->assertEmpty($validator->validateConfiguration($global));
+
+    foreach ([
+      ['allow_custom_schemes_override' => 'web'],
+      ['allow_loopback_override' => 'web'],
+      ['enhanced_pkce_override' => 'not-enhanced'],
+    ] as $override) {
+      $state = (new FormState())->setFormObject($form_object);
+      $state->setValue('native_apps', $override);
+      $handler->validateConsumerNativeAppsSettings([], $state);
+      $this->assertFalse($state->hasAnyErrors());
+      $handler->submitConsumerNativeAppsSettings([], $state);
+      $name = 'simple_oauth_native_apps.consumer.' . $consumer->id();
+      $this->container->get('config.factory')->reset($name);
+      $stored = $this->container->get('config.factory')->get($name)->get();
+      $this->assertSame($override, $stored);
+      $this->assertArrayNotHasKey('webview_detection_override', $stored);
+      $form = [];
+      $handler->alterForm($form, $state, 'consumer_edit_form');
+      foreach ($override as $field => $value) {
+        $this->assertSame($value, $form['native_apps'][$field]['#default_value']);
+      }
+      $this->assertSame('', $form['native_apps']['webview_detection_override']['#default_value']);
+      $this->assertSame($global, $this->config('simple_oauth_native_apps.settings')->get());
+    }
+
+    $state = (new FormState())->setFormObject($form_object);
+    $state->setValue('native_apps', ['allow_custom_schemes_override' => 'invalid-policy']);
+    $handler->validateConsumerNativeAppsSettings([], $state);
+    $this->assertTrue($state->hasAnyErrors());
+    $this->assertArrayHasKey('native_apps', $state->getErrors());
+    $invalid_global = $global;
+    $invalid_global['webview']['detection'] = 'invalid-policy';
+    $this->assertNotEmpty($validator->validateConfiguration($invalid_global));
+    $state->clearErrors();
   }
 
   /**

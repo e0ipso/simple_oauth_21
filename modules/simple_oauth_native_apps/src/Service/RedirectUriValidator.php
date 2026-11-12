@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_native_apps\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -314,7 +316,7 @@ class RedirectUriValidator {
 
     // Validate each part of the domain.
     foreach ($parts as $part) {
-      if (!preg_match('/^[a-z0-9-]+$/i', $part) || strlen($part) < 1) {
+      if (!preg_match('/^[a-z0-9-]+$/i', $part)) {
         $this->logger->warning('Invalid domain part in reverse domain scheme: @part', ['@part' => $part]);
         return FALSE;
       }
@@ -547,7 +549,7 @@ class RedirectUriValidator {
 
     if (isset($parsed['port'])) {
       $port = (int) $parsed['port'];
-      if ($port < 1 || $port > 65535) {
+      if ($port < 1) {
         return "Invalid port number {$port}. Must be between 1 and 65535";
       }
     }

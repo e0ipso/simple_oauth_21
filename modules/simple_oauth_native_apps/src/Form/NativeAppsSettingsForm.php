@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_native_apps\Form;
 
 use Drupal\simple_oauth_native_apps\Service\UserAgentAnalyzer;
@@ -15,7 +17,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 /**
  * Configure Simple OAuth Native Apps settings.
  */
-class NativeAppsSettingsForm extends ConfigFormBase {
+final class NativeAppsSettingsForm extends ConfigFormBase {
 
   use RedundantEditableConfigNamesTrait;
 
@@ -31,7 +33,7 @@ class NativeAppsSettingsForm extends ConfigFormBase {
    *
    * @var \Drupal\simple_oauth_native_apps\Service\UserAgentAnalyzer
    */
-  protected $userAgentAnalyzer;
+  protected UserAgentAnalyzer $userAgentAnalyzer;
 
   /**
    * Constructs a new NativeAppsSettingsForm.

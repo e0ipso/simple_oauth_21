@@ -1,10 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_native_apps\Service;
 
 use Drupal\consumers\Entity\Consumer;
 use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Psr\Log\LoggerInterface;
 
@@ -75,13 +76,10 @@ class NativeClientDetector {
    *   The configuration factory.
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
    *   The logger channel factory.
-   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
-   *   The entity type manager.
    */
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
     LoggerChannelFactoryInterface $logger_factory,
-    private readonly EntityTypeManagerInterface $entityTypeManager,
   ) {
     $this->logger = $logger_factory->get('simple_oauth_native_apps');
   }

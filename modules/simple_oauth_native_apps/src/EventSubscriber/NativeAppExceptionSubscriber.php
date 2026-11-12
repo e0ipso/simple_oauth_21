@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_native_apps\EventSubscriber;
 
 use Psr\Log\LoggerInterface;
@@ -106,9 +108,9 @@ class NativeAppExceptionSubscriber implements EventSubscriberInterface {
     // Log the detailed error for administrators.
     $this->logger->error('Native app authorization grant error: @message', [
       '@message' => $exception->getMessage(),
-      'client_id' => $request->get('client_id'),
-      'grant_type' => $request->get('grant_type'),
-      'response_type' => $request->get('response_type'),
+      'client_id' => $request->attributes->get('client_id', $request->query->get('client_id', $request->request->get('client_id'))),
+      'grant_type' => $request->attributes->get('grant_type', $request->query->get('grant_type', $request->request->get('grant_type'))),
+      'response_type' => $request->attributes->get('response_type', $request->query->get('response_type', $request->request->get('response_type'))),
       'request_uri' => $request->getRequestUri(),
       'exception' => $exception,
     ]);

@@ -1,21 +1,28 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\Tests\simple_oauth_native_apps\Kernel;
 
 use Drupal\consumers\Entity\Consumer;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\simple_oauth_native_apps\EventSubscriber\AuthorizationRequestSubscriber;
 use Drupal\simple_oauth_native_apps\EventSubscriber\PkceValidationSubscriber;
+use GuzzleHttp\Psr7\ServerRequest;
+use League\OAuth2\Server\AuthorizationServer;
+use League\OAuth2\Server\Exception\OAuthServerException;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
+use Symfony\Component\HttpKernel\KernelEvents;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Tests OAuth flow integration with native apps enhancements.
  */
 #[Group('simple_oauth_native_apps')]
-class OAuthFlowIntegrationTest extends KernelTestBase {
+final class OAuthFlowIntegrationTest extends KernelTestBase {
 
   /**
    * {@inheritdoc}
@@ -45,6 +52,349 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
   }
 
   /**
+   * Tests token validation follows credentials instead of query hints.
+   */
+  public function testTokenPkceUsesAuthenticatedClientIdentity(): void {
+    $native = Consumer::create([
+      'label' => 'Native credential client',
+      'client_id' => 'native-credential-client',
+      'confidential' => FALSE,
+      'redirect' => ['com.example.native://callback'],
+    ]);
+    $native->save();
+    $ordinary = Consumer::create([
+      'label' => 'Ordinary credential client',
+      'client_id' => 'ordinary-credential-client',
+      'confidential' => TRUE,
+      'redirect' => ['https://example.com/callback'],
+    ]);
+    $ordinary->save();
+    $subscriber = $this->container->get('simple_oauth_native_apps.pkce_validation_subscriber');
+    $verifiers = [
+      'low entropy' => str_repeat('a', 43),
+      'high entropy' => 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk',
+    ];
+    $credentials = [
+      'body' => ['native-credential-client', NULL],
+      'Basic' => [NULL, 'native-credential-client'],
+      'body before Basic' => ['native-credential-client', 'ordinary-credential-client'],
+    ];
+
+    foreach ($credentials as $credential_name => [$body_client, $basic_client]) {
+      foreach (['ordinary-credential-client', 'missing-client', ''] as $query_client) {
+        foreach ($verifiers as $verifier_name => $verifier) {
+          $request = Request::create('/oauth/token', Request::METHOD_POST, [
+            'grant_type' => 'authorization_code',
+            'code_verifier' => $verifier,
+          ]);
+          $request->query->set('client_id', $query_client);
+          if ($body_client !== NULL) {
+            $request->request->set('client_id', $body_client);
+          }
+          if ($basic_client !== NULL) {
+            $request->headers->set('Authorization', 'Basic ' . base64_encode($basic_client . ':secret'));
+          }
+          $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+          $subscriber->onOauthRequest($event);
+          $context = "$credential_name / $query_client / $verifier_name";
+          if ($verifier_name === 'low entropy') {
+            $this->assertTrue($event->hasResponse(), $context);
+            $this->assertSame(400, $event->getResponse()->getStatusCode(), $context);
+            $error = json_decode($event->getResponse()->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+            $this->assertSame('invalid_grant', $error['error'], $context);
+            $this->assertStringContainsString('entropy', $error['error_description'], $context);
+          }
+          else {
+            $this->assertFalse($event->hasResponse(), $context);
+            $this->assertTrue($request->attributes->get('oauth_enhanced_pkce_applied'), $context);
+          }
+        }
+      }
+    }
+
+    // An unrelated native query hint must not impose native policy on a web
+    // client, even when a conflicting Basic username names the native client.
+    $request = Request::create('/oauth/token', Request::METHOD_POST, [
+      'client_id' => 'ordinary-credential-client',
+      'grant_type' => 'authorization_code',
+      'code_verifier' => str_repeat('a', 43),
+    ]);
+    $request->query->set('client_id', 'native-credential-client');
+    $request->headers->set('Authorization', 'Basic ' . base64_encode('native-credential-client:secret'));
+    $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+    $subscriber->onOauthRequest($event);
+    $this->assertFalse($event->hasResponse());
+    $this->assertFalse($request->attributes->has('oauth_enhanced_pkce_applied'));
+  }
+
+  /**
+   * Preserves native string validation and precedence over global PKCE policy.
+   */
+  public function testNativePkceStringsAndPolicyPrecedence(): void {
+    $this->enableModules(['simple_oauth_pkce']);
+    $this->installConfig(['simple_oauth_pkce']);
+    $client = Consumer::create([
+      'label' => 'Native PKCE policy client',
+      'client_id' => 'native-policy-client',
+      'confidential' => TRUE,
+      'redirect' => ['https://example.com/callback'],
+      'native_app_override' => 'native',
+    ]);
+    $client->save();
+    $dispatcher = new EventDispatcher();
+    $dispatcher->addSubscriber($this->container->get('simple_oauth_native_apps.pkce_validation_subscriber'));
+    $dispatcher->addSubscriber($this->container->get('simple_oauth_pkce.policy_subscriber'));
+    $challenge = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
+    $verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+    /** @var array<string, array{string, array<string, string>, ?string, ?string}> $cases */
+    $cases = [
+      'valid challenge' => [
+        'authorize',
+        ['code_challenge' => $challenge, 'code_challenge_method' => 'S256'],
+        NULL,
+        NULL,
+      ],
+      'omitted method' => ['authorize', ['code_challenge' => $challenge], NULL, NULL],
+      'missing challenge' => ['authorize', [], 'invalid_request', 'mandatory'],
+      'empty challenge' => ['authorize', ['code_challenge' => ''], 'invalid_request', 'mandatory'],
+      'malformed challenge string' => [
+        'authorize',
+        ['code_challenge' => 'invalid!'],
+        'invalid_request',
+        'Invalid code challenge format',
+      ],
+      'unsupported method string' => [
+        'authorize',
+        ['code_challenge' => $challenge, 'code_challenge_method' => 'unknown'],
+        'invalid_request',
+        'Unsupported challenge method',
+      ],
+      'valid verifier' => ['token', ['code_verifier' => $verifier], NULL, NULL],
+      'missing verifier' => ['token', [], 'invalid_grant', 'mandatory'],
+      'empty verifier' => ['token', ['code_verifier' => ''], 'invalid_grant', 'mandatory'],
+      'malformed verifier string' => [
+        'token',
+        ['code_verifier' => 'invalid!'],
+        'invalid_grant',
+        'Invalid code verifier format',
+      ],
+    ];
+    foreach (['enhanced', 'auto-detect'] as $native_policy) {
+      $this->config('simple_oauth_native_apps.settings')
+        ->set('native.enhanced_pkce', $native_policy)->save();
+      foreach (['mandatory', 'optional', 'disabled'] as $global_policy) {
+        $this->config('simple_oauth_pkce.settings')
+          ->set('enforcement', $global_policy)->save();
+        foreach ($cases as $case => [$endpoint, $parameters, $error, $description]) {
+          $context = "$native_policy / $global_policy / $case";
+          $parameters += ['client_id' => 'native-policy-client'];
+          $parameters += $endpoint === 'authorize' ? ['response_type' => 'code'] : ['grant_type' => 'authorization_code'];
+          $request = Request::create('/oauth/' . $endpoint, $endpoint === 'authorize' ? 'GET' : 'POST', $parameters);
+          $request->attributes->set('_route', 'oauth2_token.' . $endpoint);
+          $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+          $dispatcher->dispatch($event, KernelEvents::REQUEST);
+          if ($error === NULL) {
+            $this->assertFalse($event->hasResponse(), $context);
+            $this->assertTrue($request->attributes->get('oauth_enhanced_pkce_applied'), $context);
+            continue;
+          }
+          $response = $event->getResponse();
+          $this->assertNotNull($response, $context);
+          $this->assertSame(400, $response->getStatusCode(), $context);
+          $data = json_decode($response->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+          $this->assertSame($error, $data['error'], $context);
+          $this->assertStringContainsString($description, $data['error_description'], $context);
+          $this->assertSame('pkce_validation_failure', $response->headers->get('X-OAuth-Error-Type'), $context);
+          $this->assertTrue($response->headers->hasCacheControlDirective('no-store'), $context);
+          $this->assertSame('no-cache', $response->headers->get('Pragma'), $context);
+        }
+      }
+    }
+
+    // A native exemption delegates to global policy, so optional and disabled
+    // allow missing parameters while mandatory still rejects them.
+    $this->config('simple_oauth_native_apps.consumer.' . $client->id())
+      ->set('enhanced_pkce_override', 'not-enhanced')->save();
+    foreach (['mandatory', 'optional', 'disabled'] as $global_policy) {
+      $this->config('simple_oauth_pkce.settings')
+        ->set('enforcement', $global_policy)->save();
+      foreach (['authorize', 'token'] as $endpoint) {
+        $parameters = ['client_id' => 'native-policy-client'];
+        $parameters += $endpoint === 'authorize' ? ['response_type' => 'code'] : ['grant_type' => 'authorization_code'];
+        $request = Request::create('/oauth/' . $endpoint, $endpoint === 'authorize' ? 'GET' : 'POST', $parameters);
+        $request->attributes->set('_route', 'oauth2_token.' . $endpoint);
+        $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+        $dispatcher->dispatch($event, KernelEvents::REQUEST);
+        $this->assertFalse($request->attributes->has('oauth_enhanced_pkce_applied'));
+        $this->assertSame($global_policy === 'mandatory', $event->hasResponse());
+        if ($global_policy === 'mandatory') {
+          $response = $event->getResponse();
+          $this->assertNotNull($response);
+          $this->assertSame(400, $response->getStatusCode());
+          $data = json_decode($response->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+          $this->assertSame('invalid_request', $data['error']);
+          $this->assertStringContainsString('required', $data['error_description']);
+        }
+      }
+    }
+  }
+
+  /**
+   * Tests the master switch controls every WebView enforcement mode.
+   */
+  public function testWebviewPoliciesRespectMasterSwitch(): void {
+    $config = $this->config('simple_oauth_native_apps.settings');
+    $analyzer = $this->container->get('simple_oauth_native_apps.user_agent_analyzer');
+    $subscriber = $this->container->get('simple_oauth_native_apps.authorization_request_subscriber');
+    foreach ([TRUE, FALSE] as $enabled) {
+      foreach (['block', 'warn', 'off'] as $policy) {
+        $config->set('enforce_native_security', $enabled)->set('webview.detection', $policy)->save();
+        $request = Request::create('/oauth/authorize', Request::METHOD_GET, ['response_type' => 'code']);
+        $request->attributes->set('_route', 'oauth2_token.authorize');
+        $request->headers->set('User-Agent', 'ExampleApp WKWebView/1.0');
+        $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+        $subscriber->onAuthorizationRequest($event);
+        $this->assertSame($enabled ? $policy : 'off', $analyzer->getDetectionMode());
+        $this->assertSame($enabled && $policy !== 'off', $analyzer->isDetectionEnabled());
+        $this->assertSame($enabled && $policy === 'block', $event->hasResponse());
+        $this->assertSame($enabled && $policy === 'warn', $request->attributes->has('oauth_webview_warning'));
+      }
+    }
+  }
+
+  /**
+   * Tests WebView blocking follows the matched route rather than query hints.
+   */
+  public function testWebviewBlockingUsesMatchedAuthorizationRoute(): void {
+    $config = $this->config('simple_oauth_native_apps.settings');
+    $subscriber = $this->container->get('simple_oauth_native_apps.authorization_request_subscriber');
+    $route_provider = $this->container->get('router.route_provider');
+    $router = $this->container->get('router.no_access_checks');
+    $routes = [
+      'oauth2_token.authorize',
+      'user.login',
+      'oauth2_token.user_debug',
+    ];
+    $parameters = [
+      'client_id' => 'webview-context-client',
+      'redirect_uri' => 'https://example.com/callback',
+      'scope' => 'profile',
+      'response_type' => 'code',
+    ];
+
+    foreach ([TRUE, FALSE] as $enabled) {
+      $config->set('enforce_native_security', $enabled)
+        ->set('webview.detection', 'block')
+        ->save();
+      foreach ($routes as $route_name) {
+        $route = $route_provider->getRouteByName($route_name);
+        foreach ($parameters as $parameter => $value) {
+          $request = Request::create($route->getPath(), 'GET', [$parameter => $value]);
+          $router->getContext()->fromRequest($request);
+          $request->attributes->add($router->matchRequest($request));
+          $request->headers->set('User-Agent', 'ExampleApp WKWebView/1.0');
+          $this->assertSame($route_name, $request->attributes->get('_route'));
+          $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+          $subscriber->onAuthorizationRequest($event);
+          $context = "$route_name / $parameter / " . ($enabled ? 'enabled' : 'disabled');
+          $this->assertSame($enabled && $route_name === 'oauth2_token.authorize', $event->hasResponse(), $context);
+          $this->assertFalse($request->attributes->has('oauth_webview_warning'), $context);
+          if ($event->hasResponse()) {
+            $response = $event->getResponse();
+            $this->assertSame(400, $response->getStatusCode(), $context);
+            $error = json_decode($response->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+            $this->assertSame('embedded_webview_blocked', $error['error'], $context);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Tests custom detection and whitelist regexes through the real subscribers.
+   */
+  public function testConfiguredWebviewRegexes(): void {
+    $config = $this->config('simple_oauth_native_apps.settings');
+    $config->set('enforce_native_security', TRUE)
+      ->set('webview.detection', 'block')
+      ->set('webview.patterns', ['^ExampleView/[0-9]+\.[0-9]+$', 'LiteralNativeView', '['])
+      ->set('webview.whitelist', ['^ExampleView/2\..*$', '['])
+      ->save();
+    $analyzer = $this->container->get('simple_oauth_native_apps.user_agent_analyzer');
+    $subscriber = $this->container->get('simple_oauth_native_apps.authorization_request_subscriber');
+    foreach ([
+      'ExampleView/1.2' => [TRUE, TRUE],
+      'ExampleView/2.7' => [TRUE, FALSE],
+      'LiteralNativeView' => [TRUE, TRUE],
+      'OtherBrowser/1.2' => [FALSE, FALSE],
+    ] as $user_agent => [$detected, $blocked]) {
+      $this->assertSame($detected, $analyzer->isEmbeddedWebview($user_agent), $user_agent);
+      $this->assertSame($detected, $analyzer->getWebviewType($user_agent) !== NULL, $user_agent);
+      $request = Request::create('/oauth/authorize', Request::METHOD_GET, ['response_type' => 'code']);
+      $request->attributes->set('_route', 'oauth2_token.authorize');
+      $request->headers->set('User-Agent', $user_agent);
+      $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+      $subscriber->onAuthorizationRequest($event);
+      $this->assertSame($blocked, $event->hasResponse(), $user_agent);
+    }
+    $validator = $this->container->get('simple_oauth_native_apps.configuration_validator');
+    $this->assertEmpty($validator->validateRegexPatterns(['^ExampleView/[0-9]+\.[0-9]+$', 'LiteralNativeView']));
+    $this->assertCount(1, $validator->validateRegexPatterns(['[']));
+  }
+
+  /**
+   * Tests the native plugin constructs a server retaining public-client PKCE.
+   */
+  public function testNativeGrantServerRequiresPublicChallenge(): void {
+    $consumer = Consumer::create([
+      'label' => 'Native grant client',
+      'client_id' => 'native-grant-client',
+      'confidential' => FALSE,
+      'status' => TRUE,
+      'redirect' => ['com.example.grant://callback'],
+      'grant_types' => ['native_app_authorization_code'],
+      'access_token_expiration' => 300,
+    ]);
+    $consumer->save();
+    $key = openssl_pkey_new(['private_key_bits' => 2048]);
+    $this->assertNotFalse($key);
+    $this->assertTrue(openssl_pkey_export($key, $private_key));
+    $key_file = tempnam(sys_get_temp_dir(), 'oauth-native-key-');
+    $this->assertNotFalse($key_file);
+    try {
+      file_put_contents($key_file, $private_key);
+      $this->config('simple_oauth.settings')->set('private_key', $key_file)->save();
+      $this->setSetting('hash_salt', str_repeat('native-test-salt', 4));
+      $factory = $this->container->get('simple_oauth.server.authorization_server.factory');
+      $server = $factory->get($consumer);
+      $this->assertInstanceOf(AuthorizationServer::class, $server);
+      $query = [
+        'response_type' => 'code',
+        'client_id' => 'native-grant-client',
+        'redirect_uri' => 'com.example.grant://callback',
+      ];
+      $request = (new ServerRequest('GET', 'https://example.com/oauth/authorize'))->withQueryParams($query);
+      try {
+        $server->validateAuthorizationRequest($request);
+        $this->fail('A public native client must supply a code challenge.');
+      }
+      catch (OAuthServerException $exception) {
+        $this->assertSame('invalid_request', $exception->getErrorType());
+        $this->assertStringContainsString('public clients', $exception->getHint());
+      }
+      $query['code_challenge'] = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+      $query['code_challenge_method'] = 'S256';
+      $authorization = $server->validateAuthorizationRequest($request->withQueryParams($query));
+      $this->assertSame('native-grant-client', $authorization->getClient()->getIdentifier());
+      $this->assertSame($query['code_challenge'], $authorization->getCodeChallenge());
+      $this->assertSame('S256', $authorization->getCodeChallengeMethod());
+    }
+    finally {
+      unlink($key_file);
+    }
+  }
+
+  /**
    * Tests authorization request event subscriber integration.
    */
   public function testAuthorizationRequestSubscriberIntegration(): void {
@@ -67,7 +417,9 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
 
     // Test that subscriber is properly registered.
     $events = PkceValidationSubscriber::getSubscribedEvents();
-    $this->assertIsArray($events);
+    $this->assertArrayHasKey('kernel.request', $events);
+    $listeners = $this->container->get('event_dispatcher')->getListeners('kernel.request');
+    $this->assertContains([$subscriber, 'onOauthRequest'], $listeners);
   }
 
   /**
@@ -86,6 +438,8 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
       'redirect_uri' => 'myapp://callback',
       'state' => 'random_state',
     ]);
+
+    $request->attributes->set('_route', 'oauth2_token.authorize');
 
     // Set webview user agent. cspell:ignore FBAN FBIOS
     $request->headers->set('User-Agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 [FBAN/FBIOS]');
@@ -139,7 +493,7 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
 
     // Test classification reasons.
     $reasons = $native_detector->getClassificationReasons($consumer);
-    $this->assertIsArray($reasons);
+    $this->assertContains('Strong native URI patterns detected', $reasons);
     $this->assertNotEmpty($reasons);
     $this->assertContains('Public client (typical for native apps)', $reasons);
   }
@@ -257,7 +611,7 @@ class OAuthFlowIntegrationTest extends KernelTestBase {
       if ($is_webview) {
         $webview_type = $user_agent_analyzer->getWebviewType($user_agent);
         $this->assertNotNull($webview_type);
-        $this->assertIsArray($webview_type);
+        $this->assertSame($user_agent, $webview_type['user_agent']);
         $this->assertArrayHasKey('category', $webview_type);
       }
     }
