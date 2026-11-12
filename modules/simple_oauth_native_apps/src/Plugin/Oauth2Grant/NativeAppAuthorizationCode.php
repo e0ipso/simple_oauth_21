@@ -134,7 +134,7 @@ final class NativeAppAuthorizationCode extends Oauth2GrantBase implements Contai
     );
 
     if ($refresh_token_enabled) {
-      $refresh_token = !$client->get('refresh_token_expiration')->isEmpty ? $client->get('refresh_token_expiration')->value : 1209600;
+      $refresh_token = !$client->get('refresh_token_expiration')->isEmpty() ? $client->get('refresh_token_expiration')->value : 1209600;
       $refresh_token_ttl = new \DateInterval(
         sprintf('PT%dS', $refresh_token)
       );

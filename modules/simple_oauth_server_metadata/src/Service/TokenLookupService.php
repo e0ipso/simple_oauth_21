@@ -125,7 +125,8 @@ final class TokenLookupService {
     }
 
     // Cross-check stored ownership when upstream persisted a client reference.
-    $client = $token->get('client')->entity;
+    $client_reference = $token->get('client')->first();
+    $client = $client_reference?->get('entity')->getValue();
     if (($client !== NULL && (!$client instanceof ConsumerInterface || $client->getClientId() !== $client_id))
       || ($client === NULL && $bundle === 'access_token')
     ) {
