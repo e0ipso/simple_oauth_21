@@ -5,18 +5,28 @@ simple_oauth_device_flow.settings:
     device_code_lifetime:
       type: integer
       label: 'Device Code Lifetime (seconds)'
+      constraints:
+        Range:
+          min: 1
     polling_interval:
       type: integer
       label: 'Polling Interval (seconds)'
+      constraints:
+        Range:
+          min: 1
     user_code_length:
       type: integer
       label: 'User Code Length'
+      constraints:
+        Range:
+          min: 6
+          max: 12
     user_code_charset:
       type: string
       label: 'User Code Character Set'
     verification_uri:
       type: string
-      label: 'Verification URI'
+      label: 'Device verification form path or alias'
     verification_uri_complete:
       type: boolean
       label: 'Include verification URI complete'
@@ -26,9 +36,15 @@ simple_oauth_device_flow.settings:
     cleanup_retention_days:
       type: integer
       label: 'Cleanup retention days for authorized codes'
+      constraints:
+        Range:
+          min: 1
     max_cleanup_batch_size:
       type: integer
       label: 'Maximum cleanup batch size'
+      constraints:
+        Range:
+          min: 1
     enable_statistics_logging:
       type: boolean
       label: 'Enable statistics logging'
