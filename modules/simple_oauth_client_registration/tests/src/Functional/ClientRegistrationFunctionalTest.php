@@ -15,6 +15,7 @@ use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
 use League\OAuth2\Server\Entities\ScopeEntityInterface;
 use Psr\Log\LoggerInterface;
 use Drupal\Tests\BrowserTestBase;
+use Drupal\Tests\simple_oauth\Functional\SimpleOauthTestTrait;
 use GuzzleHttp\RequestOptions;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
@@ -34,6 +35,8 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 #[Group('functional')]
 #[RunTestsInSeparateProcesses]
 final class ClientRegistrationFunctionalTest extends BrowserTestBase {
+
+  use SimpleOauthTestTrait;
 
   /**
    * {@inheritdoc}
@@ -1066,18 +1069,18 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
       $this->assertSame(count($grant_types) === 1 ? 0 : 2, $consumer->get('authorization_code_scopes')->count());
       $this->assertCount(2, $consumer->get('scopes')->getScopes());
 
-      // Replacements must clear scopes from both grant-specific fields.
+      // Updates replace authorization defaults and preserve the allowlist.
       $response = $this->httpClient->put($this->buildUrl('/oauth/register/' . $registration['client_id']), [
         RequestOptions::JSON => ['scope' => 'test:shared'],
         RequestOptions::HEADERS => ['Authorization' => 'Bearer ' . $registration['registration_access_token']],
       ]);
       $this->assertSame(200, $response->getStatusCode());
-      $this->assertSame('test:shared', Json::decode((string) $response->getBody())['scope']);
+      $this->assertEqualsCanonicalizing(['test:machine', 'test:shared'], explode(' ', Json::decode((string) $response->getBody())['scope']));
       $storage = $this->container->get('entity_type.manager')->getStorage('consumer');
       $storage->resetCache();
       $stored = $storage->load($consumer->id());
       $this->assertSame(count($grant_types) === 1 ? 0 : 1, $stored->get('authorization_code_scopes')->count());
-      $this->assertCount(1, $stored->get('scopes')->getScopes());
+      $this->assertCount(2, $stored->get('scopes')->getScopes());
     }
   }
 
@@ -1088,21 +1091,125 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
    *   The externally visible scope name.
    * @param string[] $grant_types
    *   The grant types permitted to use the scope.
+   * @param string $permission
+   *   The permission granted by the scope.
    *
    * @return \Drupal\simple_oauth\Entity\Oauth2Scope
    *   The saved scope entity.
    */
-  private function createRegistrationScope(string $name, array $grant_types): Oauth2Scope {
+  private function createRegistrationScope(string $name, array $grant_types, string $permission = 'access content'): Oauth2Scope {
     $scope = Oauth2Scope::create([
       'name' => $name,
       'description' => 'Registration scope fixture',
       'grant_types' => array_fill_keys($grant_types, ['status' => TRUE]),
       'umbrella' => FALSE,
       'granularity_id' => Oauth2ScopeInterface::GRANULARITY_PERMISSION,
-      'granularity_configuration' => ['permission' => 'access content'],
+      'granularity_configuration' => ['permission' => $permission],
     ]);
     $scope->save();
     return $scope;
+  }
+
+  /**
+   * Tests that clients cannot widen or clear an administrative allowlist.
+   */
+  public function testClientCredentialsAllowlistCannotBeChanged(): void {
+    $this->setUpKeys();
+    $allowed = $this->createRegistrationScope('test:machine', ['client_credentials']);
+    $this->createRegistrationScope('test:admin', ['client_credentials'], 'administer site configuration');
+    $user = $this->drupalCreateUser();
+    $this->clearAllTestCaches();
+    $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
+      RequestOptions::JSON => [
+        'redirect_uris' => ['https://example.com/callback'],
+        'grant_types' => ['client_credentials'],
+        'scope' => 'test:machine test:admin',
+      ],
+    ]);
+    $this->assertSame(201, $response->getStatusCode());
+    $registration = Json::decode((string) $response->getBody());
+    $storage = $this->container->get('entity_type.manager')->getStorage('consumer');
+    $consumers = $storage->loadByProperties(['client_id' => $registration['client_id']]);
+    $consumer = reset($consumers);
+    $this->assertInstanceOf(ConsumerInterface::class, $consumer);
+    // An administrator activates the client with a restricted service account.
+    $consumer->set('user_id', $user->id());
+    $consumer->set('scopes', [['scope_id' => $allowed->id()]]);
+    $consumer->save();
+
+    foreach (['test:machine test:admin', 'test:admin', '', 'unknown:scope'] as $requested_scope) {
+      $response = $this->httpClient->put($this->buildUrl('/oauth/register/' . $registration['client_id']), [
+        RequestOptions::JSON => ['scope' => $requested_scope],
+        RequestOptions::HEADERS => ['Authorization' => 'Bearer ' . $registration['registration_access_token']],
+      ]);
+      $this->assertSame(200, $response->getStatusCode());
+      $this->assertSame('test:machine', Json::decode((string) $response->getBody())['scope']);
+      $storage->resetCache();
+      $stored = $storage->load($consumer->id());
+      $this->assertSame([['scope_id' => $allowed->id()]], $stored->get('scopes')->getValue());
+    }
+
+    // The token endpoint must still enforce the administrative restriction.
+    $parameters = [
+      'grant_type' => 'client_credentials',
+      'client_id' => $registration['client_id'],
+      'client_secret' => $registration['client_secret'],
+      'scope' => 'test:admin',
+    ];
+    $response = $this->httpClient->post($this->buildUrl('/oauth/token'), [
+      RequestOptions::FORM_PARAMS => $parameters,
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+    $this->assertSame(400, $response->getStatusCode());
+    $this->assertSame('invalid_scope', Json::decode((string) $response->getBody())['error']);
+    unset($parameters['scope']);
+    $response = $this->httpClient->post($this->buildUrl('/oauth/token'), [
+      RequestOptions::FORM_PARAMS => $parameters,
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+    $this->assertSame(200, $response->getStatusCode());
+    $tokens = Json::decode((string) $response->getBody());
+    $claims = Json::decode(base64_decode(strtr(explode('.', $tokens['access_token'])[1], '-_', '+/')));
+    $this->assertSame(['test:machine'], $claims['scope']);
+  }
+
+  /**
+   * Tests that empty static scope fields never disclose the full scope catalog.
+   */
+  public function testStaticScopeResponsesMatchStoredScopes(): void {
+    $this->container->get('module_installer')->install([
+      'simple_oauth_static_scope',
+      'simple_oauth_static_scope_test',
+    ]);
+    $this->config('simple_oauth.settings')->set('scope_provider', 'static')->save();
+    $this->clearAllTestCaches();
+    $this->rebuildContainer();
+    // Reproduce the real adapter's interpretation of an empty ID list.
+    $this->assertNotEmpty($this->container->get('simple_oauth.oauth2_scope.provider')->loadMultiple([]));
+
+    foreach ([[], ['scope' => 'unknown:scope'], ['scope' => 'static_scope:child:child']] as $metadata) {
+      $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
+        RequestOptions::JSON => $metadata + [
+          'redirect_uris' => ['https://example.com/callback'],
+          'grant_types' => ['authorization_code'],
+        ],
+      ]);
+      $this->assertSame(201, $response->getStatusCode());
+      $registration = Json::decode((string) $response->getBody());
+      $expected = ($metadata['scope'] ?? '') === 'static_scope:child:child' ? 'static_scope:child:child' : '';
+      $this->assertSame($expected, $registration['scope']);
+      $uri = $this->buildUrl('/oauth/register/' . $registration['client_id']);
+      $headers = ['Authorization' => 'Bearer ' . $registration['registration_access_token']];
+      $response = $this->httpClient->get($uri, [RequestOptions::HEADERS => $headers]);
+      $this->assertSame(200, $response->getStatusCode());
+      $this->assertSame($expected, Json::decode((string) $response->getBody())['scope']);
+      $response = $this->httpClient->put($uri, [
+        RequestOptions::JSON => ['scope' => ''],
+        RequestOptions::HEADERS => $headers,
+      ]);
+      $this->assertSame(200, $response->getStatusCode());
+      $this->assertSame('', Json::decode((string) $response->getBody())['scope']);
+    }
   }
 
   /**
