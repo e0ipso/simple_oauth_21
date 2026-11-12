@@ -1,0 +1,22 @@
+<?php
+
+/**
+ * @file
+ * Provides guarded persistence failures for registration rollback tests.
+ */
+
+declare(strict_types=1);
+
+use Drupal\consumers\Entity\ConsumerInterface;
+use Drupal\Core\Entity\EntityStorageException;
+
+/**
+ * Implements hook_ENTITY_TYPE_update().
+ *
+ * Throws after the entity write to exercise transaction rollback.
+ */
+function simple_oauth_registration_test_consumer_update(ConsumerInterface $consumer): void {
+  if (\Drupal::state()->get('simple_oauth_registration_test.fail_update', FALSE)) {
+    throw new EntityStorageException('Registration fixture persistence failure');
+  }
+}

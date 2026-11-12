@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_client_registration\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
@@ -8,13 +10,14 @@ use Drupal\simple_oauth_client_registration\Service\ClientRegistrationService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Core\Cache\CacheableJsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Serializer\SerializerInterface;
 
 /**
  * Controller for RFC 7591 Dynamic Client Registration endpoint.
  */
-class ClientRegistrationController extends ControllerBase {
+final class ClientRegistrationController extends ControllerBase {
 
   /**
    * Constructs a ClientRegistrationController object.
@@ -61,7 +64,8 @@ class ClientRegistrationController extends ControllerBase {
         $clientRegistration = $this->serializer->deserialize(
           $content,
           ClientRegistration::class,
-          'json'
+          'json',
+          ['json_decode_associative' => FALSE]
         );
       }
       catch (\Exception $e) {
@@ -72,7 +76,7 @@ class ClientRegistrationController extends ControllerBase {
       $registration_response = $this->registrationService->registerClient($clientRegistration);
 
       // Create JSON response with proper headers.
-      $response = new CacheableJsonResponse($registration_response);
+      $response = new CacheableJsonResponse($registration_response, 201);
 
       // Set appropriate caching headers (no caching for registration
       // responses).
@@ -120,22 +124,23 @@ class ClientRegistrationController extends ControllerBase {
   }
 
   /**
-   * Handles client management operations (GET, PUT, DELETE).
+   * Handles client management operations (GET, POST, PUT, DELETE).
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The HTTP request object.
    * @param string $client_id
    *   The client identifier.
    *
-   * @return \Drupal\Core\Cache\CacheableJsonResponse
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
    *   The JSON response containing client data or operation result.
    */
-  public function manage(Request $request, $client_id): CacheableJsonResponse {
+  public function manage(Request $request, $client_id): JsonResponse {
     try {
       $method = $request->getMethod();
 
       return match ($method) {
         Request::METHOD_GET => $this->getClient($request, $client_id),
+        Request::METHOD_POST => $this->rotateSecret($request, $client_id),
         Request::METHOD_PUT => $this->updateClient($request, $client_id),
         Request::METHOD_DELETE => $this->deleteClient($request, $client_id),
         default => throw new BadRequestHttpException('Method not allowed'),
@@ -170,6 +175,46 @@ class ClientRegistrationController extends ControllerBase {
 
       return $response;
     }
+  }
+
+  /**
+   * Replaces a client secret using its registration-management credentials.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request.
+   * @param string $client_id
+   *   The client identifier.
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   The replacement credentials or a controlled error response.
+   */
+  public function rotateSecret(Request $request, string $client_id): JsonResponse {
+    try {
+      $this->validateRegistrationToken($request, $client_id);
+      $response = new JsonResponse($this->registrationService->rotateClientSecret($client_id));
+    }
+    catch (BadRequestHttpException $e) {
+      $response = new JsonResponse([
+        'error' => 'invalid_request',
+        'error_description' => $e->getMessage(),
+      ], 400);
+    }
+    catch (\Exception $e) {
+      $this->getLogger('simple_oauth_client_registration')->error(
+        'Client secret rotation failed: @exception_type',
+        ['@exception_type' => get_class($e)]
+      );
+      $response = new JsonResponse([
+        'error' => 'server_error',
+        'error_description' => 'The client secret could not be replaced',
+      ], 500);
+    }
+
+    $response->setMaxAge(0);
+    $response->setPrivate();
+    $response->headers->set('Cache-Control', 'no-store, private');
+    $response->headers->set('Pragma', 'no-cache');
+    return $response;
   }
 
   /**
@@ -223,11 +268,18 @@ class ClientRegistrationController extends ControllerBase {
       $clientRegistration = $this->serializer->deserialize(
         $content,
         ClientRegistration::class,
-        'json'
+        'json',
+        ['json_decode_associative' => FALSE]
       );
     }
     catch (\Exception $e) {
-      throw new BadRequestHttpException('Invalid client metadata: ' . $e->getMessage());
+      $response = new CacheableJsonResponse([
+        'error' => 'invalid_client_metadata',
+        'error_description' => 'Invalid client metadata: ' . $e->getMessage(),
+      ], 400);
+      $response->headers->set('Access-Control-Allow-Origin', '*');
+      $response->headers->set('Access-Control-Allow-Methods', Request::METHOD_PUT);
+      return $response;
     }
 
     // Update client metadata using the DTO.

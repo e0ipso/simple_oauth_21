@@ -18,13 +18,20 @@ This document provides comprehensive API documentation for the OAuth 2.0/2.1 RFC
 - `GET /oauth/userinfo` - OpenID Connect UserInfo
 - `GET /oauth/jwks` - JSON Web Key Set
 - `GET /oauth/debug` - Token introspection debug
+- [POST /oauth/revoke](#post-oauthrevoke) - Token revocation (RFC 7009)
+- [POST /oauth/introspect](#post-oauthintrospect) - Token introspection (RFC 7662)
 
 ### Authentication Requirements
 
 - **No authentication**: Discovery endpoints, device authorization, client registration
 - **OAuth Bearer token**: UserInfo, JWKS, debug endpoints
-- **Client credentials**: Token endpoint, client management endpoints
+- **Client credentials**: Token endpoint
+- **Revocation authentication**: HTTP Basic or form-body client credentials; public clients may send only `client_id`
+- **Introspection authentication**: OAuth Bearer access token identifying the requesting user
+- **Registration access token**: Client management endpoints, using the token issued for the client identified by `{client_id}`
 - **User authentication**: Authorization endpoint, device verification
+
+The compliance dashboard and client registration settings require `administer simple_oauth entities`. There is no separate dashboard-viewing or client-registration permission.
 
 ## Core OAuth 2.0 Endpoints
 
@@ -332,6 +339,202 @@ curl -X GET https://example.com/oauth/jwks \
 }
 ```
 
+## Token revocation and introspection
+
+Both endpoints are provided by `simple_oauth_server_metadata`. Send POST requests
+with `Content-Type: application/x-www-form-urlencoded`. JSON request bodies and
+query parameters do not supply the required form-body `token` parameter.
+
+### Token representations and identifiers
+
+Use the complete `access_token` or `refresh_token` value returned by
+`POST /oauth/token`:
+
+- Access tokens are signed JWTs. The resolver validates their signature, expiry
+  and revocation state through the upstream resource server.
+- Refresh tokens are encrypted strings, not JWTs. The resolver authenticates and
+  decrypts the issued payload, validates its lifetime, and checks the stored
+  refresh token. When its stored client reference or scopes are absent, the
+  authenticated payload supplies the OAuth client ID and scopes.
+- Raw token database values, token UUIDs, JWT `jti` claims and decoded refresh
+  payloads are not accepted as substitutes for the issued token string.
+
+Use the consumer's OAuth `client_id` for client authentication. Dynamic
+registration returns this value as `client_id`; it differs from the consumer's
+Drupal UUID. Existing consumers also use their configured OAuth client ID.
+There is no consumer-UUID fallback. Introspection's `client_id` and `aud`
+preserve the client identity verified from the issued token representation.
+
+Both endpoints accept an optional `token_type_hint` string, conventionally
+`access_token` or `refresh_token`. The implementation ignores the hint and
+resolves the actual representation. An omitted, incorrect or unrecognized hint
+does not change the result or produce `unsupported_token_type`.
+
+### POST /oauth/revoke
+
+Revokes a token belonging to the authenticated OAuth client.
+
+#### Authentication and request
+
+Confidential clients supply their OAuth client ID and secret using either HTTP
+Basic authentication or the form-body fields `client_id` and `client_secret`.
+A decodable `Basic ` header containing `client_id:client_secret` takes precedence
+over body credentials. If the header cannot be decoded into that pair, the
+service falls back to body credentials. A public client may send `client_id`
+without a secret; a supplied nonempty secret must validate even for a public
+client. Unknown or unpublished consumers cannot authenticate.
+
+Registration access tokens and Bearer tokens alone do not replace these client
+credentials. The required `token` form field contains the issued token to revoke;
+`token_type_hint` is optional.
+
+Revoke an access token with HTTP Basic authentication:
+
+```bash
+curl -X POST https://example.com/oauth/revoke \
+  --user "$CLIENT_ID:$CLIENT_SECRET" \
+  --data-urlencode "token=$ACCESS_TOKEN" \
+  --data-urlencode 'token_type_hint=access_token'
+```
+
+Revoke an encrypted refresh token with body credentials:
+
+```bash
+curl -X POST https://example.com/oauth/revoke \
+  --data-urlencode "client_id=$CLIENT_ID" \
+  --data-urlencode "client_secret=$CLIENT_SECRET" \
+  --data-urlencode "token=$REFRESH_TOKEN" \
+  --data-urlencode 'token_type_hint=refresh_token'
+```
+
+For a public client, omit `client_secret` and use its OAuth client ID:
+
+```bash
+curl -X POST https://example.com/oauth/revoke \
+  --data-urlencode "client_id=$PUBLIC_CLIENT_ID" \
+  --data-urlencode "token=$ACCESS_TOKEN"
+```
+
+#### Ownership and success
+
+The verified token client ID must equal the authenticated client's OAuth client
+ID. A separately authenticated Drupal account with
+`bypass token revocation restrictions` can bypass that ownership check, but
+client authentication is still required.
+
+HTTP 200 with an empty body is returned for successful revocation, repeated
+revocation, unknown, expired, malformed or tampered tokens, and tokens owned by
+another client. Ownership denial leaves the token unchanged. A 200 response
+therefore does not prove that the supplied token existed or was revoked.
+
+Successful revocation marks and saves the resolved token as revoked. It does not
+delete the token entity or automatically revoke its associated access or refresh
+tokens. Revoked access tokens fail subsequent Bearer authentication, and revoked
+refresh tokens cannot be exchanged for new tokens.
+
+#### Status and error responses
+
+| Status | Response                                                                    |
+| ------ | --------------------------------------------------------------------------- |
+| 200    | Empty body, including unknown-token and ownership-denial cases              |
+| 400    | `{"error":"invalid_request","error_description":"Missing token parameter"}` |
+| 401    | `{"error":"invalid_client"}` for missing or invalid client credentials      |
+| 405    | Unsupported HTTP method, rejected by routing; only POST is supported        |
+| 500    | `{"error":"server_error"}` for an unexpected exception                      |
+
+Client authentication runs before the missing-token check. Error bodies emitted
+by the controller are JSON; the routing layer determines method-error formatting.
+
+### POST /oauth/introspect
+
+Returns metadata about a token for its owning user or a user with bypass
+permission.
+
+#### Authentication and request
+
+Send `Authorization: Bearer AUTHENTICATING_ACCESS_TOKEN` with a valid access token
+identifying a non-anonymous Drupal user. HTTP Basic credentials, form-body client
+credentials and registration access tokens do not authenticate this endpoint.
+The form-body `token` is the target token, which may differ from the token used
+in the Authorization header. The optional `token_type_hint` is ignored.
+
+```bash
+curl -X POST https://example.com/oauth/introspect \
+  -H "Authorization: Bearer $AUTHENTICATING_ACCESS_TOKEN" \
+  --data-urlencode "token=$TARGET_ACCESS_TOKEN" \
+  --data-urlencode 'token_type_hint=access_token'
+```
+
+To inspect an encrypted refresh token, keep a valid access token in the header:
+
+```bash
+curl -X POST https://example.com/oauth/introspect \
+  -H "Authorization: Bearer $AUTHENTICATING_ACCESS_TOKEN" \
+  --data-urlencode "token=$REFRESH_TOKEN" \
+  --data-urlencode 'token_type_hint=refresh_token'
+```
+
+Use a separate authenticating access token when inspecting a revoked or expired
+target; an invalid header token fails authentication before target lookup.
+
+#### Ownership and responses
+
+The authenticated user's ID must equal the target token's stored `auth_user_id`,
+or the user's full Drupal account must have
+`bypass token introspection restrictions`. Sharing an OAuth client alone does not
+grant access. Tokens without a stored user owner require the bypass permission.
+
+An active token returns HTTP 200 and JSON such as:
+
+```json
+{
+  "active": true,
+  "scope": "read write",
+  "client_id": "client_abc123",
+  "username": "example-user",
+  "sub": "550e8400-e29b-41d4-a716-446655440000",
+  "token_type": "Bearer",
+  "exp": 1893456300,
+  "iat": 1893456000,
+  "aud": "client_abc123",
+  "iss": "https://example.com",
+  "jti": "6ba7b810-9dad-41d1-80b4-00c04fd430c8"
+}
+```
+
+`scope` is a space-delimited string, possibly empty. `exp` and `iat` are integer
+Unix timestamps from the stored token when available. `username` and `sub` are
+included when the token has a user entity; `sub` is that user's UUID. `aud` is the
+OAuth client ID as a string. `iss` is the introspection request's scheme and host.
+`jti` is the stored token entity's UUID, not a credential accepted by either
+endpoint. Active refresh tokens also report `token_type: "Bearer"`.
+
+Unknown, malformed, tampered, expired, revoked and unauthorized target tokens all
+return HTTP 200 with only:
+
+```json
+{ "active": false }
+```
+
+Exceptions caught while processing the target also produce this inactive result.
+The response does not disclose whether a target exists or reveal its token value.
+
+#### Status and error responses
+
+| Status | Response                                                                                                                                                                              |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 200    | Active metadata or `{"active":false}`                                                                                                                                                 |
+| 400    | `{"error":"invalid_request","error_description":"Missing token parameter"}`                                                                                                           |
+| 401    | `{"error":"invalid_client","error_description":"Authentication required"}` when no authenticated user is available                                                                    |
+| 401    | `{"error":"invalid_client","error_description":"Bearer token authentication failed"}` when the OAuth authentication provider rejects a token                                          |
+| 405    | `{"error":"invalid_request","error_description":"Only POST requests are allowed. RFC 7662 requires the introspection endpoint to accept HTTP POST."}` for GET reaching the controller |
+
+The missing-user 401 includes `WWW-Authenticate: Bearer`. The authentication
+exception response includes `WWW-Authenticate: Bearer error="invalid_token"`,
+`Cache-Control: no-store` and `Pragma: no-cache`. The controller's GET rejection
+includes `Allow: POST`; invalid Bearer authentication can be rejected before that
+method check. Other unsupported methods are rejected by routing.
+
 ## Debug and Introspection
 
 ### GET /oauth/debug
@@ -400,7 +603,7 @@ curl -X GET https://example.com/.well-known/oauth-protected-resource \
 Registers a new OAuth client dynamically.
 
 **Purpose**: RFC 7591 compliant dynamic client registration
-**Authentication**: Optional (configurable)
+**Authentication**: None. Client creation is public; the module has no setting to require registration authentication.
 **Content-Type**: application/json
 
 #### Request Format
@@ -463,16 +666,26 @@ curl -X POST https://example.com/oauth/register \
 #### Error Responses
 
 - **400 Bad Request**: Invalid client metadata
-- **401 Unauthorized**: Authentication required but not provided
-- **403 Forbidden**: Registration not permitted
-- **422 Unprocessable Entity**: Invalid redirect URIs or other validation errors
+
+Redirects are validated as a complete list before any consumer is saved. Public
+web hosts require HTTPS, including when `application_type` is `native`. Explicit
+`application_type: "web"` permits only HTTPS redirects. Native clients may use
+custom schemes such as `com.example.app://callback` or HTTP loopback redirects
+with the literal hosts `127.0.0.1` and `[::1]`. Fragments, including a trailing
+`#`, are forbidden; percent-encoded `%23` in a path or query remains valid.
+
+When `application_type` is omitted, native URI patterns remain accepted. The
+registration service does not store this metadata field; resend it on updates
+to apply an explicit web restriction. Invalid shapes or any invalid redirect in
+a mixed list return HTTP 400 with `error: "invalid_client_metadata"` without
+creating a consumer.
 
 ### GET /oauth/register/{client_id}
 
 Retrieves client configuration.
 
 **Purpose**: RFC 7591 client configuration retrieval
-**Authentication**: Registration access token required
+**Authentication**: Bearer registration access token issued for this client, separate from its client secret and OAuth access tokens
 **Content-Type**: application/json
 
 #### Request Headers
@@ -505,12 +718,16 @@ curl -X GET https://example.com/oauth/register/client_abc123 \
 Updates client configuration.
 
 **Purpose**: RFC 7591 client configuration update
-**Authentication**: Registration access token required
+**Authentication**: Bearer registration access token issued for this client, separate from its client secret and OAuth access tokens
 **Content-Type**: application/json
 
 #### Request Format
 
 Same as POST request format. All fields are optional; only provided fields will be updated.
+
+Redirects follow the same transport, shape and fragment policy as POST. A rejected
+list leaves the client's stored metadata unchanged. Omitting `redirect_uris`
+preserves existing redirects, including on existing native registrations.
 
 #### Response Format
 
@@ -535,14 +752,13 @@ curl -X PUT https://example.com/oauth/register/client_abc123 \
 - **401 Unauthorized**: Invalid or missing registration access token
 - **404 Not Found**: Client not found
 - **403 Forbidden**: Update not permitted
-- **422 Unprocessable Entity**: Validation errors
 
 ### DELETE /oauth/register/{client_id}
 
 Removes client registration.
 
 **Purpose**: RFC 7591 client registration removal
-**Authentication**: Registration access token required
+**Authentication**: Bearer registration access token issued for this client, separate from its client secret and OAuth access tokens
 
 #### Request Headers
 
@@ -1151,8 +1367,9 @@ GET /admin/config/people/simple_oauth/oauth-21/native-apps
 
 #### Access Control
 
-- Configure appropriate permissions for client registration endpoints
-- Consider requiring authentication for client registration in production
+- `POST /oauth/register` allows public client creation without authentication; the module provides no registration permission or authentication setting
+- Client management requires the registration access token issued for the requested client; client credentials and OAuth access tokens do not grant management access
+- The registration settings page requires `administer simple_oauth entities`
 - Implement rate limiting to prevent abuse
 - Monitor registration activity for suspicious patterns
 
@@ -1274,7 +1491,7 @@ A: Verify:
 **Q: Redirect URI validation failing**
 A: Ensure:
 
-- URIs use HTTPS (except localhost for development)
+- Web redirects use HTTPS; native HTTP exceptions use literal loopback IP addresses
 - URIs exactly match registered patterns
 - No URL fragments (#) in redirect URIs
 - Custom schemes are properly formatted

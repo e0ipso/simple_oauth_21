@@ -307,7 +307,7 @@ final class ComprehensiveOAuth21FunctionalTest extends BrowserTestBase {
       ],
     ]);
 
-    $this->assertEquals(200, $response->getStatusCode(), 'Client registration should succeed');
+    $this->assertEquals(201, $response->getStatusCode(), 'Client registration should return HTTP 201 Created');
     $response->getBody()->rewind();
     $client_data = Json::decode($response->getBody()->getContents());
 

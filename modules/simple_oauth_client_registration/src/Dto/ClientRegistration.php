@@ -204,6 +204,43 @@ final class ClientRegistration {
   }
 
   /**
+   * Validates redirect transport before creating or updating a consumer.
+   *
+   * Explicit web clients require HTTPS. When application_type is omitted,
+   * native custom schemes and literal loopback addresses remain supported.
+   *
+   * @return void
+   *   No return value.
+   *
+   * @throws \InvalidArgumentException
+   *   If any redirect URI violates the shared registration policy.
+   */
+  public function validateRedirectUris(): void {
+    foreach ($this->redirectUris as $uri) {
+      if (!is_string($uri) || !filter_var($uri, FILTER_VALIDATE_URL) || str_contains($uri, '#')) {
+        throw new \InvalidArgumentException('Invalid redirect URI');
+      }
+
+      $scheme = strtolower((string) parse_url($uri, PHP_URL_SCHEME));
+      if ($scheme === 'https') {
+        continue;
+      }
+      if ($this->applicationType !== 'web') {
+        // RFC 8252 permits HTTP only for literal loopback IP redirects.
+        $host = parse_url($uri, PHP_URL_HOST);
+        if ($scheme === 'http' && in_array($host, ['127.0.0.1', '[::1]'], TRUE)) {
+          continue;
+        }
+        if ($scheme !== 'http') {
+          continue;
+        }
+      }
+
+      throw new \InvalidArgumentException('Redirect URIs require HTTPS except for native custom schemes and loopback IP addresses');
+    }
+  }
+
+  /**
    * Creates a new instance with additional response fields.
    *
    * @param string $clientId

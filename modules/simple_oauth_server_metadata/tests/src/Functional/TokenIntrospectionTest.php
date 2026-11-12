@@ -158,6 +158,61 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
   }
 
   /**
+   * Preserves issued client identity for registered and existing consumers.
+   */
+  public function testIssuedClientIdentity(): void {
+    $response = $this->httpClient->request('POST', $this->buildUrl('/oauth/register'), [
+      'json' => [
+        'client_name' => 'Registered identity client',
+        'redirect_uris' => [$this->redirectUri],
+        'grant_types' => ['authorization_code', 'refresh_token'],
+      ],
+    ]);
+    $this->assertSame(201, $response->getStatusCode());
+    $registration = Json::decode((string) $response->getBody());
+    $storage = $this->container->get('entity_type.manager')->getStorage('consumer');
+    $matches = $storage->loadByProperties(['client_id' => $registration['client_id']]);
+    $registered = reset($matches);
+    $this->assertInstanceOf(Consumer::class, $registered);
+    $this->assertSame($registration['client_id'], $registered->getClientId());
+    $this->assertNotSame($registered->uuid(), $registered->getClientId());
+    $registered->set('scopes', $this->client->get('scopes')->getValue())->save();
+
+    // Keep the existing-consumer path alongside actual dynamic registration.
+    $existing = $this->client;
+    $existing_secret = $this->clientSecret;
+    foreach ([[$existing, $existing_secret], [$registered, $registration['client_secret']]] as [$client, $secret]) {
+      $this->client = $client;
+      $this->clientSecret = $secret;
+      $tokens = $this->obtainTokensForUser($this->user1);
+      $claims = Json::decode(base64_decode(strtr(explode('.', $tokens['access_token'])[1], '-_', '+/')));
+      $this->assertSame($client->getClientId(), $claims['aud']);
+      foreach (['access_token', 'refresh_token'] as $type) {
+        $response = $this->postIntrospectionRequest([
+          'token' => $tokens[$type],
+          'token_type_hint' => $type,
+        ], ['Authorization' => 'Bearer ' . $this->user1AuthToken]);
+        $this->assertSame(200, $response->getStatusCode());
+        $metadata = Json::decode((string) $response->getBody());
+        $this->assertTrue($metadata['active']);
+        $this->assertSame($client->getClientId(), $metadata['client_id']);
+        $this->assertSame($client->getClientId(), $metadata['aud']);
+        $this->assertSame($this->user1->uuid(), $metadata['sub']);
+
+        $response = $this->postIntrospectionRequest([
+          'token' => $tokens[$type],
+        ], ['Authorization' => 'Bearer ' . $this->user2AuthToken]);
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame(['active' => FALSE], Json::decode((string) $response->getBody()));
+
+        $response = $this->postIntrospectionRequest(['token' => $tokens[$type]]);
+        $this->assertSame(401, $response->getStatusCode());
+        $this->assertSame('invalid_client', Json::decode((string) $response->getBody())['error']);
+      }
+    }
+  }
+
+  /**
    * Test token introspection endpoint RFC 7662 compliance.
    *
    * This comprehensive test validates all RFC 7662 behaviors, security
