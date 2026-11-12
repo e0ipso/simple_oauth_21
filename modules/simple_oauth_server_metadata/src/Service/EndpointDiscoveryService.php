@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_server_metadata\Service;
 
 use Drupal\Core\Extension\ModuleHandlerInterface;
@@ -45,7 +47,7 @@ class EndpointDiscoveryService {
    *   The authorization endpoint URL.
    */
   public function getAuthorizationEndpoint(): string {
-    return Url::fromRoute('oauth2_token.authorize')->setAbsolute()->toString();
+    return $this->endpointUrl('oauth2_token.authorize');
   }
 
   /**
@@ -55,7 +57,7 @@ class EndpointDiscoveryService {
    *   The token endpoint URL.
    */
   public function getTokenEndpoint(): string {
-    return Url::fromRoute('oauth2_token.token')->setAbsolute()->toString();
+    return $this->endpointUrl('oauth2_token.token');
   }
 
   /**
@@ -65,7 +67,7 @@ class EndpointDiscoveryService {
    *   The JWKS URI.
    */
   public function getJwksUri(): string {
-    return Url::fromRoute('simple_oauth.jwks')->setAbsolute()->toString();
+    return $this->endpointUrl('simple_oauth.jwks');
   }
 
   /**
@@ -75,7 +77,7 @@ class EndpointDiscoveryService {
    *   The UserInfo endpoint URL.
    */
   public function getUserInfoEndpoint(): string {
-    return Url::fromRoute('simple_oauth.userinfo')->setAbsolute()->toString();
+    return $this->endpointUrl('simple_oauth.userinfo');
   }
 
   /**
@@ -86,7 +88,7 @@ class EndpointDiscoveryService {
    */
   public function getRegistrationEndpoint(): ?string {
     try {
-      return Url::fromRoute('simple_oauth_client_registration.register')->setAbsolute()->toString();
+      return $this->endpointUrl('simple_oauth_client_registration.register');
     }
     catch (\Exception $e) {
       // Route doesn't exist, return NULL.
@@ -102,7 +104,7 @@ class EndpointDiscoveryService {
    */
   public function getRevocationEndpoint(): ?string {
     try {
-      return Url::fromRoute('simple_oauth_server_metadata.revoke')->setAbsolute()->toString();
+      return $this->endpointUrl('simple_oauth_server_metadata.revoke');
     }
     catch (\Exception $e) {
       // Route doesn't exist, return NULL.
@@ -118,7 +120,7 @@ class EndpointDiscoveryService {
    */
   public function getIntrospectionEndpoint(): ?string {
     try {
-      return Url::fromRoute('simple_oauth_server_metadata.token_introspection')->setAbsolute()->toString();
+      return $this->endpointUrl('simple_oauth_server_metadata.token_introspection');
     }
     catch (\Exception $e) {
       // Route doesn't exist, return NULL.
@@ -133,7 +135,7 @@ class EndpointDiscoveryService {
    *   The OAuth server metadata endpoint URL.
    */
   public function getOauthServerMetadataEndpoint(): string {
-    return Url::fromRoute('simple_oauth_server_metadata.well_known')->setAbsolute()->toString();
+    return $this->endpointUrl('simple_oauth_server_metadata.well_known');
   }
 
   /**
@@ -170,9 +172,7 @@ class EndpointDiscoveryService {
     // Check for Device Flow module.
     if ($this->moduleHandler->moduleExists('simple_oauth_device_flow')) {
       try {
-        $url = Url::fromRoute('simple_oauth_device_flow.device_authorization');
-        $endpoints['device_authorization_endpoint'] = $url->setAbsolute()
-          ->toString();
+        $endpoints['device_authorization_endpoint'] = $this->endpointUrl('simple_oauth_device_flow.device_authorization');
       }
       catch (\Exception $e) {
         // Route doesn't exist or error generating URL.
@@ -183,6 +183,25 @@ class EndpointDiscoveryService {
     $endpoints['oauth_authorization_server_metadata_endpoint'] = $this->getOauthServerMetadataEndpoint();
 
     return $endpoints;
+  }
+
+  /**
+   * Builds the absolute URL of an endpoint, without a language prefix.
+   *
+   * Clients call the endpoints at the URLs the metadata lists, so the URLs
+   * must not depend on the language of the request that built the metadata.
+   *
+   * @param string $route_name
+   *   The route of the endpoint.
+   *
+   * @return string
+   *   The absolute URL of the endpoint.
+   */
+  private function endpointUrl(string $route_name): string {
+    return Url::fromRoute($route_name, [], [
+      'absolute' => TRUE,
+      'language' => $this->languageManager->getLanguage(LanguageInterface::LANGCODE_NOT_APPLICABLE),
+    ])->toString();
   }
 
 }

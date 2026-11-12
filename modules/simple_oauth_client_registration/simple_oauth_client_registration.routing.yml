@@ -1,7 +1,11 @@
+# Clients call these endpoints at fixed URLs. On a multilingual site,
+# _disable_route_normalizer keeps the Redirect module from sending them to a
+# language-prefixed copy.
 simple_oauth_client_registration.register:
   path: '/oauth/register'
   defaults:
     _controller: '\Drupal\simple_oauth_client_registration\Controller\ClientRegistrationController::register'
+    _disable_route_normalizer: TRUE
     _title: 'OAuth 2.0 Client Registration'
   methods: [POST]
   requirements:
@@ -15,6 +19,7 @@ simple_oauth_client_registration.manage:
   path: '/oauth/register/{client_id}'
   defaults:
     _controller: '\Drupal\simple_oauth_client_registration\Controller\ClientRegistrationController::manage'
+    _disable_route_normalizer: TRUE
     _title: 'OAuth 2.0 Client Management'
   methods: [GET, POST, PUT, DELETE]
   requirements:

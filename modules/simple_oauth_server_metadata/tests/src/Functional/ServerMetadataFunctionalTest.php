@@ -7,6 +7,7 @@ namespace Drupal\Tests\simple_oauth_server_metadata\Functional;
 use Drupal\Component\Serialization\Json;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\Core\Url;
+use Drupal\language\Entity\ConfigurableLanguage;
 use Drupal\simple_oauth\Entity\Oauth2Scope;
 use Drupal\simple_oauth\Entity\Oauth2TokenInterface;
 use Drupal\simple_oauth\Oauth2ScopeInterface;
@@ -15,23 +16,21 @@ use Drupal\Tests\BrowserTestBase;
 use Drupal\Tests\simple_oauth\Functional\SimpleOauthTestTrait;
 use Drupal\simple_oauth_21\Trait\DebugLoggingTrait;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
  * Comprehensive functional tests for OAuth 2.0 Server Metadata module.
  *
  * Tests all server metadata functionality including RFC 8414 compliance,
  * OpenID Connect Discovery (OpenID Connect Discovery 1.0), and RFC 7009
- * token revocation endpoint. Consolidated into a single test class with
- * one test method for optimal performance.
- *
- * This consolidation reduces Drupal installations from 3 to 1, significantly
- * improving test execution time while maintaining complete RFC coverage.
+ * token revocation endpoint, and discovery on multilingual sites.
  *
  * @see https://datatracker.ietf.org/doc/html/rfc8414
  * @see https://openid.net/specs/openid-connect-discovery-1_0.html
  * @see https://datatracker.ietf.org/doc/html/rfc7009
  */
 #[Group('simple_oauth_server_metadata')]
+#[RunTestsInSeparateProcesses]
 final class ServerMetadataFunctionalTest extends BrowserTestBase {
 
   use SimpleOauthTestTrait;
@@ -220,6 +219,72 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     $this->helperResourceMetadataRfcCompliance();
 
     $this->assertTrue(TRUE, 'All server metadata test scenarios completed successfully');
+  }
+
+  /**
+   * Tests discovery URLs and responses when every language has a URL prefix.
+   *
+   * Exercises Redirect's route normalizer when that optional module is present.
+   */
+  public function testLanguageNeutralDiscovery(): void {
+    $modules = ['language'];
+    $has_redirect = $this->container->get('extension.list.module')->exists('redirect');
+    if ($has_redirect) {
+      $modules[] = 'redirect';
+    }
+    $this->container->get('module_installer')->install($modules);
+    $this->rebuildContainer();
+    ConfigurableLanguage::createFromLangcode('fr')->save();
+    $this->config('language.negotiation')
+      ->set('url.prefixes', ['en' => 'en', 'fr' => 'fr'])
+      ->save();
+    $this->config('language.types')
+      ->set('negotiation.language_interface.enabled', ['language-url' => 0])
+      ->save();
+    if ($has_redirect) {
+      $this->config('redirect.settings')->set('route_normalizer_enabled', TRUE)->save();
+    }
+    drupal_flush_all_caches();
+    $this->rebuildContainer();
+
+    // Verify that normalization is active for an ordinary unprefixed route.
+    if ($has_redirect) {
+      $response = $this->get(Url::fromUri('base:/user/login'), [
+        'allow_redirects' => FALSE,
+      ]);
+      $this->assertSame(301, $response->getStatusCode());
+      $this->assertSame('1', $response->getHeaderLine('X-Drupal-Route-Normalizer'));
+      $this->assertStringStartsWith('/en', parse_url($response->getHeaderLine('Location'), PHP_URL_PATH));
+    }
+
+    foreach ([
+      '/.well-known/oauth-authorization-server',
+      '/.well-known/oauth-protected-resource',
+      '/.well-known/openid-configuration',
+    ] as $path) {
+      foreach (['', '/en', '/fr'] as $prefix) {
+        $response = $this->get(Url::fromUri('base:' . $prefix . $path), [
+          'allow_redirects' => FALSE,
+        ]);
+        $this->assertSame(200, $response->getStatusCode(), $prefix . $path);
+        $this->assertFalse($response->hasHeader('Location'));
+        $metadata = Json::decode((string) $response->getBody());
+        foreach ([
+          'authorization_endpoint' => '/oauth/authorize',
+          'token_endpoint' => '/oauth/token',
+          'jwks_uri' => '/oauth/jwks',
+          'userinfo_endpoint' => '/oauth/userinfo',
+          'registration_endpoint' => '/oauth/register',
+          'revocation_endpoint' => '/oauth/revoke',
+          'introspection_endpoint' => '/oauth/introspect',
+          'oauth_authorization_server_metadata_endpoint' => '/.well-known/oauth-authorization-server',
+        ] as $key => $expected_path) {
+          if (isset($metadata[$key])) {
+            $this->assertSame($expected_path, parse_url($metadata[$key], PHP_URL_PATH), $key);
+          }
+        }
+      }
+    }
   }
 
   /**

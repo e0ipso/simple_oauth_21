@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_server_metadata\Service;
 
 use Drupal\Core\Cache\CacheableDependencyInterface;
@@ -150,13 +152,7 @@ class ServerMetadataService implements CacheableDependencyInterface {
 
       // Auto-derive registration endpoint if not configured and route exists.
       if ($field === 'registration_endpoint' && !$value) {
-        try {
-          $value = Url::fromRoute('simple_oauth_client_registration.register', [], ['absolute' => TRUE])
-            ->toString();
-        }
-        catch (\Exception $e) {
-          $value = NULL;
-        }
+        $value = $this->endpointDiscovery->getRegistrationEndpoint();
       }
 
       if (!empty($value)) {
