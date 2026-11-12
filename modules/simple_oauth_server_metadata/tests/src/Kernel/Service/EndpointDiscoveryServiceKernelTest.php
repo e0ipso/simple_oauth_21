@@ -1,10 +1,13 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\Tests\simple_oauth_server_metadata\Kernel\Service;
 
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\language\Entity\ConfigurableLanguage;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
  * Kernel tests for the EndpointDiscoveryService on a multilingual site.
@@ -12,7 +15,8 @@ use PHPUnit\Framework\Attributes\Group;
  * @coversDefaultClass \Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService
  */
 #[Group('simple_oauth_server_metadata')]
-class EndpointDiscoveryServiceKernelTest extends KernelTestBase {
+#[RunTestsInSeparateProcesses]
+final class EndpointDiscoveryServiceKernelTest extends KernelTestBase {
 
   /**
    * {@inheritdoc}
@@ -21,8 +25,12 @@ class EndpointDiscoveryServiceKernelTest extends KernelTestBase {
     'user',
     'system',
     'language',
+    'file',
     'simple_oauth',
+    'simple_oauth_21',
     'simple_oauth_server_metadata',
+    'simple_oauth_client_registration',
+    'simple_oauth_device_flow',
     'consumers',
     'serialization',
   ];
@@ -59,6 +67,8 @@ class EndpointDiscoveryServiceKernelTest extends KernelTestBase {
       'token_endpoint' => '/oauth/token',
       'jwks_uri' => '/oauth/jwks',
       'userinfo_endpoint' => '/oauth/userinfo',
+      'registration_endpoint' => '/oauth/register',
+      'device_authorization_endpoint' => '/oauth/device_authorization',
       'revocation_endpoint' => '/oauth/revoke',
       'introspection_endpoint' => '/oauth/introspect',
       'oauth_authorization_server_metadata_endpoint' => '/.well-known/oauth-authorization-server',
@@ -79,6 +89,11 @@ class EndpointDiscoveryServiceKernelTest extends KernelTestBase {
       'simple_oauth_server_metadata.openid_configuration',
       'simple_oauth_server_metadata.revoke',
       'simple_oauth_server_metadata.token_introspection',
+      'simple_oauth_client_registration.register',
+      'simple_oauth_client_registration.manage',
+      'simple_oauth_device_flow.device_authorization',
+      'simple_oauth_device_flow.device_verification_form',
+      'simple_oauth_device_flow.device_verification_submit',
     ];
     foreach ($route_names as $route_name) {
       $route = $route_provider->getRouteByName($route_name);

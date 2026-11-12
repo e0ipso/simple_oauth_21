@@ -6,31 +6,35 @@ namespace Drupal\Tests\simple_oauth_server_metadata\Functional;
 
 use Drupal\Component\Serialization\Json;
 use Drupal\consumers\Entity\Consumer;
-use Drupal\simple_oauth\Entity\Oauth2Token;
+use Drupal\Core\Url;
+use Drupal\language\Entity\ConfigurableLanguage;
+use Drupal\simple_oauth\Entity\Oauth2Scope;
+use Drupal\simple_oauth\Entity\Oauth2TokenInterface;
+use Drupal\simple_oauth\Oauth2ScopeInterface;
+use Drupal\Tests\simple_oauth\Functional\RequestHelperTrait;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\Tests\simple_oauth\Functional\SimpleOauthTestTrait;
 use Drupal\simple_oauth_21\Trait\DebugLoggingTrait;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
  * Comprehensive functional tests for OAuth 2.0 Server Metadata module.
  *
  * Tests all server metadata functionality including RFC 8414 compliance,
  * OpenID Connect Discovery (OpenID Connect Discovery 1.0), and RFC 7009
- * token revocation endpoint. Consolidated into a single test class with
- * one test method for optimal performance.
- *
- * This consolidation reduces Drupal installations from 3 to 1, significantly
- * improving test execution time while maintaining complete RFC coverage.
+ * token revocation endpoint, and discovery on multilingual sites.
  *
  * @see https://datatracker.ietf.org/doc/html/rfc8414
  * @see https://openid.net/specs/openid-connect-discovery-1_0.html
  * @see https://datatracker.ietf.org/doc/html/rfc7009
  */
 #[Group('simple_oauth_server_metadata')]
+#[RunTestsInSeparateProcesses]
 final class ServerMetadataFunctionalTest extends BrowserTestBase {
 
   use SimpleOauthTestTrait;
+  use RequestHelperTrait;
   use DebugLoggingTrait;
 
   /**
@@ -76,9 +80,23 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
   /**
    * The test OAuth access token.
    *
-   * @var \Drupal\simple_oauth\Entity\Oauth2Token
+   * @var \Drupal\simple_oauth\Entity\Oauth2TokenInterface
    */
-  private Oauth2Token $testToken;
+  private Oauth2TokenInterface $testToken;
+
+  /**
+   * The issued credential corresponding to the test token entity.
+   *
+   * @var string
+   */
+  private string $testTokenValue;
+
+  /**
+   * The scope permitted for authorization-code token fixtures.
+   *
+   * @var \Drupal\simple_oauth\Entity\Oauth2Scope
+   */
+  private Oauth2Scope $revocationScope;
 
   /**
    * {@inheritdoc}
@@ -105,17 +123,17 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     ]);
     $this->testClient->save();
 
-    // Create a test access token owned by this client.
-    $this->testToken = Oauth2Token::create([
-      'bundle' => 'access_token',
-      'auth_user_id' => $this->rootUser->id(),
-      'client' => $this->testClient,
-      'value' => 'test_token_value_12345',
-      'scopes' => [],
-      'expire' => \Drupal::time()->getRequestTime() + 3600,
-      'status' => TRUE,
+    // Issue real credentials rather than persisting synthetic identifiers.
+    $this->revocationScope = Oauth2Scope::create([
+      'name' => 'metadata:revocation',
+      'description' => 'Access for metadata revocation tests',
+      'grant_types' => ['authorization_code' => ['status' => TRUE]],
+      'umbrella' => FALSE,
+      'granularity_id' => Oauth2ScopeInterface::GRANULARITY_PERMISSION,
+      'granularity_configuration' => ['permission' => 'access content'],
     ]);
-    $this->testToken->save();
+    $this->revocationScope->save();
+    [$this->testToken, $this->testTokenValue] = $this->issueToken($this->testClient, $this->clientSecret);
 
     // Configure required settings for OpenID Connect Discovery.
     $this->config('simple_oauth_server_metadata.settings')
@@ -201,6 +219,72 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     $this->helperResourceMetadataRfcCompliance();
 
     $this->assertTrue(TRUE, 'All server metadata test scenarios completed successfully');
+  }
+
+  /**
+   * Tests discovery URLs and responses when every language has a URL prefix.
+   *
+   * Exercises Redirect's route normalizer when that optional module is present.
+   */
+  public function testLanguageNeutralDiscovery(): void {
+    $modules = ['language'];
+    $has_redirect = $this->container->get('extension.list.module')->exists('redirect');
+    if ($has_redirect) {
+      $modules[] = 'redirect';
+    }
+    $this->container->get('module_installer')->install($modules);
+    $this->rebuildContainer();
+    ConfigurableLanguage::createFromLangcode('fr')->save();
+    $this->config('language.negotiation')
+      ->set('url.prefixes', ['en' => 'en', 'fr' => 'fr'])
+      ->save();
+    $this->config('language.types')
+      ->set('negotiation.language_interface.enabled', ['language-url' => 0])
+      ->save();
+    if ($has_redirect) {
+      $this->config('redirect.settings')->set('route_normalizer_enabled', TRUE)->save();
+    }
+    drupal_flush_all_caches();
+    $this->rebuildContainer();
+
+    // Verify that normalization is active for an ordinary unprefixed route.
+    if ($has_redirect) {
+      $response = $this->get(Url::fromUri('base:/user/login'), [
+        'allow_redirects' => FALSE,
+      ]);
+      $this->assertSame(301, $response->getStatusCode());
+      $this->assertSame('1', $response->getHeaderLine('X-Drupal-Route-Normalizer'));
+      $this->assertStringStartsWith('/en', parse_url($response->getHeaderLine('Location'), PHP_URL_PATH));
+    }
+
+    foreach ([
+      '/.well-known/oauth-authorization-server',
+      '/.well-known/oauth-protected-resource',
+      '/.well-known/openid-configuration',
+    ] as $path) {
+      foreach (['', '/en', '/fr'] as $prefix) {
+        $response = $this->get(Url::fromUri('base:' . $prefix . $path), [
+          'allow_redirects' => FALSE,
+        ]);
+        $this->assertSame(200, $response->getStatusCode(), $prefix . $path);
+        $this->assertFalse($response->hasHeader('Location'));
+        $metadata = Json::decode((string) $response->getBody());
+        foreach ([
+          'authorization_endpoint' => '/oauth/authorize',
+          'token_endpoint' => '/oauth/token',
+          'jwks_uri' => '/oauth/jwks',
+          'userinfo_endpoint' => '/oauth/userinfo',
+          'registration_endpoint' => '/oauth/register',
+          'revocation_endpoint' => '/oauth/revoke',
+          'introspection_endpoint' => '/oauth/introspect',
+          'oauth_authorization_server_metadata_endpoint' => '/.well-known/oauth-authorization-server',
+        ] as $key => $expected_path) {
+          if (isset($metadata[$key])) {
+            $this->assertSame($expected_path, parse_url($metadata[$key], PHP_URL_PATH), $key);
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -740,7 +824,7 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     $credentials = base64_encode('test_client_id:' . $this->clientSecret);
 
     $response = $this->postRevocationRequest([
-      'token' => 'test_token_value_12345',
+      'token' => $this->testTokenValue,
     ], [
       'Authorization' => 'Basic ' . $credentials,
     ]);
@@ -758,6 +842,15 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     $storage->resetCache([$this->testToken->id()]);
     $reloadedToken = $storage->load($this->testToken->id());
     $this->assertTrue($reloadedToken->isRevoked(), 'Token should be revoked after successful revocation request');
+
+    [, $authentication_token] = $this->issueToken($this->testClient, $this->clientSecret);
+    $response = $this->post(Url::fromRoute('simple_oauth_server_metadata.token_introspection'), [
+      'token' => $this->testTokenValue,
+    ], [
+      'headers' => ['Authorization' => 'Bearer ' . $authentication_token],
+    ]);
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame(['active' => FALSE], Json::decode((string) $response->getBody()));
   }
 
   /**
@@ -765,19 +858,10 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
    */
   protected function helperSuccessfulRevocationWithPostBodyCredentials(): void {
     // Create a new token for this test.
-    $newToken = Oauth2Token::create([
-      'bundle' => 'access_token',
-      'auth_user_id' => $this->rootUser->id(),
-      'client' => $this->testClient,
-      'value' => 'post_body_token_12345',
-      'scopes' => [],
-      'expire' => \Drupal::time()->getRequestTime() + 3600,
-      'status' => TRUE,
-    ]);
-    $newToken->save();
+    [$newToken, $token_value] = $this->issueToken($this->testClient, $this->clientSecret);
 
     $response = $this->postRevocationRequest([
-      'token' => 'post_body_token_12345',
+      'token' => $token_value,
       'client_id' => 'test_client_id',
       'client_secret' => $this->clientSecret,
     ]);
@@ -805,19 +889,10 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     $publicClient->save();
 
     // Create a token for the public client.
-    $publicToken = Oauth2Token::create([
-      'bundle' => 'access_token',
-      'auth_user_id' => $this->rootUser->id(),
-      'client' => $publicClient,
-      'value' => 'public_token_12345',
-      'scopes' => [],
-      'expire' => \Drupal::time()->getRequestTime() + 3600,
-      'status' => TRUE,
-    ]);
-    $publicToken->save();
+    [$publicToken, $token_value] = $this->issueToken($publicClient);
 
     $response = $this->postRevocationRequest([
-      'token' => 'public_token_12345',
+      'token' => $token_value,
       'client_id' => 'public_client_id',
     ]);
 
@@ -835,21 +910,12 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
    */
   protected function helperAuthenticationFailureWithInvalidCredentials(): void {
     // Create a fresh token for this test.
-    $invalidAuthToken = Oauth2Token::create([
-      'bundle' => 'access_token',
-      'auth_user_id' => $this->rootUser->id(),
-      'client' => $this->testClient,
-      'value' => 'invalid_auth_token_12345',
-      'scopes' => [],
-      'expire' => \Drupal::time()->getRequestTime() + 3600,
-      'status' => TRUE,
-    ]);
-    $invalidAuthToken->save();
+    [$invalidAuthToken, $token_value] = $this->issueToken($this->testClient, $this->clientSecret);
 
     $credentials = base64_encode('test_client_id:wrong_secret');
 
     $response = $this->postRevocationRequest([
-      'token' => 'invalid_auth_token_12345',
+      'token' => $token_value,
     ], [
       'Authorization' => 'Basic ' . $credentials,
     ]);
@@ -871,19 +937,10 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
    */
   protected function helperAuthenticationFailureWithMissingCredentials(): void {
     // Create a fresh token for this test.
-    $missingAuthToken = Oauth2Token::create([
-      'bundle' => 'access_token',
-      'auth_user_id' => $this->rootUser->id(),
-      'client' => $this->testClient,
-      'value' => 'missing_auth_token_12345',
-      'scopes' => [],
-      'expire' => \Drupal::time()->getRequestTime() + 3600,
-      'status' => TRUE,
-    ]);
-    $missingAuthToken->save();
+    [$missingAuthToken, $token_value] = $this->issueToken($this->testClient, $this->clientSecret);
 
     $response = $this->postRevocationRequest([
-      'token' => 'missing_auth_token_12345',
+      'token' => $token_value,
     ]);
 
     $this->assertEquals(401, $response->getStatusCode());
@@ -928,16 +985,7 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     ]);
     $otherClient->save();
 
-    $otherToken = Oauth2Token::create([
-      'bundle' => 'access_token',
-      'auth_user_id' => $this->rootUser->id(),
-      'client' => $otherClient,
-      'value' => 'other_token_value_12345',
-      'scopes' => [],
-      'expire' => \Drupal::time()->getRequestTime() + 3600,
-      'status' => TRUE,
-    ]);
-    $otherToken->save();
+    [$otherToken, $token_value] = $this->issueToken($otherClient, 'other_client_secret');
 
     // Grant bypass permission to a user and log in.
     $adminUser = $this->createUser(['bypass token revocation restrictions']);
@@ -947,7 +995,7 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     $credentials = base64_encode('test_client_id:' . $this->clientSecret);
 
     $response = $this->postRevocationRequest([
-      'token' => 'other_token_value_12345',
+      'token' => $token_value,
     ], [
       'Authorization' => 'Basic ' . $credentials,
     ]);
@@ -971,28 +1019,19 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     // Create another client and token.
     $otherClient = Consumer::create([
       'label' => 'Other Client',
-      'client_id' => 'other_client_id',
+      'client_id' => 'ownership_client_id',
       'secret' => 'other_client_secret',
       'confidential' => TRUE,
     ]);
     $otherClient->save();
 
-    $otherToken = Oauth2Token::create([
-      'bundle' => 'access_token',
-      'auth_user_id' => $this->rootUser->id(),
-      'client' => $otherClient,
-      'value' => 'ownership_test_token_12345',
-      'scopes' => [],
-      'expire' => \Drupal::time()->getRequestTime() + 3600,
-      'status' => TRUE,
-    ]);
-    $otherToken->save();
+    [$otherToken, $token_value] = $this->issueToken($otherClient, 'other_client_secret');
 
     // testClient tries to revoke otherClient's token (no bypass permission).
     $credentials = base64_encode('test_client_id:' . $this->clientSecret);
 
     $response = $this->postRevocationRequest([
-      'token' => 'ownership_test_token_12345',
+      'token' => $token_value,
     ], [
       'Authorization' => 'Basic ' . $credentials,
     ]);
@@ -1028,22 +1067,13 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
    */
   protected function helperIdempotentRevocation(): void {
     // Create a fresh token for this test.
-    $idempotentToken = Oauth2Token::create([
-      'bundle' => 'access_token',
-      'auth_user_id' => $this->rootUser->id(),
-      'client' => $this->testClient,
-      'value' => 'idempotent_token_12345',
-      'scopes' => [],
-      'expire' => \Drupal::time()->getRequestTime() + 3600,
-      'status' => TRUE,
-    ]);
-    $idempotentToken->save();
+    [$idempotentToken, $token_value] = $this->issueToken($this->testClient, $this->clientSecret);
 
     $credentials = base64_encode('test_client_id:' . $this->clientSecret);
 
     // First revocation.
     $response1 = $this->postRevocationRequest([
-      'token' => 'idempotent_token_12345',
+      'token' => $token_value,
     ], [
       'Authorization' => 'Basic ' . $credentials,
     ]);
@@ -1057,7 +1087,7 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
 
     // Second revocation (same token, already revoked).
     $response2 = $this->postRevocationRequest([
-      'token' => 'idempotent_token_12345',
+      'token' => $token_value,
     ], [
       'Authorization' => 'Basic ' . $credentials,
     ]);
@@ -1076,19 +1106,10 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     $credentials = base64_encode('test_client_id:' . $this->clientSecret);
 
     // Create a new token for this test.
-    $hintToken = Oauth2Token::create([
-      'bundle' => 'access_token',
-      'auth_user_id' => $this->rootUser->id(),
-      'client' => $this->testClient,
-      'value' => 'hint_test_token_12345',
-      'scopes' => [],
-      'expire' => \Drupal::time()->getRequestTime() + 3600,
-      'status' => TRUE,
-    ]);
-    $hintToken->save();
+    [$hintToken, $token_value] = $this->issueToken($this->testClient, $this->clientSecret);
 
     $response = $this->postRevocationRequest([
-      'token' => 'hint_test_token_12345',
+      'token' => $token_value,
       'token_type_hint' => 'access_token',
     ], [
       'Authorization' => 'Basic ' . $credentials,
@@ -1108,21 +1129,12 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
    */
   protected function helperRefreshTokenRevocation(): void {
     // Create a refresh token.
-    $refreshToken = Oauth2Token::create([
-      'bundle' => 'refresh_token',
-      'auth_user_id' => $this->rootUser->id(),
-      'client' => $this->testClient,
-      'value' => 'test_refresh_token_12345',
-      'scopes' => [],
-      'expire' => \Drupal::time()->getRequestTime() + 7200,
-      'status' => TRUE,
-    ]);
-    $refreshToken->save();
+    [$refreshToken, $token_value] = $this->issueToken($this->testClient, $this->clientSecret, 'refresh_token');
 
     $credentials = base64_encode('test_client_id:' . $this->clientSecret);
 
     $response = $this->postRevocationRequest([
-      'token' => 'test_refresh_token_12345',
+      'token' => $token_value,
       'token_type_hint' => 'refresh_token',
     ], [
       'Authorization' => 'Basic ' . $credentials,
@@ -1161,7 +1173,7 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     $credentials = base64_encode('test_client_id:' . $this->clientSecret);
 
     $this->drupalGet('/oauth/revoke', [
-      'query' => ['token' => 'test_token_value_12345'],
+      'query' => ['token' => $this->testTokenValue],
       'headers' => ['Authorization' => 'Basic ' . $credentials],
     ]);
 
@@ -1171,6 +1183,74 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
       in_array($statusCode, [404, 405]),
       'GET requests to revocation endpoint should be rejected'
     );
+  }
+
+  /**
+   * Issues a verifiable token through authorization-code flow with PKCE.
+   *
+   * @param \Drupal\consumers\Entity\Consumer $client
+   *   The client receiving the issued token.
+   * @param string|null $client_secret
+   *   The client secret, or NULL for a public client.
+   * @param string $token_type
+   *   The issued access_token or refresh_token representation to return.
+   *
+   * @return array{0: \Drupal\simple_oauth\Entity\Oauth2TokenInterface, 1: string}
+   *   The persisted token entity and the credential issued by the server.
+   *
+   * @throws \GuzzleHttp\Exception\GuzzleException
+   *   If an HTTP request cannot be completed.
+   */
+  private function issueToken(Consumer $client, ?string $client_secret = NULL, string $token_type = 'access_token'): array {
+    $redirect_uri = $this->getAbsoluteUrl('/.well-known/oauth-authorization-server');
+    $client->set('grant_types', ['authorization_code', 'refresh_token']);
+    $client->set('redirect', [$redirect_uri]);
+    $client->set('scopes', [$this->revocationScope->id()]);
+    $client->save();
+
+    // Clear browser authentication without revoking previously issued tokens.
+    $this->getSession()->restart();
+    $this->loggedInUser = FALSE;
+    $this->drupalLogin($this->rootUser);
+    $verifier = str_repeat('m', 64);
+    $this->drupalGet(Url::fromRoute('oauth2_token.authorize'), [
+      'query' => [
+        'response_type' => 'code',
+        'client_id' => $client->getClientId(),
+        'redirect_uri' => $redirect_uri,
+        'scope' => $this->revocationScope->getName(),
+        'code_challenge' => self::base64urlencode(hash('sha256', $verifier, TRUE)),
+        'code_challenge_method' => 'S256',
+      ],
+    ]);
+    if ($this->getSession()->getPage()->hasButton('Allow')) {
+      $this->submitForm([], 'Allow');
+    }
+    parse_str(parse_url($this->getSession()->getCurrentUrl(), PHP_URL_QUERY) ?? '', $query);
+    $this->assertArrayHasKey('code', $query);
+    $parameters = [
+      'grant_type' => 'authorization_code',
+      'client_id' => $client->getClientId(),
+      'redirect_uri' => $redirect_uri,
+      'code' => $query['code'],
+      'code_verifier' => $verifier,
+    ];
+    if ($client_secret !== NULL) {
+      $parameters['client_secret'] = $client_secret;
+    }
+    $response = $this->post(Url::fromRoute('oauth2_token.token'), $parameters);
+    $this->assertSame(200, $response->getStatusCode());
+    $tokens = Json::decode((string) $response->getBody());
+    $this->assertArrayHasKey($token_type, $tokens);
+    $resolved = $this->container->get('simple_oauth_server_metadata.token_lookup')
+      ->resolveToken($tokens[$token_type]);
+    $this->assertIsArray($resolved);
+    $token = $resolved['token'];
+    $this->assertInstanceOf(Oauth2TokenInterface::class, $token);
+    $this->assertFalse($token->isRevoked());
+    $this->getSession()->restart();
+    $this->loggedInUser = FALSE;
+    return [$token, $tokens[$token_type]];
   }
 
   /**

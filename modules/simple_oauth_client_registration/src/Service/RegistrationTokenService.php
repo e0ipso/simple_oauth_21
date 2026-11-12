@@ -109,6 +109,23 @@ final class RegistrationTokenService {
   }
 
   /**
+   * Checks whether a client has a registration-management record.
+   *
+   * @param string $client_id
+   *   The client identifier.
+   *
+   * @return bool
+   *   TRUE if the client was dynamically registered.
+   */
+  public function hasRegistrationAccessToken(string $client_id): bool {
+    return (bool) $this->database->select('simple_oauth_client_registration_tokens', 't')
+      ->condition('client_id', $client_id)
+      ->countQuery()
+      ->execute()
+      ->fetchField();
+  }
+
+  /**
    * Revokes a registration access token.
    *
    * @param string $client_id

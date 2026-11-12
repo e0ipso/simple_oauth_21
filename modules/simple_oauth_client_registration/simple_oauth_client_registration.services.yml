@@ -16,7 +16,6 @@ services:
       - '@entity_type.manager'
       - '@config.factory'
       - '@logger.channel.simple_oauth_client_registration'
-      - '@uuid'
       - '@simple_oauth_client_registration.service.token'
       - '@file_url_generator'
 
@@ -29,7 +28,6 @@ services:
   simple_oauth_client_registration.normalizer:
     class: Drupal\simple_oauth_client_registration\Normalizer\ClientRegistrationNormalizer
     arguments:
-      - '@simple_oauth_client_registration.service.registration'
       - '@simple_oauth_client_registration.service.token'
       - '@file_url_generator'
     tags:

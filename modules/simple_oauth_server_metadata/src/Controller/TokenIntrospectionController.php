@@ -6,6 +6,8 @@ namespace Drupal\simple_oauth_server_metadata\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\simple_oauth\Entity\Oauth2TokenInterface;
+use Drupal\user\UserInterface;
+use Drupal\simple_oauth_server_metadata\Service\TokenLookupService;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -39,10 +41,13 @@ final class TokenIntrospectionController extends ControllerBase {
    *   The request stack.
    * @param \Psr\Log\LoggerInterface $logger
    *   The logger service.
+   * @param \Drupal\simple_oauth_server_metadata\Service\TokenLookupService $tokenLookup
+   *   The validated token lookup service.
    */
   public function __construct(
     private readonly RequestStack $requestStack,
     private readonly LoggerInterface $logger,
+    private readonly TokenLookupService $tokenLookup,
   ) {}
 
   /**
@@ -52,6 +57,7 @@ final class TokenIntrospectionController extends ControllerBase {
     return new self(
       $container->get('request_stack'),
       $container->get('logger.channel.simple_oauth'),
+      $container->get('simple_oauth_server_metadata.token_lookup'),
     );
   }
 
@@ -142,8 +148,9 @@ final class TokenIntrospectionController extends ControllerBase {
         );
       }
 
-      // Look up the token by its value.
-      $token = $this->findTokenByValue($tokenValue);
+      // Interpret the issued representation before looking up its identifier.
+      $resolved = $this->tokenLookup->resolveToken($tokenValue);
+      $token = $resolved['token'] ?? NULL;
 
       // Return inactive if token doesn't exist.
       if (!$token) {
@@ -167,7 +174,7 @@ final class TokenIntrospectionController extends ControllerBase {
       }
 
       // Token is valid and user is authorized - return full metadata.
-      return $this->createActiveResponse($token);
+      return $this->createActiveResponse($token, $resolved);
     }
     catch (\Exception $e) {
       // Log unexpected errors for debugging.
@@ -179,34 +186,6 @@ final class TokenIntrospectionController extends ControllerBase {
       // errors.
       return $this->createInactiveResponse();
     }
-  }
-
-  /**
-   * Finds a token entity by its token value.
-   *
-   * Searches for oauth2_token entities matching the provided token value.
-   * This supports both access tokens and refresh tokens stored in the same
-   * entity type.
-   *
-   * @param string $tokenValue
-   *   The token value to search for.
-   *
-   * @return \Drupal\simple_oauth\Entity\Oauth2TokenInterface|null
-   *   The token entity if found, NULL otherwise.
-   */
-  private function findTokenByValue(string $tokenValue): ?Oauth2TokenInterface {
-    $storage = $this->entityTypeManager()->getStorage('oauth2_token');
-
-    // Query for token by value field.
-    $results = $storage->loadByProperties(['value' => $tokenValue]);
-
-    if (empty($results)) {
-      return NULL;
-    }
-
-    // Return the first matching token.
-    $token = reset($results);
-    return $token instanceof Oauth2TokenInterface ? $token : NULL;
   }
 
   /**
@@ -242,12 +221,12 @@ final class TokenIntrospectionController extends ControllerBase {
     }
 
     // Check if current user is the token owner.
-    $tokenOwnerId = $token->get('auth_user_id')->target_id;
-
-    // Handle NULL token owner (e.g., client credentials tokens).
-    if ($tokenOwnerId === NULL) {
+    $owner_field = $token->get('auth_user_id');
+    // Handle absent token owners, such as client credentials tokens.
+    if ($owner_field->isEmpty()) {
       return FALSE;
     }
+    $tokenOwnerId = $owner_field->target_id;
 
     return (int) $tokenOwnerId === (int) $currentUserId;
   }
@@ -303,29 +282,30 @@ final class TokenIntrospectionController extends ControllerBase {
    *
    * @param \Drupal\simple_oauth\Entity\Oauth2TokenInterface $token
    *   The token entity.
+   * @param array $resolved
+   *   The validated client ID and optional refresh token scope.
    *
    * @return \Symfony\Component\HttpFoundation\JsonResponse
    *   JSON response with token metadata.
    */
-  private function createActiveResponse(Oauth2TokenInterface $token): JsonResponse {
+  private function createActiveResponse(Oauth2TokenInterface $token, array $resolved): JsonResponse {
     $response = [
       'active' => TRUE,
     ];
 
     // Add scope (required by RFC 7662, empty string if no scopes).
-    $scopes = $token->get('scopes')->getScopes();
+    /** @var \Drupal\simple_oauth\Plugin\Field\FieldType\Oauth2ScopeReferenceItemListInterface $scope_field */
+    $scope_field = $token->get('scopes');
+    $scopes = $scope_field->getScopes();
     $scopeNames = array_map(fn($scope) => $scope->getName(), $scopes);
-    $response['scope'] = implode(' ', $scopeNames);
+    $response['scope'] = $resolved['scope'] ?? implode(' ', $scopeNames);
 
-    // Add client_id.
-    $client = $token->get('client')->entity;
-    if ($client) {
-      $response['client_id'] = $client->uuid();
-    }
+    // Use the client identifier authenticated by the issued representation.
+    $response['client_id'] = $resolved['client_id'];
 
     // Add username if available.
     $user = $token->get('auth_user_id')->entity;
-    if ($user) {
+    if ($user instanceof UserInterface) {
       $response['username'] = $user->getAccountName();
       // Add sub (subject) claim - user UUID.
       $response['sub'] = $user->uuid();

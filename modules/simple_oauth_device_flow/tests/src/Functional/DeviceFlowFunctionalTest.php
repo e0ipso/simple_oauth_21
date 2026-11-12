@@ -1,12 +1,17 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\Tests\simple_oauth_device_flow\Functional;
 
 use Drupal\Component\Serialization\Json;
 use Drupal\consumers\Entity\Consumer;
+use Drupal\path_alias\Entity\PathAlias;
+use Drupal\simple_oauth_device_flow\Entity\DeviceCode;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\Tests\simple_oauth\Functional\SimpleOauthTestTrait;
 use Drupal\user\Entity\User;
+use GuzzleHttp\ClientInterface;
 use GuzzleHttp\RequestOptions;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -21,7 +26,7 @@ use PHPUnit\Framework\Attributes\Group;
  */
 #[Group('simple_oauth_device_flow')]
 #[Group('functional')]
-class DeviceFlowFunctionalTest extends BrowserTestBase {
+final class DeviceFlowFunctionalTest extends BrowserTestBase {
 
   use SimpleOauthTestTrait;
 
@@ -38,6 +43,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     'options',
     'field',
     'text',
+    'path_alias',
   ];
 
   /**
@@ -50,21 +56,21 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
    *
    * @var \GuzzleHttp\Client
    */
-  protected $httpClient;
+  protected ClientInterface $httpClient;
 
   /**
    * Test consumer entity.
    *
    * @var \Drupal\consumers\Entity\Consumer
    */
-  protected $consumer;
+  protected Consumer $consumer;
 
   /**
    * Test user for authentication.
    *
    * @var \Drupal\user\Entity\User
    */
-  protected $testUser;
+  protected User $testUser;
 
   /**
    * {@inheritdoc}
@@ -78,6 +84,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
 
     // Clear caches to ensure entity types are properly discovered.
     drupal_flush_all_caches();
+    $this->container = \Drupal::getContainer();
 
     // Set up OAuth keys for testing.
     $this->setUpKeys();
@@ -299,7 +306,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     // Submit the verification form with the user code.
     $this->submitForm([
       'user_code' => $device_data['user_code'],
-    ], 'Authorize');
+    ], 'Authorize Device');
 
     // Should redirect to confirmation or success page.
     $this->assertSession()->statusCodeEquals(200);
@@ -318,7 +325,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
 
     $this->submitForm([
       'user_code' => 'INVALID_CODE',
-    ], 'Authorize');
+    ], 'Authorize Device');
 
     // Should show error message.
     $this->assertSession()->pageTextContains('Invalid user code');
@@ -358,7 +365,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     $this->drupalGet($verification_url);
     $this->submitForm([
       'user_code' => $device_data['user_code'],
-    ], 'Authorize');
+    ], 'Authorize Device');
 
     // Poll again after authorization (should succeed)
     $response = $this->httpClient->post($token_url, [
@@ -409,12 +416,54 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
   /**
    * Helper: Tests token endpoint with expired device code.
    *
-   * Placeholder for expired device code testing.
+   * Persists an approved code past its configured lifetime without waiting.
    */
   protected function helperTokenEndpointWithExpiredDeviceCode(): void {
-    // This test would require manipulating the device code expiration
-    // For now, we'll test the basic structure.
-    $this->assertTrue(TRUE, 'Expired device code test placeholder');
+    $settings = $this->config('simple_oauth_device_flow.settings');
+    $original_lifetime = $settings->get('device_code_lifetime');
+    $settings->set('device_code_lifetime', 143)->save();
+    try {
+      $device_data = $this->requestDeviceAuthorization();
+      $lifetime = $this->container->get('simple_oauth_device_flow.settings')->getDeviceCodeExpiration();
+      $this->assertSame($lifetime, $device_data['expires_in']);
+      $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_device_code');
+      $device = $storage->load($device_data['device_code']);
+      $this->assertInstanceOf(DeviceCode::class, $device);
+      $this->assertSame($lifetime, (int) $device->get('expires_at')->value - (int) $device->get('created_at')->value);
+
+      // Keep the original lifetime while moving issuance into the past.
+      $created_at = time() - $lifetime - 1;
+      $device->set('created_at', $created_at);
+      $device->set('expires_at', $created_at + $lifetime);
+      $device->set('authorized_at', $created_at);
+      $device->setUserIdentifier((string) $this->testUser->id());
+      $device->setUserApproved(TRUE);
+      $device->save();
+      $storage->resetCache([$device->id()]);
+      $expired = $storage->load($device->id());
+      $this->assertInstanceOf(DeviceCode::class, $expired);
+      $this->assertLessThan(time(), $expired->getExpiryDateTime()->getTimestamp());
+
+      $tokens = $this->container->get('entity_type.manager')->getStorage('oauth2_token');
+      $token_count = $tokens->getQuery()->accessCheck(FALSE)->count()->execute();
+      $response = $this->httpClient->post($this->buildUrl('/oauth/token'), [
+        RequestOptions::FORM_PARAMS => [
+          'grant_type' => 'urn:ietf:params:oauth:grant-type:device_code',
+          'device_code' => $device_data['device_code'],
+          'client_id' => $this->consumer->getClientId(),
+        ],
+        RequestOptions::HTTP_ERRORS => FALSE,
+      ]);
+      $this->assertSame(400, $response->getStatusCode());
+      $payload = Json::decode((string) $response->getBody());
+      $this->assertSame('expired_token', $payload['error']);
+      $this->assertArrayNotHasKey('access_token', $payload);
+      $this->assertArrayNotHasKey('refresh_token', $payload);
+      $this->assertSame($token_count, $tokens->getQuery()->accessCheck(FALSE)->count()->execute());
+    }
+    finally {
+      $settings->set('device_code_lifetime', $original_lifetime)->save();
+    }
   }
 
   /**
@@ -423,30 +472,54 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
    * Validates that rapid polling triggers rate limiting responses.
    */
   protected function helperDeviceFlowRateLimiting(): void {
-    // Get device authorization.
-    $device_data = $this->requestDeviceAuthorization();
-    $device_code = $device_data['device_code'];
-
-    $token_url = $this->buildUrl('/oauth/token');
-
-    // Make rapid requests to trigger rate limiting.
-    for ($i = 0; $i < 3; $i++) {
-      $response = $this->httpClient->post($token_url, [
+    $settings = $this->config('simple_oauth_device_flow.settings');
+    $original_interval = $settings->get('polling_interval');
+    $settings->set('polling_interval', 60)->save();
+    try {
+      $device_data = $this->requestDeviceAuthorization();
+      $this->assertSame(60, $device_data['interval']);
+      $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_device_code');
+      $device = $storage->load($device_data['device_code']);
+      $this->assertInstanceOf(DeviceCode::class, $device);
+      $this->assertNull($device->getLastPolledAt());
+      $options = [
         RequestOptions::FORM_PARAMS => [
           'grant_type' => 'urn:ietf:params:oauth:grant-type:device_code',
-          'device_code' => $device_code,
+          'device_code' => $device_data['device_code'],
           'client_id' => $this->consumer->getClientId(),
         ],
         RequestOptions::HTTP_ERRORS => FALSE,
-      ]);
+      ];
+      $token_url = $this->buildUrl('/oauth/token');
+
+      // The first poll is pending and persists the polling timestamp.
+      $response = $this->httpClient->post($token_url, $options);
+      $this->assertSame(400, $response->getStatusCode());
+      $payload = Json::decode((string) $response->getBody());
+      $this->assertSame('authorization_pending', $payload['error']);
+      $this->assertArrayNotHasKey('access_token', $payload);
+      $storage->resetCache([$device->id()]);
+      $device = $storage->load($device->id());
+      $this->assertInstanceOf(DeviceCode::class, $device);
+      $this->assertNotNull($device->getLastPolledAt());
+
+      // Persist a recent poll so no wall-clock delay is needed.
+      for ($i = 0; $i < 2; $i++) {
+        $device->setLastPolledAt(new \DateTimeImmutable());
+        $device->save();
+        $response = $this->httpClient->post($token_url, $options);
+        $this->assertSame(400, $response->getStatusCode());
+        $this->assertSame('application/json', $response->getHeaderLine('Content-Type'));
+        $payload = Json::decode((string) $response->getBody());
+        $this->assertSame('slow_down', $payload['error']);
+        $this->assertSame('The authorization request is still pending and polling should continue, but the interval MUST be increased by 5 seconds for this and all subsequent requests.', $payload['error_description']);
+        $this->assertArrayNotHasKey('access_token', $payload);
+        $this->assertArrayNotHasKey('refresh_token', $payload);
+      }
     }
-
-    // Last request might return slow_down if rate limiting is implemented.
-    $response->getBody()->rewind();
-    $data = Json::decode($response->getBody()->getContents());
-
-    // Accept either authorization_pending or slow_down as valid responses.
-    $this->assertContains($data['error'], ['authorization_pending', 'slow_down']);
+    finally {
+      $settings->set('polling_interval', $original_interval)->save();
+    }
   }
 
   /**
@@ -508,7 +581,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     ]);
     $device_code_entity = reset($device_codes);
 
-    $this->assertNotNull($device_code_entity, 'Device code entity should exist');
+    $this->assertInstanceOf(DeviceCode::class, $device_code_entity, 'Device code entity should exist');
 
     // Verify scopes are stored using field API.
     $scopes = $device_code_entity->getScopes();
@@ -535,7 +608,7 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     $this->drupalGet($verification_url);
     $this->submitForm([
       'user_code' => $device_data['user_code'],
-    ], 'Authorize');
+    ], 'Authorize Device');
 
     $token_url = $this->buildUrl('/oauth/token');
 
@@ -569,6 +642,307 @@ class DeviceFlowFunctionalTest extends BrowserTestBase {
     // different error codes depending on internal validation order.
     $this->assertContains($data['error'], ['invalid_grant', 'invalid_request'],
       'Reused device code should be rejected with appropriate error');
+  }
+
+  /**
+   * Tests denial survives HTTP requests, polling and an approval attempt.
+   */
+  public function testDeviceDenialRemainsTerminal(): void {
+    $this->config('simple_oauth_device_flow.settings')
+      ->set('device_code_lifetime', 143)->save();
+    $data = $this->requestDeviceAuthorization();
+    $this->assertSame(143, $data['expires_in']);
+    $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_device_code');
+    $device = $storage->load($data['device_code']);
+    $this->assertInstanceOf(DeviceCode::class, $device);
+    $this->assertSame(143, (int) $device->get('expires_at')->value - (int) $device->get('created_at')->value);
+    $token_parameters = [
+      'grant_type' => 'urn:ietf:params:oauth:grant-type:device_code',
+      'client_id' => $this->consumer->getClientId(),
+      'device_code' => $data['device_code'],
+    ];
+    $pending = $this->httpClient->post($this->buildUrl('/oauth/token'), [
+      RequestOptions::FORM_PARAMS => $token_parameters,
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+    $this->assertSame(400, $pending->getStatusCode());
+    $this->assertSame('authorization_pending', Json::decode((string) $pending->getBody())['error']);
+    $this->drupalLogin($this->testUser);
+    $this->drupalGet('/oauth/device');
+    $this->submitForm(['user_code' => $data['user_code']], 'Deny Access');
+    $this->assertSession()->pageTextContains('Device authorization was denied');
+    $storage->resetCache([$device->id()]);
+    $denied = $storage->load($device->id());
+    $this->assertInstanceOf(DeviceCode::class, $denied);
+    $this->assertFalse($denied->getUserApproved());
+    $this->assertSame((string) $this->testUser->id(), $denied->getUserIdentifier());
+    $poll = $this->httpClient->post($this->buildUrl('/oauth/token'), [
+      RequestOptions::FORM_PARAMS => $token_parameters,
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+    $this->assertSame('access_denied', Json::decode((string) $poll->getBody())['error']);
+    $this->drupalGet('/oauth/device');
+    $this->submitForm(['user_code' => $data['user_code']], 'Authorize Device');
+    $this->assertSession()->pageTextContains('This device authorization is no longer available');
+    $storage->resetCache([$device->id()]);
+    $reloaded = $storage->load($device->id());
+    $this->assertInstanceOf(DeviceCode::class, $reloaded);
+    $this->assertFalse($reloaded->getUserApproved());
+    $later_poll = $this->httpClient->post($this->buildUrl('/oauth/token'), [
+      RequestOptions::FORM_PARAMS => $token_parameters,
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+    $this->assertSame('access_denied', Json::decode((string) $later_poll->getBody())['error']);
+  }
+
+  /**
+   * Tests revocation persists and redemption cannot be undone by approval.
+   */
+  public function testRevocationAndRedemptionRemainTerminal(): void {
+    $data = $this->requestDeviceAuthorization();
+    $repository = $this->container->get('simple_oauth_device_flow.device_code_repository');
+    $storage = $repository->getStorage();
+    $this->assertFalse($repository->isDeviceCodeRevoked($data['device_code']));
+    $repository->revokeDeviceCode($data['device_code']);
+    $storage->resetCache();
+    $revoked = $storage->load($data['device_code']);
+    $this->assertInstanceOf(DeviceCode::class, $revoked);
+    $decision_time = (int) $revoked->get('authorized_at')->value;
+    $this->assertGreaterThan(0, $decision_time);
+    $this->assertTrue($repository->isDeviceCodeRevoked($data['device_code']));
+    // A distinct persisted time makes an accidental timestamp reset visible.
+    $decision_time -= 60;
+    $revoked->set('authorized_at', $decision_time)->save();
+    $storage->resetCache();
+    $repository->revokeDeviceCode($data['device_code']);
+    $storage->resetCache();
+    $reloaded = $storage->load($data['device_code']);
+    $this->assertInstanceOf(DeviceCode::class, $reloaded);
+    $this->assertSame($decision_time, (int) $reloaded->get('authorized_at')->value);
+
+    $this->drupalLogin($this->testUser);
+    $this->drupalGet('/oauth/device');
+    $this->submitForm(['user_code' => $data['user_code']], 'Authorize Device');
+    $this->assertSession()->pageTextContains('This device authorization is no longer available');
+
+    $data = $this->requestDeviceAuthorization();
+    $this->drupalGet('/oauth/device');
+    $this->submitForm(['user_code' => $data['user_code']], 'Authorize Device');
+    $this->assertSession()->pageTextContains('Device authorized successfully');
+    $parameters = [
+      'grant_type' => 'urn:ietf:params:oauth:grant-type:device_code',
+      'device_code' => $data['device_code'],
+      'client_id' => $this->consumer->getClientId(),
+    ];
+    $response = $this->httpClient->post($this->buildUrl('/oauth/token'), [
+      RequestOptions::FORM_PARAMS => $parameters,
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertArrayHasKey('access_token', Json::decode((string) $response->getBody()));
+    $tokens = $this->container->get('entity_type.manager')->getStorage('oauth2_token');
+    $token_count = $tokens->getQuery()->accessCheck(FALSE)->count()->execute();
+    $this->drupalGet('/oauth/device');
+    $this->submitForm(['user_code' => $data['user_code']], 'Authorize Device');
+    $this->assertSession()->pageTextContains('This device authorization is no longer available');
+    $response = $this->httpClient->post($this->buildUrl('/oauth/token'), [
+      RequestOptions::FORM_PARAMS => $parameters,
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+    $this->assertSame(400, $response->getStatusCode());
+    $error = Json::decode((string) $response->getBody());
+    $this->assertContains($error['error'], ['invalid_grant', 'invalid_request']);
+    $this->assertArrayNotHasKey('access_token', $error);
+    $this->assertArrayNotHasKey('refresh_token', $error);
+    $this->assertSame($token_count, $tokens->getQuery()->accessCheck(FALSE)->count()->execute());
+  }
+
+  /**
+   * Tests routed settings validation, persistence, issuance and access control.
+   */
+  public function testRoutedSettingsControlIssuance(): void {
+    $path = '/admin/config/people/simple_oauth/oauth-21/device-flow';
+    $this->drupalLogin($this->testUser);
+    $this->drupalGet($path);
+    $this->assertSession()->statusCodeEquals(403);
+    $admin = $this->drupalCreateUser(['administer simple_oauth entities']);
+    $this->drupalLogin($admin);
+    $this->drupalGet($path);
+    $this->assertSession()->statusCodeEquals(200);
+    $initial = $this->config('simple_oauth_device_flow.settings')->getRawData();
+    $invalid_values = [
+      ['device_code_lifetime' => 0],
+      ['device_code_lifetime' => 1.5],
+      ['polling_interval' => 0],
+      ['user_code_length' => 5],
+      ['user_code_length' => 13],
+      ['cleanup_retention_days' => 0],
+      ['max_cleanup_batch_size' => 0],
+      ['user_code_charset' => 'A'],
+      ['user_code_charset' => 'AA'],
+      ['user_code_charset' => 'A-'],
+      ['user_code_charset' => 'ab'],
+    ];
+    foreach ($invalid_values as $values) {
+      $this->drupalGet($path);
+      $this->submitForm($values, 'Save configuration');
+      $this->assertSession()->pageTextNotContains('The configuration options have been saved');
+      $this->assertSame($initial, $this->config('simple_oauth_device_flow.settings')->getRawData());
+    }
+    $saved = [
+      'device_code_lifetime' => 143,
+      'polling_interval' => 7,
+      'user_code_length' => 6,
+      'user_code_charset' => 'BCDFGHJKLMNPQRSTVWXYZ',
+      'cleanup_retention_days' => 3,
+      'max_cleanup_batch_size' => 50,
+    ];
+    $this->drupalGet($path);
+    $this->submitForm($saved, 'Save configuration');
+    $this->assertSession()->pageTextContains('The configuration options have been saved');
+    $this->drupalGet($path);
+    foreach ($saved as $name => $value) {
+      $this->assertSession()->fieldValueEquals($name, (string) $value);
+    }
+    $data = $this->requestDeviceAuthorization();
+    $this->assertSame(143, $data['expires_in']);
+    $this->assertSame(7, $data['interval']);
+    $this->assertSame(6, strlen(str_replace('-', '', $data['user_code'])));
+    $this->assertMatchesRegularExpression('/^[BCDFGHJKLMNPQRSTVWXYZ-]+$/D', $data['user_code']);
+    $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_device_code');
+    $device = $storage->load($data['device_code']);
+    $this->assertInstanceOf(DeviceCode::class, $device);
+    $this->assertSame(143, (int) $device->get('expires_at')->value - (int) $device->get('created_at')->value);
+    $this->drupalLogout();
+    $this->drupalGet($path);
+    $this->assertSession()->statusCodeEquals(403);
+  }
+
+  /**
+   * Tests saved response settings, canonical precedence and legacy defaults.
+   */
+  public function testVerificationResponseSettings(): void {
+    $alias = PathAlias::create([
+      'path' => '/oauth/device',
+      'alias' => '/oauth/device-local',
+    ]);
+    $alias->save();
+    $admin = $this->drupalCreateUser(['administer simple_oauth entities']);
+    $this->drupalLogin($admin);
+    $path = '/admin/config/people/simple_oauth/oauth-21/device-flow';
+    $this->drupalGet($path);
+    $this->submitForm([
+      'verification_uri' => '/oauth/device-local',
+      'verification_uri_complete' => FALSE,
+    ], 'Save configuration');
+    $this->assertSession()->pageTextContains('The configuration options have been saved');
+    $this->drupalGet($path);
+    $this->assertSession()->fieldValueEquals('verification_uri', '/oauth/device-local');
+    $this->assertSession()->checkboxNotChecked('verification_uri_complete');
+    $data = $this->requestDeviceAuthorization();
+    $this->assertSame($this->buildUrl('/oauth/device-local'), $data['verification_uri']);
+    $this->assertArrayNotHasKey('verification_uri_complete', $data);
+    $this->drupalGet($data['verification_uri']);
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->fieldExists('user_code');
+    $this->submitForm(['user_code' => $data['user_code']], 'Authorize Device');
+    $this->assertSession()->pageTextContains('Device authorized successfully');
+    $this->drupalGet($path);
+    $this->submitForm(['verification_uri_complete' => TRUE], 'Save configuration');
+    $this->assertSession()->pageTextContains('The configuration options have been saved');
+    $this->drupalGet($path);
+    $this->assertSession()->checkboxChecked('verification_uri_complete');
+    $config = $this->config('simple_oauth_device_flow.settings');
+    $this->assertTrue($config->get('verification_uri_complete'));
+    $this->assertTrue($config->get('verification_uri_complete_enabled'));
+
+    // Conflicting keys can be imported even though the form synchronizes them.
+    foreach ([
+      [TRUE, FALSE, TRUE],
+      [FALSE, TRUE, FALSE],
+      [NULL, FALSE, FALSE],
+      [NULL, TRUE, TRUE],
+      [NULL, NULL, TRUE],
+    ] as [$canonical, $legacy, $include_complete]) {
+      $config->clear('verification_uri_complete')->clear('verification_uri_complete_enabled');
+      if ($canonical !== NULL) {
+        $config->set('verification_uri_complete', $canonical);
+      }
+      if ($legacy !== NULL) {
+        $config->set('verification_uri_complete_enabled', $legacy);
+      }
+      $config->save();
+      $data = $this->requestDeviceAuthorization();
+      $this->assertSame($this->buildUrl('/oauth/device-local'), $data['verification_uri']);
+      if ($include_complete) {
+        $complete = $data['verification_uri_complete'];
+        $this->assertSame('/oauth/device-local', parse_url($complete, PHP_URL_PATH));
+        $this->assertSame(parse_url($data['verification_uri'], PHP_URL_HOST), parse_url($complete, PHP_URL_HOST));
+        parse_str((string) parse_url($complete, PHP_URL_QUERY), $query);
+        $this->assertSame(['user_code' => $data['user_code']], $query);
+        $this->drupalGet($complete);
+        $this->assertSession()->statusCodeEquals(200);
+        $this->assertSession()->fieldValueEquals('user_code', $data['user_code']);
+        $this->submitForm([], 'Authorize Device');
+        $this->assertSession()->pageTextContains('Device authorized successfully');
+      }
+      else {
+        $this->assertArrayNotHasKey('verification_uri_complete', $data);
+      }
+    }
+    $alias->delete();
+    $config->clear('verification_uri')->save();
+    $data = $this->requestDeviceAuthorization();
+    $this->assertSame($this->buildUrl('/oauth/device'), $data['verification_uri']);
+    $this->assertArrayHasKey('verification_uri_complete', $data);
+    $this->drupalGet($data['verification_uri_complete']);
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->fieldValueEquals('user_code', $data['user_code']);
+  }
+
+  /**
+   * Tests invalid imported destinations fail before issuing a device code.
+   */
+  public function testInvalidVerificationDestinationsDoNotIssueCodes(): void {
+    $config = $this->config('simple_oauth_device_flow.settings');
+    $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_device_code');
+    $admin = $this->drupalCreateUser(['administer simple_oauth entities']);
+    $this->drupalLogin($admin);
+    $path = '/admin/config/people/simple_oauth/oauth-21/device-flow';
+    foreach ([
+      'https://example.com/device',
+      '//example.com/device',
+      '/\\example.com',
+      '/' . rawurlencode('//example.com'),
+      '/oauth/device?redirect=evil',
+      '/oauth/device#fragment',
+      '',
+      '/oauth/../device',
+      '/device',
+      '/oauth/device-local',
+      '/',
+      '/user/login',
+      '/oauth/device_authorization',
+    ] as $invalid) {
+      $this->drupalGet($path);
+      $this->submitForm(['verification_uri' => $invalid], 'Save configuration');
+      $this->assertSession()->pageTextNotContains('The configuration options have been saved');
+      $config->set('verification_uri', $invalid)->save();
+      $before = $storage->getQuery()->accessCheck(FALSE)->count()->execute();
+      $response = $this->httpClient->post($this->buildUrl('/oauth/device_authorization'), [
+        RequestOptions::FORM_PARAMS => ['client_id' => $this->consumer->getClientId()],
+        RequestOptions::HTTP_ERRORS => FALSE,
+        RequestOptions::ALLOW_REDIRECTS => FALSE,
+      ]);
+      $this->assertSame(500, $response->getStatusCode());
+      $error = Json::decode((string) $response->getBody());
+      $this->assertSame('server_error', $error['error']);
+      $this->assertArrayNotHasKey('device_code', $error);
+      $this->assertArrayNotHasKey('verification_uri', $error);
+      $this->assertFalse($response->hasHeader('Location'));
+      $this->assertSame($before, $storage->getQuery()->accessCheck(FALSE)->count()->execute());
+      $config->set('verification_uri', '/oauth/device')->save();
+    }
   }
 
 }

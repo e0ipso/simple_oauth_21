@@ -6,14 +6,17 @@ namespace Drupal\Tests\simple_oauth_server_metadata\Functional;
 
 use Drupal\Component\Serialization\Json;
 use Drupal\Core\Url;
-use Drupal\simple_oauth\Entity\Oauth2Token;
+use Drupal\consumers\Entity\Consumer;
+use Drupal\simple_oauth\Entity\Oauth2TokenInterface;
 use Drupal\simple_oauth_21\Trait\DebugLoggingTrait;
 use Drupal\Tests\simple_oauth\Functional\RequestHelperTrait;
 use Drupal\Tests\simple_oauth\Functional\TokenBearerFunctionalTestBase;
 use Drupal\user\Entity\Role;
 use Drupal\user\RoleInterface;
+use Drupal\user\UserInterface;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Http\Message\ResponseInterface;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Functional tests for RFC 7662 Token Introspection endpoint.
@@ -41,6 +44,8 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
     'simple_oauth_test',
     'simple_oauth_21',
     'simple_oauth_server_metadata',
+    'simple_oauth_pkce',
+    'simple_oauth_client_registration',
   ];
 
   /**
@@ -48,42 +53,42 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
    *
    * @var \Drupal\user\UserInterface
    */
-  private $user1;
+  private UserInterface $user1;
 
   /**
    * Test user 2 (not token owner).
    *
    * @var \Drupal\user\UserInterface
    */
-  private $user2;
+  private UserInterface $user2;
 
   /**
    * Valid access token for user1.
    *
-   * @var \Drupal\simple_oauth\Entity\Oauth2Token
+   * @var string
    */
-  private Oauth2Token $validToken;
+  private string $validToken;
 
   /**
    * Expired access token for user1.
    *
-   * @var \Drupal\simple_oauth\Entity\Oauth2Token
+   * @var string
    */
-  private Oauth2Token $expiredToken;
+  private string $expiredToken;
 
   /**
    * Revoked access token for user1.
    *
-   * @var \Drupal\simple_oauth\Entity\Oauth2Token
+   * @var string
    */
-  private Oauth2Token $revokedToken;
+  private string $revokedToken;
 
   /**
    * Refresh token for user1.
    *
-   * @var \Drupal\simple_oauth\Entity\Oauth2Token
+   * @var string
    */
-  private Oauth2Token $refreshToken;
+  private string $refreshToken;
 
   /**
    * Authenticating token for user1.
@@ -117,61 +122,94 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
     $this->user1 = $this->user;
     $this->user2 = $this->drupalCreateUser();
 
-    // Create valid access token for user1.
-    $this->validToken = Oauth2Token::create([
-      'bundle' => 'access_token',
-      'auth_user_id' => $this->user1->id(),
-      'client' => $this->client,
-      'value' => 'test_valid_token_' . $this->randomMachineName(),
-      'scopes' => [],
-      'expire' => time() + 3600,
-      'status' => TRUE,
-    ]);
-    $this->validToken->save();
+    // Use issued representations for both target and authenticating tokens.
+    $tokens = $this->obtainTokensForUser($this->user1);
+    $this->validToken = $tokens['access_token'];
+    $this->refreshToken = $tokens['refresh_token'];
+    $this->expiredToken = $this->obtainTokensForUser($this->user1)['access_token'];
+    $this->revokedToken = $this->obtainTokensForUser($this->user1)['access_token'];
 
-    // Create expired access token for user1.
-    $this->expiredToken = Oauth2Token::create([
-      'bundle' => 'access_token',
-      'auth_user_id' => $this->user1->id(),
-      'client' => $this->client,
-      'value' => 'test_expired_token_' . $this->randomMachineName(),
-      'scopes' => [],
-      'expire' => time() - 3600,
-      'status' => TRUE,
-    ]);
-    $this->expiredToken->save();
+    // Change persisted state without replacing the issued JWT representations.
+    $factory = $this->container->get('simple_oauth.server.resource_server.factory');
+    $http_factory = $this->container->get('psr7.http_message_factory');
+    $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_token');
+    foreach ([$this->expiredToken, $this->revokedToken] as $value) {
+      $request = Request::create('/');
+      $request->headers->set('Authorization', 'Bearer ' . $value);
+      $validated = $factory->get()->validateAuthenticatedRequest($http_factory->createRequest($request));
+      $matches = $storage->loadByProperties([
+        'value' => $validated->getAttribute('oauth_access_token_id'),
+      ]);
+      $token = reset($matches);
+      if (!$token instanceof Oauth2TokenInterface) {
+        throw new \RuntimeException('The issued access token was not persisted.');
+      }
+      if ($value === $this->expiredToken) {
+        $token->set('expire', time() - 3600);
+      }
+      else {
+        $token->revoke();
+      }
+      $token->save();
+    }
 
-    // Create revoked access token for user1.
-    $this->revokedToken = Oauth2Token::create([
-      'bundle' => 'access_token',
-      'auth_user_id' => $this->user1->id(),
-      'client' => $this->client,
-      'value' => 'test_revoked_token_' . $this->randomMachineName(),
-      'scopes' => [],
-      'expire' => time() + 3600,
-      'status' => TRUE,
-    ]);
-    $this->revokedToken->save();
-    $this->revokedToken->revoke();
-    $this->revokedToken->save();
+    $this->user1AuthToken = $this->obtainTokensForUser($this->user1)['access_token'];
+    $this->user2AuthToken = $this->obtainTokensForUser($this->user2)['access_token'];
+  }
 
-    // Create refresh token for user1.
-    $this->refreshToken = Oauth2Token::create([
-      'bundle' => 'refresh_token',
-      'auth_user_id' => $this->user1->id(),
-      'client' => $this->client,
-      'value' => 'test_refresh_token_' . $this->randomMachineName(),
-      'scopes' => [],
-      'expire' => time() + 7200,
-      'status' => TRUE,
+  /**
+   * Preserves issued client identity for registered and existing consumers.
+   */
+  public function testIssuedClientIdentity(): void {
+    $response = $this->httpClient->request('POST', $this->buildUrl('/oauth/register'), [
+      'json' => [
+        'client_name' => 'Registered identity client',
+        'redirect_uris' => [$this->redirectUri],
+        'grant_types' => ['authorization_code', 'refresh_token'],
+      ],
     ]);
-    $this->refreshToken->save();
+    $this->assertSame(201, $response->getStatusCode());
+    $registration = Json::decode((string) $response->getBody());
+    $storage = $this->container->get('entity_type.manager')->getStorage('consumer');
+    $matches = $storage->loadByProperties(['client_id' => $registration['client_id']]);
+    $registered = reset($matches);
+    $this->assertInstanceOf(Consumer::class, $registered);
+    $this->assertSame($registration['client_id'], $registered->getClientId());
+    $this->assertNotSame($registered->uuid(), $registered->getClientId());
+    $registered->set('scopes', $this->client->get('scopes')->getValue())->save();
 
-    // Obtain real JWT access tokens for authenticating introspection
-    // requests. These must be valid JWTs issued by the OAuth server,
-    // not manually created.
-    $this->user1AuthToken = $this->obtainAccessTokenForUser($this->user1);
-    $this->user2AuthToken = $this->obtainAccessTokenForUser($this->user2);
+    // Keep the existing-consumer path alongside actual dynamic registration.
+    $existing = $this->client;
+    $existing_secret = $this->clientSecret;
+    foreach ([[$existing, $existing_secret], [$registered, $registration['client_secret']]] as [$client, $secret]) {
+      $this->client = $client;
+      $this->clientSecret = $secret;
+      $tokens = $this->obtainTokensForUser($this->user1);
+      $claims = Json::decode(base64_decode(strtr(explode('.', $tokens['access_token'])[1], '-_', '+/')));
+      $this->assertSame($client->getClientId(), $claims['aud']);
+      foreach (['access_token', 'refresh_token'] as $type) {
+        $response = $this->postIntrospectionRequest([
+          'token' => $tokens[$type],
+          'token_type_hint' => $type,
+        ], ['Authorization' => 'Bearer ' . $this->user1AuthToken]);
+        $this->assertSame(200, $response->getStatusCode());
+        $metadata = Json::decode((string) $response->getBody());
+        $this->assertTrue($metadata['active']);
+        $this->assertSame($client->getClientId(), $metadata['client_id']);
+        $this->assertSame($client->getClientId(), $metadata['aud']);
+        $this->assertSame($this->user1->uuid(), $metadata['sub']);
+
+        $response = $this->postIntrospectionRequest([
+          'token' => $tokens[$type],
+        ], ['Authorization' => 'Bearer ' . $this->user2AuthToken]);
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame(['active' => FALSE], Json::decode((string) $response->getBody()));
+
+        $response = $this->postIntrospectionRequest(['token' => $tokens[$type]]);
+        $this->assertSame(401, $response->getStatusCode());
+        $this->assertSame('invalid_client', Json::decode((string) $response->getBody())['error']);
+      }
+    }
   }
 
   /**
@@ -202,7 +240,8 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
 
     // Phase 7: Security Tests.
     $this->doSecurityTests();
-    $this->assertTrue(TRUE, 'All token introspection test scenarios completed successfully');
+    $this->doRevocationLifecycle();
+    $this->doGlobalPkceEnforcement();
   }
 
   /**
@@ -220,7 +259,7 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
 
     // Test 1: Valid Bearer token allows introspection.
     $response = $this->postIntrospectionRequest(
-      ['token' => $this->validToken->get('value')->value],
+      ['token' => $this->validToken],
       ['Authorization' => 'Bearer ' . $this->user1AuthToken]
     );
     if ($response->getStatusCode() !== 200) {
@@ -238,14 +277,14 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
 
     // Test 2: Missing Bearer token returns 401.
     $response = $this->postIntrospectionRequest(
-      ['token' => $this->validToken->get('value')->value],
+      ['token' => $this->validToken],
       []
     );
     $this->assertEquals(401, $response->getStatusCode(), 'Missing Bearer token should return 401 Unauthorized');
 
     // Test 3: Invalid Bearer token returns 401.
     $response = $this->postIntrospectionRequest(
-      ['token' => $this->validToken->get('value')->value],
+      ['token' => $this->validToken],
       ['Authorization' => 'Bearer invalid_token_value']
     );
     $this->assertEquals(401, $response->getStatusCode(), 'Invalid Bearer token should return 401 Unauthorized');
@@ -262,20 +301,20 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
   private function doAuthorizationTests(): void {
     // Test 1: User1 introspects their own token - should succeed.
     $response = $this->postIntrospectionRequest(
-      ['token' => $this->validToken->get('value')->value],
+      ['token' => $this->validToken],
       ['Authorization' => 'Bearer ' . $this->user1AuthToken]
     );
-    $json = Json::decode($response->getBody());
+    $json = Json::decode((string) $response->getBody());
     $this->assertTrue($json['active'], 'Token owner can introspect their own token');
     $this->assertArrayHasKey('scope', $json, 'Active token response includes scope field');
 
     // Test 2: User2 introspects user1's token - should fail (return active:
     // false).
     $response = $this->postIntrospectionRequest(
-      ['token' => $this->validToken->get('value')->value],
+      ['token' => $this->validToken],
       ['Authorization' => 'Bearer ' . $this->user2AuthToken]
     );
-    $json = Json::decode($response->getBody());
+    $json = Json::decode((string) $response->getBody());
     $this->assertFalse($json['active'], 'User cannot introspect other users\' tokens');
     $this->assertCount(1, $json, 'Unauthorized response only contains active field');
   }
@@ -292,10 +331,10 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
   private function doTokenValidationTests(): void {
     // Test 1: Active valid token returns active: true with metadata.
     $response = $this->postIntrospectionRequest(
-      ['token' => $this->validToken->get('value')->value],
+      ['token' => $this->validToken],
       ['Authorization' => 'Bearer ' . $this->user1AuthToken]
     );
-    $json = Json::decode($response->getBody());
+    $json = Json::decode((string) $response->getBody());
     $this->assertTrue($json['active'], 'Active valid token returns active: true');
     $this->assertArrayHasKey('client_id', $json, 'Active token response includes client_id');
     $this->assertArrayHasKey('username', $json, 'Active token response includes username');
@@ -303,19 +342,19 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
 
     // Test 2: Expired token returns active: false.
     $response = $this->postIntrospectionRequest(
-      ['token' => $this->expiredToken->get('value')->value],
+      ['token' => $this->expiredToken],
       ['Authorization' => 'Bearer ' . $this->user1AuthToken]
     );
-    $json = Json::decode($response->getBody());
+    $json = Json::decode((string) $response->getBody());
     $this->assertFalse($json['active'], 'Expired token returns active: false');
     $this->assertCount(1, $json, 'Inactive token response only contains active field');
 
     // Test 3: Revoked token returns active: false.
     $response = $this->postIntrospectionRequest(
-      ['token' => $this->revokedToken->get('value')->value],
+      ['token' => $this->revokedToken],
       ['Authorization' => 'Bearer ' . $this->user1AuthToken]
     );
-    $json = Json::decode($response->getBody());
+    $json = Json::decode((string) $response->getBody());
     $this->assertFalse($json['active'], 'Revoked token returns active: false');
 
     // Test 4: Non-existent token returns active: false.
@@ -323,7 +362,7 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
       ['token' => 'nonexistent_token_value'],
       ['Authorization' => 'Bearer ' . $this->user1AuthToken]
     );
-    $json = Json::decode($response->getBody());
+    $json = Json::decode((string) $response->getBody());
     $this->assertFalse($json['active'], 'Non-existent token returns active: false');
   }
 
@@ -342,40 +381,40 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
       ['Authorization' => 'Bearer ' . $this->user1AuthToken]
     );
     $this->assertEquals(400, $response->getStatusCode(), 'Missing token parameter returns 400 Bad Request');
-    $json = Json::decode($response->getBody());
+    $json = Json::decode((string) $response->getBody());
     $this->assertEquals('invalid_request', $json['error'], 'Error response includes error code');
     $this->assertArrayHasKey('error_description', $json, 'Error response includes description');
 
     // Test 2: token_type_hint parameter is accepted (access_token).
     $response = $this->postIntrospectionRequest(
       [
-        'token' => $this->validToken->get('value')->value,
+        'token' => $this->validToken,
         'token_type_hint' => 'access_token',
       ],
       ['Authorization' => 'Bearer ' . $this->user1AuthToken]
     );
     $this->assertEquals(200, $response->getStatusCode(), 'token_type_hint=access_token is accepted');
-    $json = Json::decode($response->getBody());
+    $json = Json::decode((string) $response->getBody());
     $this->assertTrue($json['active'], 'Token with access_token hint returns active: true');
 
     // Test 3: token_type_hint parameter is accepted (refresh_token).
     $response = $this->postIntrospectionRequest(
       [
-        'token' => $this->refreshToken->get('value')->value,
+        'token' => $this->refreshToken,
         'token_type_hint' => 'refresh_token',
       ],
       ['Authorization' => 'Bearer ' . $this->user1AuthToken]
     );
     $this->assertEquals(200, $response->getStatusCode(), 'token_type_hint=refresh_token is accepted');
-    $json = Json::decode($response->getBody());
+    $json = Json::decode((string) $response->getBody());
     $this->assertTrue($json['active'], 'Refresh token can be introspected');
 
     // Test 4: Refresh token can be introspected without hint.
     $response = $this->postIntrospectionRequest(
-      ['token' => $this->refreshToken->get('value')->value],
+      ['token' => $this->refreshToken],
       ['Authorization' => 'Bearer ' . $this->user1AuthToken]
     );
-    $json = Json::decode($response->getBody());
+    $json = Json::decode((string) $response->getBody());
     $this->assertTrue($json['active'], 'Refresh token can be introspected without hint');
   }
 
@@ -391,10 +430,10 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
   private function doResponseFormatTests(): void {
     // Test 1: Active token includes all expected fields.
     $response = $this->postIntrospectionRequest(
-      ['token' => $this->validToken->get('value')->value],
+      ['token' => $this->validToken],
       ['Authorization' => 'Bearer ' . $this->user1AuthToken]
     );
-    $json = Json::decode($response->getBody());
+    $json = Json::decode((string) $response->getBody());
 
     // Verify required field.
     $this->assertArrayHasKey('active', $json, 'Response includes required active field');
@@ -423,10 +462,10 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
 
     // Test 2: Inactive token response is minimal.
     $response = $this->postIntrospectionRequest(
-      ['token' => $this->expiredToken->get('value')->value],
+      ['token' => $this->expiredToken],
       ['Authorization' => 'Bearer ' . $this->user1AuthToken]
     );
-    $json = Json::decode($response->getBody());
+    $json = Json::decode((string) $response->getBody());
     $this->assertArrayHasKey('active', $json, 'Inactive response includes active field');
     $this->assertFalse($json['active'], 'Inactive response has active: false');
     $this->assertCount(1, $json, 'Inactive response only contains active field');
@@ -451,7 +490,7 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
     // Test 2: Endpoint is accessible at /oauth/introspect.
     // This is implicitly tested by all other tests, but verify explicitly.
     $response = $this->postIntrospectionRequest(
-      ['token' => $this->validToken->get('value')->value],
+      ['token' => $this->validToken],
       ['Authorization' => 'Bearer ' . $this->user1AuthToken]
     );
     $this->assertEquals(200, $response->getStatusCode(), 'Introspection endpoint is accessible at /oauth/introspect');
@@ -468,11 +507,11 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
   private function doSecurityTests(): void {
     // Test 1: Token values never appear in response JSON.
     $response = $this->postIntrospectionRequest(
-      ['token' => $this->validToken->get('value')->value],
+      ['token' => $this->validToken],
       ['Authorization' => 'Bearer ' . $this->user1AuthToken]
     );
     $body = (string) $response->getBody();
-    $tokenValue = $this->validToken->get('value')->value;
+    $tokenValue = $this->validToken;
     $this->assertStringNotContainsString($tokenValue, $body, 'Token value never appears in response');
 
     // Test 2: Non-existent token response identical to unauthorized token
@@ -482,7 +521,7 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
       ['Authorization' => 'Bearer ' . $this->user1AuthToken]
     );
     $unauthorizedResponse = $this->postIntrospectionRequest(
-      ['token' => $this->validToken->get('value')->value],
+      ['token' => $this->validToken],
       ['Authorization' => 'Bearer ' . $this->user2AuthToken]
     );
     $this->assertEquals(
@@ -502,7 +541,7 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
   }
 
   /**
-   * Obtains a valid JWT access token for a user via authorization code flow.
+   * Obtains issued access and refresh tokens via authorization code flow.
    *
    * Goes through the full OAuth authorization code flow to obtain a real JWT
    * token from the OAuth server. This ensures the token can be validated by
@@ -511,21 +550,32 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
    *
    * @param \Drupal\user\UserInterface $user
    *   The user to obtain a token for.
+   * @param string|null $token_verifier
+   *   An alternative token verifier for rejection scenarios.
+   * @param bool $allow_failure
+   *   Whether to return an expected failed exchange instead of throwing.
    *
-   * @return string
-   *   The JWT access token string.
+   * @return array
+   *   The issued access and refresh token response.
    *
    * @throws \Exception
    *   If token acquisition fails.
    */
-  private function obtainAccessTokenForUser($user): string {
-    // Log in the user.
+  private function obtainTokensForUser(UserInterface $user, ?string $token_verifier = NULL, bool $allow_failure = FALSE): array {
+    // Remove bearer headers and cookies without revoking existing tokens.
+    $this->getSession()->setRequestHeader('Authorization', '');
+    $this->getSession()->restart();
+    $this->loggedInUser = FALSE;
     $this->drupalLogin($user);
+
+    $verifier = str_repeat('x', 64);
 
     // Request authorization with the user logged in.
     $authorizeUrl = Url::fromRoute('oauth2_token.authorize');
     $queryParams = [
       'response_type' => 'code',
+      'code_challenge' => rtrim(strtr(base64_encode(hash('sha256', $verifier, TRUE)), '+/', '-_'), '='),
+      'code_challenge_method' => 'S256',
       'client_id' => $this->client->getClientId(),
       'scope' => $this->scope,
       'redirect_uri' => $this->redirectUri,
@@ -610,6 +660,7 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
     // Exchange authorization code for access token.
     $tokenPayload = [
       'grant_type' => 'authorization_code',
+      'code_verifier' => $token_verifier ?? $verifier,
       'client_id' => $this->client->getClientId(),
       'client_secret' => $this->clientSecret,
       'code' => $code,
@@ -618,7 +669,7 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
 
     $response = $this->post($this->url, $tokenPayload);
 
-    if ($response->getStatusCode() !== 200) {
+    if ($response->getStatusCode() !== 200 && !$allow_failure) {
       throw new \Exception(sprintf(
         'Failed to exchange code for access token for user %s. Status: %d, Body: %s',
         $user->getAccountName(),
@@ -629,10 +680,11 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
 
     $parsedResponse = Json::decode((string) $response->getBody());
 
-    // Log out the user to clean up for next token request.
-    $this->drupalLogout();
+    // Clear browser authentication without revoking the issued tokens.
+    $this->getSession()->restart();
+    $this->loggedInUser = FALSE;
 
-    return $parsedResponse['access_token'];
+    return $allow_failure ? $parsedResponse + ['_status' => $response->getStatusCode()] : $parsedResponse;
   }
 
   /**
@@ -655,6 +707,98 @@ final class TokenIntrospectionTest extends TokenBearerFunctionalTestBase {
     }
 
     return $this->post($url, $formData, $options);
+  }
+
+  /**
+   * Tests real issued tokens through ownership checks and token revocation.
+   */
+  private function doRevocationLifecycle(): void {
+    $other = Consumer::create([
+      'client_id' => 'revocation-other-client',
+      'label' => 'Other revocation client',
+      'secret' => 'other-client-secret',
+      'grant_types' => ['authorization_code', 'refresh_token'],
+    ]);
+    $other->save();
+    $headers = ['Authorization' => 'Bearer ' . $this->user1AuthToken];
+    foreach (['access_token', 'refresh_token'] as $type) {
+      $issued = $this->obtainTokensForUser($this->user1);
+      $value = $issued[$type];
+      $response = $this->postIntrospectionRequest(['token' => $value], $headers);
+      $this->assertTrue(Json::decode((string) $response->getBody())['active']);
+      $credentials = [
+        'client_id' => $this->client->getClientId(),
+        'client_secret' => $this->clientSecret,
+      ];
+      $endpoint = Url::fromRoute('simple_oauth_server_metadata.revoke');
+      $foreign = $this->post($endpoint, [
+        'token' => $value,
+        'client_id' => $other->getClientId(),
+        'client_secret' => 'other-client-secret',
+      ]);
+      $this->assertSame(200, $foreign->getStatusCode());
+      $response = $this->postIntrospectionRequest(['token' => $value], $headers);
+      $this->assertTrue(Json::decode((string) $response->getBody())['active']);
+      $tampered = ($value[0] === 'a' ? 'b' : 'a') . substr($value, 1);
+      $resolved = $this->container->get('simple_oauth_server_metadata.token_lookup')->resolveToken($value);
+      $this->assertNotNull($resolved);
+      $identifier = (string) $resolved['token']->get('value')->value;
+      foreach ([$tampered, 'unknown-token', $identifier] as $invalid) {
+        $response = $this->postIntrospectionRequest(['token' => $invalid], $headers);
+        $this->assertSame(['active' => FALSE], Json::decode((string) $response->getBody()));
+        $response = $this->post($endpoint, $credentials + ['token' => $invalid]);
+        $this->assertSame(200, $response->getStatusCode());
+      }
+      $response = $this->post($endpoint, $credentials + ['token' => $value, 'token_type_hint' => $type]);
+      $this->assertSame(200, $response->getStatusCode());
+      $this->assertSame('', (string) $response->getBody());
+      $response = $this->postIntrospectionRequest(['token' => $value], $headers);
+      $this->assertSame(['active' => FALSE], Json::decode((string) $response->getBody()));
+      if ($type === 'access_token') {
+        $this->assertAccessTokenOnResource($value, 401);
+      }
+      else {
+        $response = $this->post($this->url, $credentials + ['grant_type' => 'refresh_token', 'refresh_token' => $value]);
+        $this->assertSame(400, $response->getStatusCode());
+        $this->assertSame('invalid_grant', Json::decode((string) $response->getBody())['error']);
+      }
+    }
+  }
+
+  /**
+   * Tests mandatory PKCE for both client types and real verifier matching.
+   */
+  private function doGlobalPkceEnforcement(): void {
+    $this->drupalLogin($this->user1);
+    foreach ([TRUE, FALSE] as $confidential) {
+      $this->client->set('confidential', $confidential)->set('pkce', FALSE)->save();
+      $this->drupalGet(Url::fromRoute('oauth2_token.authorize'), [
+        'query' => [
+          'response_type' => 'code',
+          'client_id' => $this->client->getClientId(),
+          'redirect_uri' => $this->redirectUri,
+        ],
+      ]);
+      $this->assertSession()->statusCodeEquals(400);
+      $this->assertSame('invalid_request', Json::decode($this->getSession()->getPage()->getContent())['error']);
+      $response = $this->post($this->url, [
+        'grant_type' => 'authorization_code',
+        'client_id' => $this->client->getClientId(),
+        'client_secret' => $this->clientSecret,
+        'code' => 'missing-verifier-code',
+      ]);
+      $this->assertSame(400, $response->getStatusCode());
+      $this->assertSame('invalid_request', Json::decode((string) $response->getBody())['error']);
+    }
+    $this->client->set('confidential', TRUE)->save();
+    $this->getSession()->restart();
+    $this->loggedInUser = FALSE;
+    foreach (['mandatory', 'optional', 'disabled'] as $enforcement) {
+      $this->config('simple_oauth_pkce.settings')->set('enforcement', $enforcement)->save();
+      $failed = $this->obtainTokensForUser($this->user1, str_repeat('z', 64), TRUE);
+      $this->assertSame(400, $failed['_status']);
+      $this->assertSame('invalid_grant', $failed['error']);
+    }
   }
 
 }

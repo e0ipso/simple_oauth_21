@@ -2,3 +2,9 @@ services:
   simple_oauth_pkce.settings:
     class: Drupal\simple_oauth_pkce\Service\PkceSettingsService
     arguments: ['@config.factory']
+
+  simple_oauth_pkce.policy_subscriber:
+    class: Drupal\simple_oauth_pkce\EventSubscriber\PkcePolicySubscriber
+    arguments: ['@simple_oauth_pkce.settings']
+    tags:
+      - { name: event_subscriber }

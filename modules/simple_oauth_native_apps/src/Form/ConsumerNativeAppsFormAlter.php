@@ -1,11 +1,16 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_native_apps\Form;
 
+use Drupal\consumers\Entity\ConsumerInterface;
 use Drupal\Core\Ajax\AjaxResponse;
-use Drupal\Core\Ajax\ReplaceCommand;
+use Drupal\Core\Ajax\HtmlCommand;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\DependencyInjection\DependencySerializationTrait;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\EntityFormInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\simple_oauth_native_apps\Service\ConfigurationValidator;
@@ -14,7 +19,8 @@ use Drupal\simple_oauth_native_apps\Service\NativeClientDetector;
 /**
  * Alters consumer forms to include native app settings.
  */
-class ConsumerNativeAppsFormAlter {
+final class ConsumerNativeAppsFormAlter {
+  use DependencySerializationTrait;
   use StringTranslationTrait;
 
   /**
@@ -85,8 +91,14 @@ class ConsumerNativeAppsFormAlter {
       return;
     }
 
-    /** @var \Drupal\consumers\Entity\ConsumerInterface $consumer */
-    $consumer = $form_state->getFormObject()->getEntity();
+    $form_object = $form_state->getFormObject();
+    if (!$form_object instanceof EntityFormInterface) {
+      return;
+    }
+    $consumer = $form_object->getEntity();
+    if (!$consumer instanceof ConsumerInterface) {
+      return;
+    }
 
     // Modify the confidential field description to warn about auto-detection.
     if (isset($form['confidential'])) {
@@ -106,7 +118,7 @@ class ConsumerNativeAppsFormAlter {
 
     // Get current consumer-specific settings if they exist.
     $consumer_id = $consumer->id();
-    $consumer_config = $consumer_id ? $this->getConsumerNativeAppsSettings($consumer_id) : [];
+    $consumer_config = $consumer_id ? $this->getConsumerNativeAppsSettings((string) $consumer_id) : [];
 
     $form['native_apps'] = [
       '#type' => 'details',
@@ -195,7 +207,7 @@ class ConsumerNativeAppsFormAlter {
       '#type' => 'button',
       '#value' => $this->t('Detect Client Type'),
       '#ajax' => [
-        'callback' => '::detectClientTypeAjax',
+        'callback' => [$this, 'detectClientTypeAjax'],
         'wrapper' => 'client-detection-results',
         'event' => 'click',
       ],
@@ -243,12 +255,18 @@ class ConsumerNativeAppsFormAlter {
    */
   public function validateConsumerNativeAppsSettings(array $form, FormStateInterface $form_state): void {
     $values = $form_state->getValue('native_apps', []);
+    $values += array_fill_keys([
+      'webview_detection_override',
+      'allow_custom_schemes_override',
+      'allow_loopback_override',
+      'enhanced_pkce_override',
+    ], '');
 
     // Build configuration in nested structure directly for validation.
     $validator_config = [];
 
     // Only include non-empty overrides in nested structure.
-    if (!empty($values['webview_detection_override'])) {
+    if ($values['webview_detection_override'] !== '') {
       $validator_config['webview']['detection'] = $values['webview_detection_override'];
     }
 
@@ -264,9 +282,11 @@ class ConsumerNativeAppsFormAlter {
       $validator_config['native']['enhanced_pkce'] = $values['enhanced_pkce_override'];
     }
 
-    // Validate directly if we have any overrides.
+    // Validate overrides in their inherited global configuration context.
     if (!empty($validator_config)) {
-      $errors = $this->configurationValidator->validateConfiguration($validator_config);
+      $global_config = $this->configFactory->get('simple_oauth_native_apps.settings');
+      $effective_config = array_replace_recursive($global_config->get(), $validator_config);
+      $errors = $this->configurationValidator->validateConfiguration($effective_config);
       foreach ($errors as $error) {
         $form_state->setErrorByName('native_apps', $error);
       }
@@ -282,14 +302,20 @@ class ConsumerNativeAppsFormAlter {
    *   The form state.
    */
   public function submitConsumerNativeAppsSettings(array $form, FormStateInterface $form_state): void {
-    /** @var \Drupal\consumers\Entity\ConsumerInterface $consumer */
-    $consumer = $form_state->getFormObject()->getEntity();
+    $form_object = $form_state->getFormObject();
+    if (!$form_object instanceof EntityFormInterface) {
+      return;
+    }
+    $consumer = $form_object->getEntity();
+    if (!$consumer instanceof ConsumerInterface) {
+      return;
+    }
     $values = $form_state->getValue('native_apps', []);
 
     // Save consumer-specific settings only if the consumer has an ID.
     $consumer_id = $consumer->id();
     if ($consumer_id) {
-      $this->saveConsumerNativeAppsSettings($consumer_id, $values);
+      $this->saveConsumerNativeAppsSettings((string) $consumer_id, $values);
     }
   }
 
@@ -344,7 +370,7 @@ class ConsumerNativeAppsFormAlter {
    */
   protected function getWebViewDetectionLabel(?string $setting): string {
     if ($setting === NULL) {
-      return $this->t('Not configured');
+      return (string) $this->t('Not configured');
     }
 
     $labels = [
@@ -353,7 +379,7 @@ class ConsumerNativeAppsFormAlter {
       'block' => $this->t('Block'),
     ];
 
-    return $labels[$setting] ?? $this->t('Unknown');
+    return (string) ($labels[$setting] ?? $this->t('Unknown'));
   }
 
   /**
@@ -367,12 +393,12 @@ class ConsumerNativeAppsFormAlter {
    */
   protected function getReadableValue($value): string {
     if ($value === NULL || $value === '') {
-      return $this->t('Not configured');
+      return (string) $this->t('Not configured');
     }
 
     // Handle boolean values (legacy support)
     if (is_bool($value)) {
-      return $value ? $this->t('Enabled') : $this->t('Disabled');
+      return (string) ($value ? $this->t('Enabled') : $this->t('Disabled'));
     }
 
     // Handle string enum values.
@@ -387,7 +413,7 @@ class ConsumerNativeAppsFormAlter {
       'block' => $this->t('Block'),
     ];
 
-    return $labels[$value] ?? $this->t('Unknown (@value)', ['@value' => $value]);
+    return (string) ($labels[$value] ?? $this->t('Unknown (@value)', ['@value' => $value]));
   }
 
   /**
@@ -417,7 +443,7 @@ class ConsumerNativeAppsFormAlter {
       $markup = $this->renderDetectionResult($detection_result, $redirect_uris);
     }
 
-    $response->addCommand(new ReplaceCommand('#client-detection-results', $markup));
+    $response->addCommand(new HtmlCommand('#client-detection-results', $markup));
 
     return $response;
   }

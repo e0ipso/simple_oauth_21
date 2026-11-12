@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches: [main, '*.x']
-  pull_request:
+  pull_request: {}
   schedule:
     - cron: '0 6 * * *'
 
@@ -108,6 +108,11 @@ jobs:
         working-directory: ${{ env.DRUPAL_ROOT }}/${{ env.MODULE_PATH }}
         run: |
           composer config --no-plugins allow-plugins.phpstan/extension-installer true
+          composer config vendor-dir "${{ github.workspace }}/module-vendor"
+          composer config repositories.drupal composer https://packages.drupal.org/8
+          # The parent project owns Drupal scaffold and runtime files.
+          composer config --no-plugins allow-plugins.drupal/core-composer-scaffold false
+          composer config --no-plugins allow-plugins.symfony/runtime false
           composer --no-interaction --no-progress install
 
           npm install --include=dev
@@ -115,7 +120,8 @@ jobs:
       - name: Run PHPCS
         working-directory: ${{ env.DRUPAL_ROOT }}/${{ env.MODULE_PATH }}
         run: |
-          composer run-script lint:check
+          composer run-script syntax:check
+          php "${{ github.workspace }}/module-vendor/bin/phpcs" --ignore=vendor/*,node_modules/* --standard=Drupal,DrupalPractice --extensions=php,module/php,install/php,inc/php,yml .
 
       - name: Run PHPStan
         working-directory: ${{ env.DRUPAL_ROOT }}
@@ -199,9 +205,9 @@ jobs:
           echo "ChromeDriver is ready!"
 
       - name: Start web server for functional tests
-        working-directory: ${{ env.DRUPAL_ROOT }}
+        working-directory: ${{ env.DRUPAL_ROOT }}/web
         run: |
-          php -S 127.0.0.1:8080 -t web "${{ github.workspace }}/${{ env.DRUPAL_ROOT }}/web/.ht.router.php" > /dev/null 2>&1 &
+          php -S 127.0.0.1:8080 .ht.router.php > /dev/null 2>&1 &
           sleep 2
 
       - name: Run Unit tests
@@ -333,12 +339,12 @@ jobs:
           if-no-files-found: ignore
 
       - name: Install Playwright Browsers
-        if: matrix.drupal-core == '11'
+        if: matrix.drupal-core == '11-dev'
         working-directory: ${{ env.DRUPAL_ROOT }}/${{ env.MODULE_PATH }}
         run: npx playwright install chromium
 
       - name: Verify Drupal Installation
-        if: matrix.drupal-core == '11'
+        if: matrix.drupal-core == '11-dev'
         working-directory: ${{ env.DRUPAL_ROOT }}
         run: |
           echo "=== Verifying Drupal installation ==="
@@ -360,7 +366,7 @@ jobs:
           fi
 
       - name: Run Playwright E2E Tests
-        if: matrix.drupal-core == '11'
+        if: matrix.drupal-core == '11-dev'
         working-directory: ${{ env.DRUPAL_ROOT }}/${{ env.MODULE_PATH }}
         run: |
           npx playwright test tests/e2e/tests/
@@ -370,7 +376,7 @@ jobs:
 
       - name: Upload Playwright Report
         uses: actions/upload-artifact@v4
-        if: always() && matrix.drupal-core == '11'
+        if: always() && matrix.drupal-core == '11-dev'
         with:
           name: playwright-report-drupal-${{ matrix.drupal-core }}-php-${{ matrix.php-version }}
           path: ${{ env.DRUPAL_ROOT }}/${{ env.MODULE_PATH }}/playwright-report/
@@ -378,7 +384,7 @@ jobs:
 
       - name: Upload Playwright Test Results
         uses: actions/upload-artifact@v4
-        if: always() && matrix.drupal-core == '11'
+        if: always() && matrix.drupal-core == '11-dev'
         with:
           name: playwright-test-results-drupal-${{ matrix.drupal-core }}-php-${{ matrix.php-version }}
           path: ${{ env.DRUPAL_ROOT }}/${{ env.MODULE_PATH }}/test-results/
@@ -386,7 +392,7 @@ jobs:
 
       - name: Upload Playwright Screenshots
         uses: actions/upload-artifact@v4
-        if: failure() && matrix.drupal-core == '11'
+        if: failure() && matrix.drupal-core == '11-dev'
         with:
           name: playwright-screenshots-drupal-${{ matrix.drupal-core }}-php-${{ matrix.php-version }}
           path: ${{ env.DRUPAL_ROOT }}/${{ env.MODULE_PATH }}/test-results/**/*.png

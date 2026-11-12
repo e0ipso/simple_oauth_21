@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_native_apps\Service;
 
 use Drupal\consumers\Entity\Consumer;
@@ -13,7 +15,7 @@ use Psr\Log\LoggerInterface;
  * Implements RFC 8252 enhanced PKCE requirements including mandatory S256
  * method, entropy validation, and native client specific security checks.
  */
-class PKCEEnhancementService {
+final class PKCEEnhancementService {
 
   /**
    * Minimum entropy bits for code verifiers.
@@ -134,13 +136,14 @@ class PKCEEnhancementService {
   public function requiresS256Method(Consumer $client): bool {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
-    // Check global enforcement setting.
-    if (!$config->get('native.enhanced_pkce')) {
-      return FALSE;
+    $enforced_method = $config->get('native.enforce') ?? 'S256';
+    if (!in_array($enforced_method, ['off', 'S256', 'plain'], TRUE)) {
+      $enforced_method = 'S256';
     }
 
-    // Native clients require S256.
-    return $this->nativeClientDetector->isNativeClient($client);
+    return $enforced_method === 'S256'
+      && $this->nativeClientDetector->requiresEnhancedPkce($client)
+      && $this->nativeClientDetector->isNativeClient($client);
   }
 
   /**
@@ -211,7 +214,7 @@ class PKCEEnhancementService {
     }
 
     // Native clients must use S256 if enforcement is enabled.
-    $enforced_method = $config->get('native.enforce', 'off');
+    $enforced_method = $config->get('native.enforce') ?? 'off';
 
     // Defensive programming: validate config value before use.
     if (empty($enforced_method) || !in_array($enforced_method, ['off', 'S256', 'plain'], TRUE)) {
@@ -489,17 +492,22 @@ class PKCEEnhancementService {
   }
 
   /**
-   * Gets service configuration.
+   * Gets service configuration, resolving enhanced PKCE for a supplied client.
+   *
+   * @param \Drupal\consumers\Entity\Consumer|null $client
+   *   Optional consumer context for inherited enhanced PKCE policy.
    *
    * @return array
    *   Current service configuration.
    */
-  public function getConfiguration(): array {
+  public function getConfiguration(?Consumer $client = NULL): array {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
     return [
-      'enhanced_pkce_enabled' => (bool) ($config->get('native.enhanced_pkce') ?? TRUE),
-      'enforce_method' => $config->get('native.enforce', 'off'),
+      'enhanced_pkce_enabled' => $client !== NULL
+        ? $this->nativeClientDetector->requiresEnhancedPkce($client)
+        : ($config->get('native.enhanced_pkce') ?? 'auto-detect') !== 'not-enhanced',
+      'enforce_method' => $config->get('native.enforce') ?? 'S256',
       'minimum_entropy_bits' => self::MINIMUM_ENTROPY_BITS,
       'log_validations' => FALSE,
     ];

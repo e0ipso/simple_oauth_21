@@ -1,19 +1,21 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_native_apps\Service;
 
 use Drupal\Core\Cache\CacheableDependencyInterface;
 use Drupal\Core\Cache\CacheableDependencyTrait;
 use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Routing\UrlGeneratorInterface;
 
 /**
- * Service for providing native app OAuth metadata.
+ * Service for describing global native app OAuth capabilities.
  *
  * Implements RFC 8414 OAuth 2.0 Authorization Server Metadata with
- * RFC 8252 native app specific enhancements.
+ * RFC 8252 native app specific enhancements. These service outputs do not
+ * register or extend an HTTP discovery endpoint.
  */
-class MetadataProvider implements CacheableDependencyInterface {
+final class MetadataProvider implements CacheableDependencyInterface {
 
   use CacheableDependencyTrait;
 
@@ -22,12 +24,9 @@ class MetadataProvider implements CacheableDependencyInterface {
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The config factory.
-   * @param \Drupal\Core\Routing\UrlGeneratorInterface $urlGenerator
-   *   The URL generator.
    */
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
-    private readonly UrlGeneratorInterface $urlGenerator,
   ) {
     $this->cacheTags = [
       'config:simple_oauth_native_apps.settings',
@@ -101,12 +100,16 @@ class MetadataProvider implements CacheableDependencyInterface {
 
     $metadata['code_challenge_methods_supported'] = $pkce_methods;
 
-    // Enhanced PKCE for native apps.
-    if ($config->get('enforce_native_security')) {
-      $metadata['native_apps_pkce_required'] = TRUE;
-      $metadata['pkce_required'] = TRUE;
-      $metadata['pkce_s256_enforced'] = TRUE;
+    // Auto-detect enables enhanced PKCE for native clients.
+    $enhanced_pkce = (bool) $config->get('enforce_native_security')
+      && ($config->get('native.enhanced_pkce') ?? 'auto-detect') !== 'not-enhanced';
+    $enforced_method = $config->get('native.enforce') ?? 'S256';
+    if (!in_array($enforced_method, ['off', 'S256', 'plain'], TRUE)) {
+      $enforced_method = 'S256';
     }
+    $metadata['native_apps_pkce_required'] = $enhanced_pkce;
+    $metadata['pkce_required'] = $enhanced_pkce;
+    $metadata['pkce_s256_enforced'] = $enhanced_pkce && $enforced_method === 'S256';
   }
 
   /**
@@ -119,16 +122,16 @@ class MetadataProvider implements CacheableDependencyInterface {
    */
   protected function addNativeAppCapabilities(array &$metadata, $config): void {
     // Native app support advertisement - only if native security is enabled.
-    $metadata['native_apps_supported'] = (bool) $config->get('enforce_native_security', FALSE);
+    $metadata['native_apps_supported'] = (bool) ($config->get('enforce_native_security') ?? FALSE);
 
     // WebView detection capability - based on detection mode.
-    $detection_mode = $config->get('webview.detection', 'warn');
+    $detection_mode = $config->get('webview.detection') ?? 'warn';
     $metadata['webview_detection_supported'] = $detection_mode !== 'off';
     $metadata['webview_detection_policy'] = $detection_mode;
 
     // Client type detection - only if native security is enabled.
-    $metadata['automatic_client_detection'] = (bool) $config->get('enforce_native_security', FALSE);
-    $metadata['client_type_override_supported'] = (bool) $config->get('enforce_native_security', FALSE);
+    $metadata['automatic_client_detection'] = (bool) ($config->get('enforce_native_security') ?? FALSE);
+    $metadata['client_type_override_supported'] = (bool) ($config->get('enforce_native_security') ?? FALSE);
 
     // Security enhancements.
     if ($config->get('enforce_native_security')) {
@@ -147,18 +150,16 @@ class MetadataProvider implements CacheableDependencyInterface {
    */
   protected function addRedirectUriSupport(array &$metadata, $config): void {
     // Custom URI schemes support.
-    $metadata['custom_uri_schemes_supported'] = (bool) $config->get('allow.custom_uri_schemes');
+    $metadata['custom_uri_schemes_supported'] = ($config->get('allow.custom_uri_schemes') ?? 'auto-detect') !== 'web';
 
     // Loopback interface support (RFC 8252)
-    $metadata['loopback_redirects_supported'] = (bool) $config->get('allow.loopback_redirects');
+    $metadata['loopback_redirects_supported'] = ($config->get('allow.loopback_redirects') ?? 'auto-detect') !== 'web';
 
     // Terminal applications support.
-    $metadata['terminal_applications_supported'] = (bool) $config->get('allow.loopback_redirects');
+    $metadata['terminal_applications_supported'] = ($config->get('allow.loopback_redirects') ?? 'auto-detect') !== 'web';
 
     // Private-use URI scheme registration.
-    if ($config->get('allow.custom_uri_schemes')) {
-      $metadata['private_use_uri_schemes_allowed'] = TRUE;
-    }
+    $metadata['private_use_uri_schemes_allowed'] = $metadata['custom_uri_schemes_supported'];
   }
 
 }

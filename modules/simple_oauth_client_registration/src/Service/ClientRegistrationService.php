@@ -8,13 +8,17 @@ use Drupal\consumers\Entity\Consumer;
 use Drupal\consumers\Entity\ConsumerInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Drupal\Component\Uuid\UuidInterface;
 use Drupal\Component\Utility\Crypt;
 use Drupal\Core\Url;
+use Drupal\file\FileInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Service for managing OAuth 2.0 client registration.
@@ -37,7 +41,6 @@ final class ClientRegistrationService {
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly ConfigFactoryInterface $configFactory,
     private readonly LoggerInterface $logger,
-    private readonly UuidInterface $uuid,
     private readonly RegistrationTokenService $tokenService,
     private readonly FileUrlGeneratorInterface $fileUrlGenerator,
   ) {}
@@ -55,14 +58,7 @@ final class ClientRegistrationService {
    *   When client data contains invalid values.
    */
   public function createConsumer(ClientRegistration $clientData): ConsumerInterface {
-    // Validate redirect URIs.
-    if (!empty($clientData->redirectUris)) {
-      foreach ($clientData->redirectUris as $uri) {
-        if (!$this->isValidRedirectUri($uri)) {
-          throw new \InvalidArgumentException("Invalid redirect URI: $uri");
-        }
-      }
-    }
+    $clientData->validateRedirectUris();
 
     // Generate unique client ID.
     $client_id = $this->generateClientId();
@@ -136,8 +132,8 @@ final class ClientRegistrationService {
    */
   public function registerClient(ClientRegistration $registrationData): array {
     try {
-      $this->logger->info('Client registration request received with data: @data', [
-        '@data' => json_encode($registrationData->toArray()),
+      $this->logger->info('Client registration request received with @redirect_count redirect URIs', [
+        '@redirect_count' => count($registrationData->redirectUris),
       ]);
 
       // Create the Consumer entity using the proven creation pattern.
@@ -179,8 +175,8 @@ final class ClientRegistrationService {
       return $response;
     }
     catch (\Exception $e) {
-      $this->logger->error('Client registration failed: @message', [
-        '@message' => $e->getMessage(),
+      $this->logger->error('Client registration failed: @exception_type', [
+        '@exception_type' => get_class($e),
       ]);
       throw $e;
     }
@@ -201,6 +197,122 @@ final class ClientRegistrationService {
   }
 
   /**
+   * Replaces the secret of a confidential client.
+   *
+   * Callers must authenticate the client's registration access token first.
+   * The password field hashes the replacement during transactional entity save.
+   *
+   * @param string $client_id
+   *   The authenticated client identifier.
+   *
+   * @return array
+   *   Client metadata and the replacement secret, for this response only.
+   *
+   * @throws \Symfony\Component\HttpKernel\Exception\BadRequestHttpException
+   *   If the client does not use a secret.
+   * @throws \Drupal\Core\Entity\EntityStorageException
+   *   If saving the replacement fails.
+   */
+  public function rotateClientSecret(string $client_id): array {
+    // Keep cached metadata and credentials intact if persistence fails.
+    $consumer = clone $this->loadConsumer($client_id);
+    if (!(bool) $consumer->get('confidential')->value) {
+      throw new BadRequestHttpException('Public clients do not have a client secret');
+    }
+
+    // Resolve metadata before saving so response preparation cannot fail later.
+    $response = $this->getClientMetadataArray($consumer);
+    $secret = $this->generateClientSecret();
+    $consumer->set('secret', $secret);
+    try {
+      $consumer->save();
+    }
+    catch (\Throwable $e) {
+      $this->entityTypeManager->getStorage('consumer')->resetCache([$consumer->id()]);
+      throw $e;
+    }
+
+    return $response + [
+      'client_secret' => $secret,
+      'client_secret_expires_at' => 0,
+    ];
+  }
+
+  /**
+   * Applies administrative updates or deletions with an outcome for each item.
+   *
+   * @param array $items
+   *   A list of items with client_id, operation (update/delete), and metadata
+   *   for updates. Metadata follows the single-client management contract.
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The administrator performing the operations.
+   * @param \Symfony\Component\Serializer\Normalizer\DenormalizerInterface $normalizer
+   *   The shared client metadata denormalizer.
+   *
+   * @return array
+   *   Ordered per-item results containing only success or a safe error code.
+   *
+   * @throws \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException
+   *   If the account lacks the existing OAuth administrative permission.
+   * @throws \InvalidArgumentException
+   *   If the batch is not a list of between one and 100 items.
+   */
+  public function manageClients(array $items, AccountInterface $account, DenormalizerInterface $normalizer): array {
+    if (!$account->hasPermission('administer simple_oauth entities')) {
+      throw new AccessDeniedHttpException();
+    }
+    if (!array_is_list($items) || count($items) < 1 || count($items) > 100) {
+      throw new \InvalidArgumentException('Provide between one and 100 client operations');
+    }
+
+    $results = [];
+    foreach ($items as $item) {
+      try {
+        if (!is_array($item) || !isset($item['client_id'], $item['operation']) ||
+          !is_string($item['client_id']) || $item['client_id'] === '' ||
+          !in_array($item['operation'], ['update', 'delete'], TRUE)) {
+          throw new BadRequestHttpException('Invalid operation');
+        }
+        $client_id = $item['client_id'];
+        $consumer = $this->loadConsumer($client_id);
+        if (!$consumer->access($item['operation'], $account)) {
+          throw new AccessDeniedHttpException();
+        }
+        if (!$this->tokenService->hasRegistrationAccessToken($client_id)) {
+          throw new NotFoundHttpException();
+        }
+        if ($item['operation'] === 'update') {
+          if (!isset($item['metadata']) || !is_array($item['metadata'])) {
+            throw new BadRequestHttpException('Invalid metadata');
+          }
+          $metadata = $normalizer->denormalize($item['metadata'], ClientRegistration::class, 'json');
+          $this->updateClientMetadata($client_id, $metadata);
+        }
+        else {
+          $this->deleteClient($client_id);
+        }
+        $results[] = ['status' => 'success'];
+      }
+      catch (AccessDeniedHttpException) {
+        $results[] = ['status' => 'access_denied'];
+      }
+      catch (NotFoundHttpException) {
+        $results[] = ['status' => 'not_found'];
+      }
+      catch (BadRequestHttpException) {
+        $results[] = ['status' => 'invalid_client_metadata'];
+      }
+      catch (\Exception $e) {
+        $this->logger->error('Administrative client operation failed: @exception_type', [
+          '@exception_type' => get_class($e),
+        ]);
+        $results[] = ['status' => 'server_error'];
+      }
+    }
+    return $results;
+  }
+
+  /**
    * Updates client metadata.
    *
    * @param string $client_id
@@ -212,6 +324,8 @@ final class ClientRegistrationService {
    *   The updated client metadata.
    */
   public function updateClientMetadata(string $client_id, ClientRegistration $metadata): array {
+    // Validate the complete list before mutating even the cached consumer.
+    $metadata->validateRedirectUris();
     $consumer = $this->loadConsumer($client_id);
 
     // Handle client_name specially - it maps to the label field.
@@ -331,15 +445,16 @@ final class ClientRegistrationService {
    * @param string $client_id
    *   The client identifier.
    *
-   * @return \Drupal\Core\Entity\EntityInterface
+   * @return \Drupal\consumers\Entity\ConsumerInterface
    *   The consumer entity.
    *
    * @throws \Symfony\Component\HttpKernel\Exception\NotFoundHttpException
    *   If the client is not found.
    */
-  private function loadConsumer(string $client_id) {
+  private function loadConsumer(string $client_id): ConsumerInterface {
     $consumer_storage = $this->entityTypeManager->getStorage('consumer');
 
+    /** @var \Drupal\consumers\Entity\ConsumerInterface[] $consumers */
     $consumers = $consumer_storage->loadByProperties([
       'client_id' => $client_id,
     ]);
@@ -354,13 +469,13 @@ final class ClientRegistrationService {
   /**
    * Converts a consumer entity to RFC 7591 metadata array.
    *
-   * @param \Drupal\Core\Entity\EntityInterface $consumer
+   * @param \Drupal\consumers\Entity\ConsumerInterface $consumer
    *   The consumer entity.
    *
    * @return array
    *   The client metadata array.
    */
-  private function getClientMetadataArray($consumer): array {
+  private function getClientMetadataArray(ConsumerInterface $consumer): array {
     $metadata = [
       'client_id' => $consumer->getClientId(),
       'client_name' => $consumer->label(),
@@ -379,21 +494,21 @@ final class ClientRegistrationService {
     // Get redirect URIs.
     if (!$consumer->get('redirect')->isEmpty()) {
       foreach ($consumer->get('redirect') as $redirect) {
-        $metadata['redirect_uris'][] = $redirect->value;
+        $metadata['redirect_uris'][] = $redirect->get('value')->getValue();
       }
     }
 
     // Get contacts.
     if (!$consumer->get('contacts')->isEmpty()) {
       foreach ($consumer->get('contacts') as $contact) {
-        $metadata['contacts'][] = $contact->value;
+        $metadata['contacts'][] = $contact->get('value')->getValue();
       }
     }
 
     // Get grant types.
     if (!$consumer->get('grant_types')->isEmpty()) {
       foreach ($consumer->get('grant_types') as $grant_type) {
-        $metadata['grant_types'][] = $grant_type->value;
+        $metadata['grant_types'][] = $grant_type->get('value')->getValue();
       }
     }
 
@@ -406,18 +521,18 @@ final class ClientRegistrationService {
   /**
    * Gets the logo URI for a consumer, prioritizing image field over logo_uri.
    *
-   * @param \Drupal\Core\Entity\EntityInterface $consumer
+   * @param \Drupal\consumers\Entity\ConsumerInterface $consumer
    *   The consumer entity.
    *
    * @return string
    *   The logo URI or empty string if none available.
    */
-  private function getLogoUri($consumer): string {
+  private function getLogoUri(ConsumerInterface $consumer): string {
     // First, check if there's an uploaded image file.
     if (!$consumer->get('image')->isEmpty()) {
       $image_field = $consumer->get('image')->first();
-      if ($image_field && $image_field->entity) {
-        $file = $image_field->entity;
+      $file = $image_field?->get('entity')->getValue();
+      if ($file instanceof FileInterface) {
         // Generate absolute URL for the image file.
         $file_uri = $file->getFileUri();
         return $this->fileUrlGenerator->generateAbsoluteString($file_uri);
@@ -426,53 +541,6 @@ final class ClientRegistrationService {
 
     // Fallback to logo_uri field if no image uploaded.
     return $consumer->get('logo_uri')->value ?? '';
-  }
-
-  /**
-   * Validates a redirect URI.
-   *
-   * @param string $uri
-   *   The URI to validate.
-   *
-   * @return bool
-   *   TRUE if the URI is valid, FALSE otherwise.
-   */
-  private function isValidRedirectUri(string $uri): bool {
-    // Check if it's a valid URL or a custom URI scheme.
-    // Allow HTTP(S) URLs and custom URI schemes for native apps.
-    if (empty($uri)) {
-      return FALSE;
-    }
-
-    // Parse the URI.
-    $parsed = parse_url($uri);
-    if ($parsed === FALSE) {
-      return FALSE;
-    }
-
-    // Must have a scheme.
-    if (empty($parsed['scheme'])) {
-      return FALSE;
-    }
-
-    // HTTP(S) URIs must be properly formatted.
-    if (in_array($parsed['scheme'], ['http', 'https'])) {
-      // Must have a host.
-      if (empty($parsed['host'])) {
-        return FALSE;
-      }
-      // Basic validation passed.
-      return TRUE;
-    }
-
-    // Custom URI schemes (for native apps) are allowed.
-    // Must have scheme and at least a path or host.
-    if (!empty($parsed['scheme']) &&
-        (!empty($parsed['host']) || !empty($parsed['path']))) {
-      return TRUE;
-    }
-
-    return FALSE;
   }
 
 }

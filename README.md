@@ -257,10 +257,9 @@ drush cache:rebuild
 ### Permissions
 
 - **administer simple_oauth entities**: Required to access the compliance dashboard and configuration
-- **access simple_oauth_21 compliance dashboard**: View-only access to compliance status
 - Individual sub-modules may have additional permission requirements:
   - Device flow: May require permissions for device verification interface
-  - Client registration: API access permissions for dynamic registration
+  - Client registration: `POST /oauth/register` is public. Client management requires the registration access token issued for that client. The settings page requires `administer simple_oauth entities`.
   - Server metadata: Public endpoint access (no special permissions needed)
 
 ## OAuth 2.1 Implementation Guide
@@ -301,7 +300,7 @@ drush cache:rebuild
 ### Step 5: Dynamic Client Registration (Optional)
 
 1. Enable `simple_oauth_client_registration` module
-2. Configure registration endpoint permissions
+2. Review the public registration endpoint and administrative settings
 3. Test `/oauth/register` endpoint functionality
 4. Configure client metadata requirements
 
@@ -410,7 +409,6 @@ curl https://your-site.com/.well-known/openid-configuration
 ### Additional Resources
 
 - **[API Documentation](./API.md)**: Comprehensive API reference for all OAuth RFC compliance endpoints
-- **[Migration Guide](./MIGRATION.md)**: Step-by-step guide for upgrading existing installations
 - **[Module Help](/admin/help/simple_oauth_client_registration)**: In-context help for client registration features
 - **[Discovery Report](./DISCOVERY_REPORT.md)**: Complete technical analysis of module ecosystem functionality
 
@@ -437,7 +435,7 @@ A:
 A:
 
 1. Enable `serialization` module: `drush pm:enable serialization`
-2. Verify client registration permissions
+2. For client management, send the registration access token issued for that client
 3. Test endpoint: `curl -X POST /oauth/register -H "Content-Type: application/json"`
 
 **Q: Server metadata endpoints not found**

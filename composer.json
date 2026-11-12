@@ -16,6 +16,9 @@
     "drupal/simple_oauth_pkce": "self.version",
     "drupal/simple_oauth_server_metadata": "self.version"
   },
+  "require": {
+    "drupal/simple_oauth": ">=6.0.3 <7.0"
+  },
   "require-dev": {
     "drupal/coder": "^8",
     "phpstan/phpstan": "^2.1",
@@ -24,7 +27,7 @@
     "phpstan/extension-installer": "^1.4"
   },
   "scripts": {
-    "syntax:check": "find . -type f \\( -name '*.php' -o -name '*.module' -o -name '*.install' \\) ! -path './vendor/*' ! -path './node_modules/*' -exec php -l {} + | grep -v 'No syntax errors detected' || echo 'All PHP files have valid syntax'",
+    "syntax:check": "find . -type f \\( -name '*.php' -o -name '*.module' -o -name '*.install' \\) ! -path './vendor/*' ! -path './node_modules/*' -exec sh -c 'status=0; for file do php -l \"$file\" || status=1; done; exit \"$status\"' sh {} +",
     "lint:check": [
       "@syntax:check",
       "php ./vendor/bin/phpcs --ignore=vendor/*,node_modules/* --standard=Drupal,DrupalPractice --extensions=php,module/php,install/php,inc/php,yml ."

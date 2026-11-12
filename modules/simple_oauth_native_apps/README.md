@@ -51,9 +51,12 @@ RFC 8252 establishes OAuth 2.0 security requirements specifically for native app
 
 ### Requirements
 
-- Drupal 9.0+ or Drupal 10.0+
-- Simple OAuth module (contrib or core)
+- Drupal 10.2 or later in the 10.x series, or Drupal 11.x
+- Simple OAuth 2.1 umbrella module with Simple OAuth >=6.0.3,<7.0
 - PHP 8.1+
+
+Selected dependency releases may require a newer Drupal version. Use PHP and
+dependency versions supported by the chosen Drupal release.
 
 ### Installation Steps
 
@@ -91,19 +94,35 @@ webview:
 ```yaml
 require_exact_redirect_match: true # Exact URI matching
 allow:
-  custom_uri_schemes: true # myapp://callback support
-  loopback_redirects: true # 127.0.0.1 support
+  custom_uri_schemes: 'auto-detect' # Follow native client detection
+  loopback_redirects: 'auto-detect' # Follow native client detection
 ```
+
+Use `native` to allow the redirect type, `web` to disallow it, or
+`auto-detect` to follow the client's detected type. Capability metadata reports
+`auto-detect` as supported; individual client decisions use that client's type.
 
 #### Enhanced PKCE
 
 ```yaml
-enhanced_pkce_for_native: true # Mandatory S256 for native clients
+native:
+  enhanced_pkce: 'auto-detect' # enhanced/not-enhanced/auto-detect
+  enforce: 'S256' # off/S256/plain
 ```
+
+`enhanced` enables enhanced PKCE, `not-enhanced` disables those extra checks, and
+`auto-detect` applies them according to the detected client type. `native.enforce`
+selects the challenge-method policy when enhanced native checks apply. Basic PKCE
+requirements remain controlled by Simple OAuth and the PKCE module.
+
+Per-client override fields left empty inherit the global policy. An explicit
+`auto-detect` override uses client detection, even when the global policy is
+explicitly enabled or disabled. Individual overrides do not require setting the
+other override fields.
 
 ### RFC 8252 Recommended Configuration
 
-For complete RFC 8252 compliance:
+For native app security with S256 and both native redirect types enabled:
 
 ```yaml
 enforce_native_security: true
@@ -111,14 +130,16 @@ webview:
   detection: 'block'
 require_exact_redirect_match: true
 allow:
-  custom_uri_schemes: true
-  loopback_redirects: true
-enhanced_pkce_for_native: true
+  custom_uri_schemes: 'native'
+  loopback_redirects: 'native'
+native:
+  enhanced_pkce: 'enhanced'
+  enforce: 'S256'
 ```
 
 ### Development Configuration
 
-For development and testing:
+For development and testing with WebView warnings and enhanced PKCE disabled:
 
 ```yaml
 enforce_native_security: true
@@ -126,9 +147,11 @@ webview:
   detection: 'warn'
 require_exact_redirect_match: false
 allow:
-  custom_uri_schemes: true
-  loopback_redirects: true
-enhanced_pkce_for_native: false
+  custom_uri_schemes: 'native'
+  loopback_redirects: 'native'
+native:
+  enhanced_pkce: 'not-enhanced'
+  enforce: 'off'
 ```
 
 ## Implementation Guide

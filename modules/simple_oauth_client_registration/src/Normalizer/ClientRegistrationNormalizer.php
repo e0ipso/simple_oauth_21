@@ -7,8 +7,8 @@ namespace Drupal\simple_oauth_client_registration\Normalizer;
 use Drupal\consumers\Entity\ConsumerInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Url;
+use Drupal\file\FileInterface;
 use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
-use Drupal\simple_oauth_client_registration\Service\ClientRegistrationService;
 use Drupal\simple_oauth_client_registration\Service\RegistrationTokenService;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
@@ -19,13 +19,12 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
  *
  * Handles serialization/deserialization according to RFC 7591.
  */
-class ClientRegistrationNormalizer implements NormalizerInterface, DenormalizerInterface {
+final class ClientRegistrationNormalizer implements NormalizerInterface, DenormalizerInterface {
 
   /**
    * Constructor.
    */
   public function __construct(
-    private readonly ClientRegistrationService $registrationService,
     private readonly RegistrationTokenService $tokenService,
     private readonly FileUrlGeneratorInterface $fileUrlGenerator,
   ) {}
@@ -51,6 +50,10 @@ class ClientRegistrationNormalizer implements NormalizerInterface, DenormalizerI
    * {@inheritdoc}
    */
   public function denormalize($data, string $type, ?string $format = NULL, array $context = []): ClientRegistration {
+    // Preserve nested JSON objects so they cannot masquerade as empty lists.
+    if ($data instanceof \stdClass) {
+      $data = (array) $data;
+    }
     // Validate required data structure.
     if (!is_array($data)) {
       throw new BadRequestHttpException('Invalid request body');
@@ -60,7 +63,14 @@ class ClientRegistrationNormalizer implements NormalizerInterface, DenormalizerI
     $this->validateClientMetadata($data);
 
     // Create DTO from validated data.
-    return ClientRegistration::fromArray($data);
+    $registration = ClientRegistration::fromArray($data);
+    try {
+      $registration->validateRedirectUris();
+    }
+    catch (\InvalidArgumentException $e) {
+      throw new BadRequestHttpException($e->getMessage(), $e);
+    }
+    return $registration;
   }
 
   /**
@@ -107,21 +117,21 @@ class ClientRegistrationNormalizer implements NormalizerInterface, DenormalizerI
     // Get redirect URIs.
     if (!$consumer->get('redirect')->isEmpty()) {
       foreach ($consumer->get('redirect') as $redirect) {
-        $metadata['redirect_uris'][] = $redirect->value;
+        $metadata['redirect_uris'][] = $redirect->get('value')->getValue();
       }
     }
 
     // Get contacts.
     if (!$consumer->get('contacts')->isEmpty()) {
       foreach ($consumer->get('contacts') as $contact) {
-        $metadata['contacts'][] = $contact->value;
+        $metadata['contacts'][] = $contact->get('value')->getValue();
       }
     }
 
     // Get grant types.
     if (!$consumer->get('grant_types')->isEmpty()) {
       foreach ($consumer->get('grant_types') as $grant_type) {
-        $metadata['grant_types'][] = $grant_type->value;
+        $metadata['grant_types'][] = $grant_type->get('value')->getValue();
       }
     }
 
@@ -168,8 +178,8 @@ class ClientRegistrationNormalizer implements NormalizerInterface, DenormalizerI
     // First, check if there's an uploaded image file.
     if (!$consumer->get('image')->isEmpty()) {
       $image_field = $consumer->get('image')->first();
-      if ($image_field && $image_field->entity) {
-        $file = $image_field->entity;
+      $file = $image_field?->get('entity')->getValue();
+      if ($file instanceof FileInterface) {
         // Generate absolute URL for the image file.
         $file_uri = $file->getFileUri();
         return $this->fileUrlGenerator->generateAbsoluteString($file_uri);
@@ -190,17 +200,45 @@ class ClientRegistrationNormalizer implements NormalizerInterface, DenormalizerI
    *   If validation fails.
    */
   private function validateClientMetadata(array $metadata): void {
+    // Check shapes before validation, interpolation or typed DTO construction.
+    $string_fields = [
+      'client_name', 'scope', 'client_uri', 'logo_uri', 'tos_uri', 'policy_uri',
+      'jwks_uri', 'software_id', 'software_version', 'application_type',
+      'token_endpoint_auth_method', 'client_id', 'client_secret',
+      'registration_access_token', 'registration_client_uri',
+    ];
+    foreach ($string_fields as $field) {
+      if (array_key_exists($field, $metadata) && !is_string($metadata[$field])) {
+        throw new BadRequestHttpException($field . ' must be a string');
+      }
+    }
+
+    foreach (['redirect_uris', 'contacts', 'grant_types', 'response_types'] as $field) {
+      if (!array_key_exists($field, $metadata)) {
+        continue;
+      }
+      if (!is_array($metadata[$field]) || !array_is_list($metadata[$field])) {
+        throw new BadRequestHttpException($field . ' must be a list of strings');
+      }
+      foreach ($metadata[$field] as $value) {
+        if (!is_string($value)) {
+          throw new BadRequestHttpException($field . ' must contain only strings');
+        }
+      }
+    }
+
+    foreach (['client_id_issued_at', 'client_secret_expires_at'] as $field) {
+      if (array_key_exists($field, $metadata) && !is_int($metadata[$field])) {
+        throw new BadRequestHttpException($field . ' must be an integer');
+      }
+    }
+
     // Validate redirect URIs if provided.
     if (isset($metadata['redirect_uris'])) {
       if (!is_array($metadata['redirect_uris']) || empty($metadata['redirect_uris'])) {
         throw new BadRequestHttpException('redirect_uris must be a non-empty array');
       }
 
-      foreach ($metadata['redirect_uris'] as $uri) {
-        if (!filter_var($uri, FILTER_VALIDATE_URL)) {
-          throw new BadRequestHttpException('Invalid redirect URI: ' . $uri);
-        }
-      }
     }
 
     // Validate URI fields.
@@ -223,14 +261,6 @@ class ClientRegistrationNormalizer implements NormalizerInterface, DenormalizerI
         if (!filter_var($contact, FILTER_VALIDATE_EMAIL)) {
           throw new BadRequestHttpException('Invalid email in contacts: ' . $contact);
         }
-      }
-    }
-
-    // Validate string fields.
-    $string_fields = ['client_name', 'software_id', 'software_version'];
-    foreach ($string_fields as $field) {
-      if (isset($metadata[$field]) && !is_string($metadata[$field])) {
-        throw new BadRequestHttpException($field . ' must be a string');
       }
     }
 

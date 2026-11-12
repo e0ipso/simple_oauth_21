@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_pkce\Form;
 
 use Drupal\Core\Form\ConfigFormBase;
@@ -9,7 +11,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 /**
  * Configuration form for PKCE settings.
  */
-class PkceSettingsForm extends ConfigFormBase {
+final class PkceSettingsForm extends ConfigFormBase {
 
   /**
    * {@inheritdoc}

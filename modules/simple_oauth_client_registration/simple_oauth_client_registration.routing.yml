@@ -21,7 +21,7 @@ simple_oauth_client_registration.manage:
     _controller: '\Drupal\simple_oauth_client_registration\Controller\ClientRegistrationController::manage'
     _disable_route_normalizer: TRUE
     _title: 'OAuth 2.0 Client Management'
-  methods: [GET, PUT, DELETE]
+  methods: [GET, POST, PUT, DELETE]
   requirements:
     # Public endpoint - authentication handled in controller
     _access: 'TRUE'

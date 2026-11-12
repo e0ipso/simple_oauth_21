@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_server_metadata\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
@@ -12,7 +14,7 @@ use Drupal\Core\Cache\CacheableJsonResponse;
 /**
  * Controller for RFC 8414 Authorization Server Metadata endpoint.
  */
-class ServerMetadataController extends ControllerBase {
+final class ServerMetadataController extends ControllerBase {
 
   /**
    * Constructs a ServerMetadataController object.

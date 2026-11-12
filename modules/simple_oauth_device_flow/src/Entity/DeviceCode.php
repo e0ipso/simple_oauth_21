@@ -1,14 +1,15 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_device_flow\Entity;
 
-use Drupal\Core\Entity\Attribute\ContentEntityType;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\ContentEntityBase;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
-use Drupal\Core\StringTranslation\TranslatableMarkup;
+use Drupal\Core\Url;
 use Drupal\simple_oauth\Entities\ScopeEntity;
 use League\OAuth2\Server\Entities\ClientEntityInterface;
 use League\OAuth2\Server\Entities\DeviceCodeEntityInterface;
@@ -18,9 +19,6 @@ use League\OAuth2\Server\Entities\ScopeEntityInterface;
  * Defines the Device Code entity for OAuth 2.0 Device Authorization Grant.
  *
  * @ingroup simple_oauth_device_flow
- */
-/**
- * Annotation for backwards compatibility with Drupal 10.x.
  *
  * @ContentEntityType(
  *   id = "oauth2_device_code",
@@ -38,21 +36,6 @@ use League\OAuth2\Server\Entities\ScopeEntityInterface;
  *   list_cache_tags = {"oauth2_device_code"},
  * )
  */
-#[ContentEntityType(
-  id: 'oauth2_device_code',
-  label: new TranslatableMarkup('OAuth2 Device Code'),
-  handlers: [
-    'storage' => 'Drupal\Core\Entity\Sql\SqlContentEntityStorage',
-    'views_data' => 'Drupal\views\EntityViewsData',
-  ],
-  base_table: 'oauth2_device_code',
-  admin_permission: 'administer simple_oauth entities',
-  entity_keys: [
-    'id' => 'device_code',
-    'langcode' => 'langcode',
-  ],
-  list_cache_tags: ['oauth2_device_code'],
-)]
 class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface {
 
   /**
@@ -60,7 +43,7 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
    *
    * @var \League\OAuth2\Server\Entities\ClientEntityInterface|null
    */
-  private ?ClientEntityInterface $clientEntity = NULL;
+  protected ?ClientEntityInterface $clientEntity = NULL;
 
   /**
    * {@inheritdoc}
@@ -278,6 +261,7 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
    */
   public function getScopes(): array {
     $oauth2scopes = [];
+    /** @var \Drupal\simple_oauth\Plugin\Field\FieldType\Oauth2ScopeReferenceItemInterface $scope */
     foreach ($this->get('scopes') as $scope) {
       $scope_entity = $scope->getScope();
       if ($scope_entity !== NULL) {
@@ -312,13 +296,13 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
    * {@inheritdoc}
    */
   public function getVerificationUri(): string {
-    $request = \Drupal::request();
-    if ($request && $request->getSchemeAndHttpHost()) {
+    $request = \Drupal::service('request_stack')->getCurrentRequest();
+    if ($request !== NULL && $request->getSchemeAndHttpHost()) {
       $base_url = $request->getSchemeAndHttpHost();
       return $base_url . '/oauth/device/verify';
     }
     // Fallback for contexts where request is not available.
-    return 'http://localhost/oauth/device/verify';
+    return Url::fromRoute('simple_oauth_device_flow.device_verification_form', [], ['absolute' => TRUE])->toString();
   }
 
   /**

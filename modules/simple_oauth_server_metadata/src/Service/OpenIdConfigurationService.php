@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_server_metadata\Service;
 
 use Drupal\Core\Cache\CacheableDependencyInterface;
@@ -49,6 +51,7 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
    */
   public function getOpenIdConfiguration(): array {
     $config = $this->configFactory->get('simple_oauth_server_metadata.settings');
+    $response_types = $this->getSupportedResponseTypes();
 
     $metadata = [
       // Required OpenID Connect Discovery fields.
@@ -58,7 +61,7 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
       'userinfo_endpoint' => $this->endpointDiscoveryService->getUserInfoEndpoint(),
       'jwks_uri' => $this->endpointDiscoveryService->getJwksUri(),
       'scopes_supported' => $this->getSupportedScopes(),
-      'response_types_supported' => $this->getSupportedResponseTypes(),
+      'response_types_supported' => $response_types,
       'subject_types_supported' => $this->claimsAuthDiscoveryService->getSubjectTypesSupported(),
       'id_token_signing_alg_values_supported' => $this->claimsAuthDiscoveryService->getIdTokenSigningAlgValuesSupported(),
       'claims_supported' => $this->getClaimsSupported(),
@@ -76,8 +79,8 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
       'request_parameter_supported' => $this->claimsAuthDiscoveryService->getRequestParameterSupported(),
       'claims_parameter_supported' => $this->claimsAuthDiscoveryService->getClaimsParameterSupported(),
       'scopes_parameter_supported' => $this->claimsAuthDiscoveryService->getScopesParameterSupported(),
-      'authorization_code_flow_enabled' => $this->claimsAuthDiscoveryService->getAuthorizationCodeFlowEnabled(),
-      'implicit_flow_enabled' => $this->claimsAuthDiscoveryService->getImplicitFlowEnabled(),
+      'authorization_code_flow_enabled' => in_array('code', $response_types, TRUE),
+      'implicit_flow_enabled' => FALSE,
       'oauth_authorization_server_metadata_endpoint' => $this->endpointDiscoveryService->getOauthServerMetadataEndpoint(),
     ];
 
@@ -151,16 +154,7 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
    *   Array of supported response types.
    */
   protected function getSupportedResponseTypes(): array {
-    // Standard OAuth 2.0 and OpenID Connect response types.
-    return [
-      'code',
-      'token',
-      'id_token',
-      'code id_token',
-      'code token',
-      'id_token token',
-      'code id_token token',
-    ];
+    return $this->grantTypeDiscoveryService->getResponseTypesSupported();
   }
 
   /**

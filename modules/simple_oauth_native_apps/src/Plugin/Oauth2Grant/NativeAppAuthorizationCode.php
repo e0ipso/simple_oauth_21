@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_native_apps\Plugin\Oauth2Grant;
 
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
@@ -25,7 +27,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *   label = @Translation("Native App Authorization Code"),
  * )
  */
-class NativeAppAuthorizationCode extends Oauth2GrantBase implements ContainerFactoryPluginInterface {
+final class NativeAppAuthorizationCode extends Oauth2GrantBase implements ContainerFactoryPluginInterface {
 
   /**
    * The authorization code repository.
@@ -132,19 +134,15 @@ class NativeAppAuthorizationCode extends Oauth2GrantBase implements ContainerFac
     );
 
     if ($refresh_token_enabled) {
-      $refresh_token = !$client->get('refresh_token_expiration')->isEmpty ? $client->get('refresh_token_expiration')->value : 1209600;
+      $refresh_token = !$client->get('refresh_token_expiration')->isEmpty() ? $client->get('refresh_token_expiration')->value : 1209600;
       $refresh_token_ttl = new \DateInterval(
         sprintf('PT%dS', $refresh_token)
       );
       $grant_type->setRefreshTokenTTL($refresh_token_ttl);
     }
 
-    // Enhanced PKCE is mandatory for native clients.
-    // The grant will always require PKCE for public clients.
-    // Additional validation is handled by the PkceValidationSubscriber.
-    // Override any client-level PKCE setting - native clients MUST use PKCE.
-    $grant_type->enableCodeChallengeForPublicClients();
-
+    // Retain League's default public-client challenge requirement. Enhanced
+    // native validation is handled by the PkceValidationSubscriber.
     return $grant_type;
   }
 

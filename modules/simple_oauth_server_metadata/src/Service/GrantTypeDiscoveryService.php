@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_server_metadata\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -59,7 +61,6 @@ class GrantTypeDiscoveryService {
   public function getResponseTypesSupported(): array {
     $response_types = [];
     $grant_types = $this->getGrantTypesSupported();
-    $oidc_enabled = !$this->isOpenIdConnectDisabled();
 
     // Track which response types have been added.
     $has_code = FALSE;
@@ -83,14 +84,8 @@ class GrantTypeDiscoveryService {
       }
     }
 
-    // Add OIDC response types if enabled.
-    if ($oidc_enabled) {
-      if ($has_code) {
-        $response_types[] = 'id_token';
-      }
-      // 'id_token token' combination is not supported without implicit grant
-    }
-
+    // OIDC adds an ID token to the token endpoint response for code flow.
+    // It does not enable implicit or hybrid authorization response types.
     return $response_types;
   }
 

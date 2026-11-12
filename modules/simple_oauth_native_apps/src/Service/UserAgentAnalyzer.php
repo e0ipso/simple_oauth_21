@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_native_apps\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -10,7 +12,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
  * This service implements RFC 8252 security recommendations by detecting
  * embedded webviews that may compromise OAuth 2.0 security for native apps.
  */
-class UserAgentAnalyzer {
+final class UserAgentAnalyzer {
 
   /**
    * Compiled regular expressions for efficient pattern matching.
@@ -182,12 +184,35 @@ class UserAgentAnalyzer {
     // Check custom patterns from configuration.
     $customPatterns = $this->getCustomPatterns();
     foreach ($customPatterns as $pattern) {
-      if (preg_match('/' . preg_quote($pattern, '/') . '/i', $userAgent)) {
+      if (@preg_match(self::getRegexPattern($pattern), $userAgent) === 1) {
         return TRUE;
       }
     }
 
     return FALSE;
+  }
+
+  /**
+   * Wraps a configured regex body for case-insensitive user-agent matching.
+   *
+   * @param string $pattern
+   *   The regex body, without delimiters. Slashes may be literal or escaped.
+   *
+   * @return string
+   *   The delimited expression, with delimiter characters safely escaped.
+   */
+  public static function getRegexPattern(string $pattern): string {
+    $expression = '';
+    $escaped = FALSE;
+    foreach (str_split($pattern) as $character) {
+      if ($character === '~' && !$escaped) {
+        $expression .= '\\';
+      }
+      $expression .= $character;
+      $escaped = $character === '\\' ? !$escaped : FALSE;
+    }
+
+    return '~' . $expression . '~i';
   }
 
   /**
@@ -219,7 +244,7 @@ class UserAgentAnalyzer {
     // Check custom patterns.
     $customPatterns = $this->getCustomPatterns();
     foreach ($customPatterns as $pattern) {
-      if (preg_match('/' . preg_quote($pattern, '/') . '/i', $userAgent)) {
+      if (@preg_match(self::getRegexPattern($pattern), $userAgent) === 1) {
         return [
           'category' => 'custom',
           'pattern' => $pattern,
@@ -239,7 +264,11 @@ class UserAgentAnalyzer {
    */
   public function getDetectionMode(): string {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
-    return $config->get('webview.detection', 'warn');
+    if (!(bool) $config->get('enforce_native_security')) {
+      return 'off';
+    }
+
+    return $config->get('webview.detection') ?? 'warn';
   }
 
   /**

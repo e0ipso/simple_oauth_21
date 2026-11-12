@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Drupal\simple_oauth_device_flow\Controller;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Controller\ControllerBase;
-use Drupal\Core\Url;
+use Drupal\Core\Path\PathValidatorInterface;
+use Drupal\simple_oauth\Entities\ClientEntityInterface;
 use Drupal\simple_oauth_device_flow\Service\DeviceCodeService;
 use GuzzleHttp\Psr7\Response;
 use League\OAuth2\Server\Exception\OAuthServerException;
@@ -47,6 +50,18 @@ final class DeviceAuthorizationController extends ControllerBase {
   private LoggerInterface $logger;
 
   /**
+   * The device flow response settings.
+   */
+  private ImmutableConfig $settings;
+
+  /**
+   * The path validator.
+   *
+   * @var \Drupal\Core\Path\PathValidatorInterface
+   */
+  private PathValidatorInterface $pathValidator;
+
+  /**
    * Constructs a DeviceAuthorizationController object.
    *
    * @param \Symfony\Bridge\PsrHttpMessage\HttpMessageFactoryInterface $http_message_factory
@@ -57,17 +72,25 @@ final class DeviceAuthorizationController extends ControllerBase {
    *   The device code service.
    * @param \Psr\Log\LoggerInterface $logger
    *   The logger for device flow operations.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The configuration factory.
+   * @param \Drupal\Core\Path\PathValidatorInterface $path_validator
+   *   The path validator.
    */
   public function __construct(
     HttpMessageFactoryInterface $http_message_factory,
     ClientRepositoryInterface $client_repository,
     DeviceCodeService $device_code_service,
     LoggerInterface $logger,
+    ConfigFactoryInterface $config_factory,
+    PathValidatorInterface $path_validator,
   ) {
     $this->httpMessageFactory = $http_message_factory;
     $this->clientRepository = $client_repository;
     $this->deviceCodeService = $device_code_service;
     $this->logger = $logger;
+    $this->settings = $config_factory->get('simple_oauth_device_flow.settings');
+    $this->pathValidator = $path_validator;
   }
 
   /**
@@ -78,7 +101,9 @@ final class DeviceAuthorizationController extends ControllerBase {
       $container->get('psr7.http_message_factory'),
       $container->get('simple_oauth.repositories.client'),
       $container->get('simple_oauth_device_flow.device_code_service'),
-      $container->get('logger.channel.simple_oauth')
+      $container->get('logger.channel.simple_oauth_device_flow'),
+      $container->get('config.factory'),
+      $container->get('path.validator'),
     );
   }
 
@@ -104,7 +129,7 @@ final class DeviceAuthorizationController extends ControllerBase {
 
     try {
       // Extract and validate client_id parameter.
-      $client_id = $request->get('client_id');
+      $client_id = $request->attributes->get('client_id', $request->query->get('client_id', $request->request->get('client_id', NULL)));
       if (empty($client_id)) {
         $this->logger->notice('Device authorization request missing client_id parameter');
         throw OAuthServerException::invalidRequest('client_id');
@@ -112,10 +137,8 @@ final class DeviceAuthorizationController extends ControllerBase {
 
       // Validate client exists and is authorized for device flow.
       $client_entity = $this->clientRepository->getClientEntity($client_id);
-      if (empty($client_entity)) {
-        $this->logger->notice('Device authorization request with invalid client_id: @client_id', [
-          '@client_id' => $client_id,
-        ]);
+      if (!$client_entity instanceof ClientEntityInterface) {
+        $this->logger->notice('Device authorization request with invalid client_id');
         // For device flow, invalid client_id is a bad request (400), not auth
         // failure (401). Use code 4 like invalidClient() but with 400 status
         // code per RFC 8628.
@@ -131,13 +154,24 @@ final class DeviceAuthorizationController extends ControllerBase {
       $grant_types = array_column($client_drupal_entity->get('grant_types')->getValue(), 'value');
       if (!in_array('urn:ietf:params:oauth:grant-type:device_code', $grant_types, TRUE)) {
         $this->logger->notice('Client @client_id not configured for device_code grant', [
-          '@client_id' => $client_id,
+          '@client_id' => $client_entity->getIdentifier(),
         ]);
         throw OAuthServerException::unauthorizedClient('Client not authorized for device code grant');
       }
 
       // Extract optional scope parameter.
-      $scope = $request->get('scope', '');
+      $scope = $request->attributes->get('scope', $request->query->get('scope', $request->request->get('scope', '')));
+
+      // Reject invalid imported settings before issuing device credentials.
+      $verification_path = $this->settings->get('verification_uri') ?? '/oauth/device';
+      if (!is_string($verification_path) || !preg_match('@^/(?!/)[A-Za-z0-9/_-]*$@D', $verification_path)) {
+        throw new \UnexpectedValueException('Invalid local device verification path.');
+      }
+      $verification_url = $this->pathValidator->getUrlIfValid($verification_path);
+      if (!$verification_url || !$verification_url->isRouted() || $verification_url->getRouteName() !== 'simple_oauth_device_flow.device_verification_form') {
+        throw new \UnexpectedValueException('Device verification path does not resolve to the verification form.');
+      }
+      $verification_uri = $request->getSchemeAndHttpHost() . $verification_url->toString();
 
       // Generate device and user codes using the service.
       $authorization_data = $this->deviceCodeService->generateDeviceAuthorization(
@@ -145,28 +179,22 @@ final class DeviceAuthorizationController extends ControllerBase {
         $scope
       );
 
-      // Build verification URIs using request to ensure proper base URL.
-      // This ensures proper URL generation in both regular and test
-      // environments.
-      $base_url = $request->getSchemeAndHttpHost();
-      $verification_path = Url::fromRoute('simple_oauth_device_flow.device_verification_form')->toString();
-      $verification_uri = $base_url . $verification_path;
-
-      $verification_uri_complete = $base_url . $verification_path . '?user_code=' . urlencode($authorization_data['user_code']);
-
       // Build RFC 8628 compliant response.
       $response_data = [
         'device_code' => $authorization_data['device_code'],
         'user_code' => $authorization_data['user_code'],
         'verification_uri' => $verification_uri,
-        'verification_uri_complete' => $verification_uri_complete,
         'expires_in' => $authorization_data['expires_in'],
         'interval' => $authorization_data['interval'],
       ];
+      // Prefer the installed option; retain the earlier name as a fallback.
+      $include_complete = $this->settings->get('verification_uri_complete') ?? $this->settings->get('verification_uri_complete_enabled') ?? TRUE;
+      if ($include_complete) {
+        $response_data['verification_uri_complete'] = $verification_uri . '?user_code=' . urlencode($authorization_data['user_code']);
+      }
 
-      $this->logger->info('Device authorization successful for client @client_id, user_code: @user_code', [
-        '@client_id' => $client_id,
-        '@user_code' => $authorization_data['user_code'],
+      $this->logger->info('Device authorization successful for client @client_id', [
+        '@client_id' => $client_entity->getIdentifier(),
       ]);
 
       // Create JSON response with proper headers.
@@ -184,9 +212,8 @@ final class DeviceAuthorizationController extends ControllerBase {
     catch (OAuthServerException $exception) {
       // Log OAuth server exceptions appropriately.
       $log_level = $exception->getCode() < 500 ? 'notice' : 'error';
-      $this->logger->log($log_level, 'Device authorization error: @message. Hint: @hint', [
-        '@message' => $exception->getMessage(),
-        '@hint' => $exception->getHint(),
+      $this->logger->log($log_level, 'Device authorization error: @exception_type', [
+        '@exception_type' => get_class($exception),
       ]);
 
       // Convert OAuth exception to JSON response.
@@ -194,8 +221,8 @@ final class DeviceAuthorizationController extends ControllerBase {
     }
     catch (\Exception $exception) {
       // Log unexpected exceptions.
-      $this->logger->error('Unexpected error in device authorization: @message', [
-        '@message' => $exception->getMessage(),
+      $this->logger->error('Unexpected error in device authorization: @exception_type', [
+        '@exception_type' => get_class($exception),
       ]);
 
       // Return generic server error for unexpected exceptions.

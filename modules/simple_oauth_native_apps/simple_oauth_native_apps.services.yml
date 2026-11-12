@@ -34,7 +34,6 @@ services:
     arguments:
       - '@config.factory'
       - '@logger.factory'
-      - '@entity_type.manager'
 
   simple_oauth_native_apps.pkce_enhancement:
     class: Drupal\simple_oauth_native_apps\Service\PKCEEnhancementService
@@ -47,7 +46,6 @@ services:
     class: Drupal\simple_oauth_native_apps\Service\MetadataProvider
     arguments:
       - '@config.factory'
-      - '@url_generator'
 
   simple_oauth_native_apps.authorization_request_subscriber:
     class: Drupal\simple_oauth_native_apps\EventSubscriber\AuthorizationRequestSubscriber
