@@ -9,11 +9,13 @@ services:
     arguments:
       - '@config.factory'
       - '@logger.channel.simple_oauth_native_apps'
+      - '@simple_oauth_native_apps.native_client_detector'
 
   simple_oauth_native_apps.user_agent_analyzer:
     class: Drupal\simple_oauth_native_apps\Service\UserAgentAnalyzer
     arguments:
       - '@config.factory'
+      - '@simple_oauth_native_apps.native_client_detector'
 
   simple_oauth_native_apps.configuration_validator:
     class: Drupal\simple_oauth_native_apps\Service\ConfigurationValidator
@@ -46,6 +48,7 @@ services:
     class: Drupal\simple_oauth_native_apps\Service\MetadataProvider
     arguments:
       - '@config.factory'
+      - '@simple_oauth_native_apps.native_client_detector'
 
   simple_oauth_native_apps.authorization_request_subscriber:
     class: Drupal\simple_oauth_native_apps\EventSubscriber\AuthorizationRequestSubscriber
@@ -53,6 +56,9 @@ services:
       - '@simple_oauth_native_apps.user_agent_analyzer'
       - '@config.factory'
       - '@module_handler'
+      - '@entity_type.manager'
+      - '@simple_oauth_native_apps.native_client_detector'
+      - '@simple_oauth_native_apps.redirect_uri_validator'
     tags:
       - { name: event_subscriber }
 

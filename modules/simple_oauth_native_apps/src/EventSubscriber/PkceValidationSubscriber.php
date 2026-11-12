@@ -41,13 +41,6 @@ final class PkceValidationSubscriber implements EventSubscriberInterface {
   protected NativeClientDetector $nativeClientDetector;
 
   /**
-   * The configuration factory.
-   *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
-   */
-  protected ConfigFactoryInterface $configFactory;
-
-  /**
    * The logger service.
    *
    * @var \Psr\Log\LoggerInterface
@@ -69,7 +62,7 @@ final class PkceValidationSubscriber implements EventSubscriberInterface {
    * @param \Drupal\simple_oauth_native_apps\Service\NativeClientDetector $native_client_detector
    *   The native client detector service.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
-   *   The configuration factory.
+   *   Retained for constructor compatibility; the detector resolves policy.
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
    *   The logger channel factory.
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
@@ -84,7 +77,6 @@ final class PkceValidationSubscriber implements EventSubscriberInterface {
   ) {
     $this->pkceEnhancementService = $pkce_enhancement_service;
     $this->nativeClientDetector = $native_client_detector;
-    $this->configFactory = $config_factory;
     $this->logger = $logger_factory->get('simple_oauth_native_apps');
     $this->entityTypeManager = $entity_type_manager;
   }
@@ -110,12 +102,6 @@ final class PkceValidationSubscriber implements EventSubscriberInterface {
 
     // Only process OAuth authorization and token requests.
     if (!$this->isOauthFlowRequest($request)) {
-      return;
-    }
-
-    // Skip if enhanced PKCE validation is disabled.
-    $config = $this->configFactory->get('simple_oauth_native_apps.settings');
-    if (!$config->get('native.enhanced_pkce')) {
       return;
     }
 
@@ -157,10 +143,8 @@ final class PkceValidationSubscriber implements EventSubscriberInterface {
     $request = $event->getRequest();
 
     $query = $request->query->all();
-    $parameters = $request->request->all();
-    $parameters += ['code_challenge_method' => 'S256'];
-    $code_challenge = $query['code_challenge'] ?? $parameters['code_challenge'] ?? NULL;
-    $code_challenge_method = $query['code_challenge_method'] ?? $parameters['code_challenge_method'];
+    $code_challenge = $query['code_challenge'] ?? NULL;
+    $code_challenge_method = $query['code_challenge_method'] ?? 'plain';
 
     foreach (['code_challenge' => $code_challenge, 'code_challenge_method' => $code_challenge_method] as $parameter => $value) {
       if ($value !== NULL && !is_string($value)) {
@@ -188,15 +172,6 @@ final class PkceValidationSubscriber implements EventSubscriberInterface {
     // Add validation context to request for downstream processing.
     $request->attributes->set('oauth_pkce_validation', $validation_result);
     $request->attributes->set('oauth_enhanced_pkce_applied', TRUE);
-
-    // Log successful validation if configured.
-    if ($this->configFactory->get('simple_oauth_native_apps.settings')->get('log.pkce_validations')) {
-      $this->logger->info('Enhanced PKCE validation passed for authorization request from client @client_id', [
-        '@client_id' => $client->getClientId(),
-        'challenge_method' => $code_challenge_method,
-        'validation_context' => $validation_result,
-      ]);
-    }
   }
 
   /**
@@ -241,7 +216,7 @@ final class PkceValidationSubscriber implements EventSubscriberInterface {
     $validation_result = $this->pkceEnhancementService->validatePkceParameters(
       $client,
       NULL,
-      'S256',
+      NULL,
       $code_verifier
     );
 
@@ -253,15 +228,6 @@ final class PkceValidationSubscriber implements EventSubscriberInterface {
     // Add validation context to request for downstream processing.
     $request->attributes->set('oauth_pkce_validation', $validation_result);
     $request->attributes->set('oauth_enhanced_pkce_applied', TRUE);
-
-    // Log successful validation if configured.
-    if ($this->configFactory->get('simple_oauth_native_apps.settings')->get('log.pkce_validations')) {
-      $this->logger->info('Enhanced PKCE validation passed for token request from client @client_id', [
-        '@client_id' => $client->getClientId(),
-        'verifier_entropy' => $validation_result['entropy_bits'] ?? 'unknown',
-        'validation_context' => $validation_result,
-      ]);
-    }
   }
 
   /**

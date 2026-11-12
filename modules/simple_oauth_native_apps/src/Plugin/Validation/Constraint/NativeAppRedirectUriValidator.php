@@ -1,8 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_native_apps\Plugin\Validation\Constraint;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\consumers\Entity\Consumer;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\simple_oauth_native_apps\Service\RedirectUriValidator;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -45,6 +49,18 @@ class NativeAppRedirectUriValidator extends ConstraintValidator implements Conta
       return;
     }
 
+    if ($value instanceof FieldItemListInterface && $value->getEntity() instanceof Consumer) {
+      foreach ($value as $delta => $item) {
+        $uri = $item->get('value')->getValue();
+        if (is_string($uri) && $uri !== '' && !$this->redirectUriValidator->validateConsumerRedirectUri($uri, $value->getEntity())) {
+          $this->context->buildViolation($constraint->invalidUriMessage, ['%uri' => $uri])
+            ->atPath($delta . '.value')->addViolation();
+        }
+      }
+      return;
+    }
+
+    // Preserve standalone constraint calls without consumer context.
     // Handle different value types.
     $uris = [];
     if (is_string($value)) {

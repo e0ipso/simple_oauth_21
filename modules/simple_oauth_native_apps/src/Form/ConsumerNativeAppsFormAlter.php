@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Drupal\simple_oauth_native_apps\Form;
 
 use Drupal\consumers\Entity\ConsumerInterface;
+use Drupal\consumers\Entity\Consumer;
 use Drupal\Core\Ajax\AjaxResponse;
+use Drupal\Core\Ajax\AnnounceCommand;
 use Drupal\Core\Ajax\HtmlCommand;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\DependencyInjection\DependencySerializationTrait;
@@ -139,7 +141,7 @@ final class ConsumerNativeAppsFormAlter {
       '#options' => [
         '' => $this->t('- Use global setting -'),
         'off' => $this->t('Off - Allow all requests'),
-        'warn' => $this->t('Warn - Log warnings but allow requests'),
+        'warn' => $this->t('Warn - Send warning headers but allow requests'),
         'block' => $this->t('Block - Reject WebView requests'),
       ],
       '#default_value' => $consumer_config['webview_detection_override'] ?? '',
@@ -238,11 +240,29 @@ final class ConsumerNativeAppsFormAlter {
         </ul>'),
     ];
 
+    // Apply submitted policy before Drupal validates the built consumer entity.
+    $form['#entity_builders'][] = 'simple_oauth_native_apps_build_consumer_policy';
+
     // Add custom validation.
     $form['#validate'][] = 'simple_oauth_native_apps_validate_consumer_settings';
 
     // Add custom submit handler.
     $form['actions']['submit']['#submit'][] = 'simple_oauth_native_apps_submit_consumer_settings';
+  }
+
+  /**
+   * Supplies pending config overrides for entity constraint validation.
+   *
+   * @param \Drupal\consumers\Entity\Consumer $consumer
+   *   The consumer built by the entity form.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   The form state containing submitted policy controls.
+   */
+  public function buildConsumerPolicy(Consumer $consumer, FormStateInterface $form_state): void {
+    $values = $form_state->getValue('native_apps');
+    if (is_array($values)) {
+      $this->clientDetector->setSubmittedOverrides($consumer, $values);
+    }
   }
 
   /**
@@ -444,6 +464,7 @@ final class ConsumerNativeAppsFormAlter {
     }
 
     $response->addCommand(new HtmlCommand('#client-detection-results', $markup));
+    $response->addCommand(new AnnounceCommand(trim(strip_tags($markup))));
 
     return $response;
   }
