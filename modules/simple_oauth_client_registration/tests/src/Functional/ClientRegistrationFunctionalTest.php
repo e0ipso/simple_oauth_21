@@ -9,11 +9,15 @@ use GuzzleHttp\ClientInterface;
 use Drupal\Component\Serialization\Json;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Entity\EntityStorageException;
+use Drupal\simple_oauth\Entity\Oauth2Scope;
+use Drupal\simple_oauth\Oauth2ScopeInterface;
 use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
+use League\OAuth2\Server\Entities\ScopeEntityInterface;
 use Psr\Log\LoggerInterface;
 use Drupal\Tests\BrowserTestBase;
 use GuzzleHttp\RequestOptions;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
  * Functional tests for RFC 7591 OAuth Dynamic Client Registration.
@@ -28,6 +32,7 @@ use PHPUnit\Framework\Attributes\Group;
  */
 #[Group('simple_oauth_client_registration')]
 #[Group('functional')]
+#[RunTestsInSeparateProcesses]
 final class ClientRegistrationFunctionalTest extends BrowserTestBase {
 
   /**
@@ -950,6 +955,154 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
       'Explicit grant_types are respected exactly as specified');
     $this->assertNotContains('refresh_token', $response_data['grant_types'],
       'refresh_token is NOT added when client explicitly specifies grant_types');
+  }
+
+  /**
+   * Tests persisted scopes, default authorization, and registration management.
+   */
+  public function testRequestedScopesArePersistedAndReported(): void {
+    $this->createRegistrationScope('test:read', ['authorization_code']);
+    $this->createRegistrationScope('test:write', ['authorization_code']);
+    $this->createRegistrationScope('test:machine', ['client_credentials']);
+    $this->clearAllTestCaches();
+
+    // Omitted grant_types must use the configured authorization-code defaults.
+    $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
+      RequestOptions::JSON => [
+        'client_name' => 'Scope lifecycle client',
+        'redirect_uris' => ['https://example.com/callback'],
+        'scope' => 'test:read test:write test:machine unknown:scope test:read',
+      ],
+    ]);
+    $this->assertSame(201, $response->getStatusCode());
+    $registration = Json::decode((string) $response->getBody());
+    $this->assertArrayHasKey('scope', $registration);
+    $this->assertEqualsCanonicalizing(['test:read', 'test:write'], explode(' ', $registration['scope']));
+
+    $storage = $this->container->get('entity_type.manager')->getStorage('consumer');
+    $consumers = $storage->loadByProperties(['client_id' => $registration['client_id']]);
+    $consumer = reset($consumers);
+    $this->assertInstanceOf(ConsumerInterface::class, $consumer);
+    $this->assertCount(2, $consumer->get('authorization_code_scopes')->getScopes());
+    $this->assertTrue($consumer->get('scopes')->isEmpty());
+
+    // Exercise the real scope repository without a scope request parameter.
+    $client = $this->container->get('simple_oauth.repositories.client')->getClientEntity($registration['client_id']);
+    $scopes = $this->container->get('simple_oauth.repositories.scope')->finalizeScopes(
+      [], 'authorization_code', $client, (string) $this->rootUser->id(),
+    );
+    $this->assertEqualsCanonicalizing(['test:read', 'test:write'], array_map(
+      static fn (ScopeEntityInterface $scope): string => $scope->getIdentifier(),
+      $scopes,
+    ));
+
+    $uri = $this->buildUrl('/oauth/register/' . $registration['client_id']);
+    $headers = ['Authorization' => 'Bearer ' . $registration['registration_access_token']];
+    $response = $this->httpClient->get($uri, [RequestOptions::HEADERS => $headers]);
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame($registration['scope'], Json::decode((string) $response->getBody())['scope']);
+
+    foreach ([
+      ['scope' => 'test:write'],
+      ['client_name' => 'Renamed scope client'],
+      ['scope' => ''],
+      ['scope' => 'unknown:scope'],
+    ] as $metadata) {
+      $response = $this->httpClient->put($uri, [
+        RequestOptions::JSON => $metadata,
+        RequestOptions::HEADERS => $headers,
+      ]);
+      $this->assertSame(200, $response->getStatusCode());
+      // Omission preserves scopes, while an explicit empty value clears them.
+      $expected = !isset($metadata['scope']) || $metadata['scope'] === 'test:write' ? 'test:write' : '';
+      $this->assertSame($expected, Json::decode((string) $response->getBody())['scope']);
+      $response = $this->httpClient->get($uri, [RequestOptions::HEADERS => $headers]);
+      $this->assertSame($expected, Json::decode((string) $response->getBody())['scope']);
+      $storage->resetCache();
+      $stored = $storage->load($consumer->id());
+      $this->assertSame($expected === '' ? 0 : 1, $stored->get('authorization_code_scopes')->count());
+    }
+
+    // Filtering every requested scope must still report the empty selection.
+    $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
+      RequestOptions::JSON => [
+        'redirect_uris' => ['https://example.com/callback'],
+        'scope' => 'unknown:scope',
+      ],
+    ]);
+    $this->assertSame(201, $response->getStatusCode());
+    $this->assertSame('', Json::decode((string) $response->getBody())['scope']);
+  }
+
+  /**
+   * Tests scope selection and deduplication across supported grant types.
+   */
+  public function testRequestedScopesRespectGrantTypes(): void {
+    $this->createRegistrationScope('test:read', ['authorization_code']);
+    $this->createRegistrationScope('test:machine', ['client_credentials']);
+    $this->createRegistrationScope('test:shared', ['authorization_code', 'client_credentials']);
+    $this->clearAllTestCaches();
+
+    foreach ([['client_credentials'], ['authorization_code', 'client_credentials']] as $grant_types) {
+      $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
+        RequestOptions::JSON => [
+          'redirect_uris' => ['https://example.com/callback'],
+          'grant_types' => $grant_types,
+          'scope' => 'test:read test:machine test:shared unknown:scope',
+        ],
+      ]);
+      $this->assertSame(201, $response->getStatusCode());
+      $registration = Json::decode((string) $response->getBody());
+      $expected = count($grant_types) === 1
+        ? ['test:machine', 'test:shared']
+        : ['test:read', 'test:machine', 'test:shared'];
+      $this->assertArrayHasKey('scope', $registration);
+      $this->assertEqualsCanonicalizing($expected, explode(' ', $registration['scope']));
+
+      $consumers = $this->container->get('entity_type.manager')->getStorage('consumer')
+        ->loadByProperties(['client_id' => $registration['client_id']]);
+      $consumer = reset($consumers);
+      $this->assertInstanceOf(ConsumerInterface::class, $consumer);
+      $this->assertSame(count($grant_types) === 1 ? 0 : 2, $consumer->get('authorization_code_scopes')->count());
+      $this->assertCount(2, $consumer->get('scopes')->getScopes());
+
+      // Replacements must clear scopes from both grant-specific fields.
+      $response = $this->httpClient->put($this->buildUrl('/oauth/register/' . $registration['client_id']), [
+        RequestOptions::JSON => ['scope' => 'test:shared'],
+        RequestOptions::HEADERS => ['Authorization' => 'Bearer ' . $registration['registration_access_token']],
+      ]);
+      $this->assertSame(200, $response->getStatusCode());
+      $this->assertSame('test:shared', Json::decode((string) $response->getBody())['scope']);
+      $storage = $this->container->get('entity_type.manager')->getStorage('consumer');
+      $storage->resetCache();
+      $stored = $storage->load($consumer->id());
+      $this->assertSame(count($grant_types) === 1 ? 0 : 1, $stored->get('authorization_code_scopes')->count());
+      $this->assertCount(1, $stored->get('scopes')->getScopes());
+    }
+  }
+
+  /**
+   * Creates a scope restricted to the specified grant types.
+   *
+   * @param string $name
+   *   The externally visible scope name.
+   * @param string[] $grant_types
+   *   The grant types permitted to use the scope.
+   *
+   * @return \Drupal\simple_oauth\Entity\Oauth2Scope
+   *   The saved scope entity.
+   */
+  private function createRegistrationScope(string $name, array $grant_types): Oauth2Scope {
+    $scope = Oauth2Scope::create([
+      'name' => $name,
+      'description' => 'Registration scope fixture',
+      'grant_types' => array_fill_keys($grant_types, ['status' => TRUE]),
+      'umbrella' => FALSE,
+      'granularity_id' => Oauth2ScopeInterface::GRANULARITY_PERMISSION,
+      'granularity_configuration' => ['permission' => 'access content'],
+    ]);
+    $scope->save();
+    return $scope;
   }
 
   /**
