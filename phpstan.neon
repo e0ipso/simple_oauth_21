@@ -4,6 +4,11 @@ parameters:
   paths:
     - src/
     - tests/
+    - modules/simple_oauth_device_flow/src/
+    - modules/simple_oauth_pkce/src/
+    - modules/simple_oauth_native_apps/src/
+    - modules/simple_oauth_client_registration/src/
+    - modules/simple_oauth_server_metadata/src/
   ignoreErrors:
     - '#Trying to mock an undefined method .* on class .*ContextRepositoryInterface#'
     - '#Attribute class PHPUnit\\Framework\\Attributes\\Group does not exist#'

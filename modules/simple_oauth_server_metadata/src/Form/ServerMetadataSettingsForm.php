@@ -33,8 +33,8 @@ final class ServerMetadataSettingsForm extends ConfigFormBase {
   public function __construct(
     ConfigFactoryInterface $config_factory,
     TypedConfigManagerInterface $typed_config_manager,
-    protected readonly ModuleHandlerInterface $moduleHandler,
-    protected readonly RouteProviderInterface $routeProvider,
+    protected ModuleHandlerInterface $moduleHandler,
+    protected RouteProviderInterface $routeProvider,
   ) {
     parent::__construct($config_factory, $typed_config_manager);
   }
