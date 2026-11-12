@@ -15,9 +15,16 @@ services:
   simple_oauth_server_metadata.client_authentication:
     class: Drupal\simple_oauth_server_metadata\Service\ClientAuthenticationService
     arguments: ['@simple_oauth.repositories.client']
+  simple_oauth_server_metadata.token_lookup:
+    class: Drupal\simple_oauth_server_metadata\Service\TokenLookupService
+    arguments:
+      - '@entity_type.manager'
+      - '@simple_oauth.server.resource_server.factory'
+      - '@psr7.http_message_factory'
+      - '@settings'
   simple_oauth_server_metadata.token_revocation:
     class: Drupal\simple_oauth_server_metadata\Service\TokenRevocationService
-    arguments: ['@entity_type.manager']
+    arguments: ['@simple_oauth_server_metadata.token_lookup']
   simple_oauth_server_metadata.endpoint_discovery:
     class: Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService
     arguments: ['@language_manager', '@module_handler']
