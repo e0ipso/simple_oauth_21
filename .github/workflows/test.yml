@@ -108,6 +108,10 @@ jobs:
         working-directory: ${{ env.DRUPAL_ROOT }}/${{ env.MODULE_PATH }}
         run: |
           composer config --no-plugins allow-plugins.phpstan/extension-installer true
+          composer config repositories.drupal composer https://packages.drupal.org/8
+          # The parent project owns Drupal scaffold and runtime files.
+          composer config --no-plugins allow-plugins.drupal/core-composer-scaffold false
+          composer config --no-plugins allow-plugins.symfony/runtime false
           composer --no-interaction --no-progress install
 
           npm install --include=dev
