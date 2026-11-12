@@ -6,8 +6,9 @@ namespace Drupal\simple_oauth_native_apps\Form;
 
 use Drupal\consumers\Entity\ConsumerInterface;
 use Drupal\Core\Ajax\AjaxResponse;
-use Drupal\Core\Ajax\ReplaceCommand;
+use Drupal\Core\Ajax\HtmlCommand;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\DependencyInjection\DependencySerializationTrait;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\EntityFormInterface;
 use Drupal\Core\Form\FormStateInterface;
@@ -19,6 +20,7 @@ use Drupal\simple_oauth_native_apps\Service\NativeClientDetector;
  * Alters consumer forms to include native app settings.
  */
 final class ConsumerNativeAppsFormAlter {
+  use DependencySerializationTrait;
   use StringTranslationTrait;
 
   /**
@@ -205,7 +207,7 @@ final class ConsumerNativeAppsFormAlter {
       '#type' => 'button',
       '#value' => $this->t('Detect Client Type'),
       '#ajax' => [
-        'callback' => '::detectClientTypeAjax',
+        'callback' => [$this, 'detectClientTypeAjax'],
         'wrapper' => 'client-detection-results',
         'event' => 'click',
       ],
@@ -441,7 +443,7 @@ final class ConsumerNativeAppsFormAlter {
       $markup = $this->renderDetectionResult($detection_result, $redirect_uris);
     }
 
-    $response->addCommand(new ReplaceCommand('#client-detection-results', $markup));
+    $response->addCommand(new HtmlCommand('#client-detection-results', $markup));
 
     return $response;
   }
