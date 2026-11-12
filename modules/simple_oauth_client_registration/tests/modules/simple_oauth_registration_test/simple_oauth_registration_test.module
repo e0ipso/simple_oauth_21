@@ -9,6 +9,17 @@ declare(strict_types=1);
 
 use Drupal\consumers\Entity\ConsumerInterface;
 use Drupal\Core\Entity\EntityStorageException;
+use Drupal\Core\Entity\EntityTypeInterface;
+
+/**
+ * Implements hook_entity_base_field_info_alter().
+ */
+function simple_oauth_registration_test_entity_base_field_info_alter(array &$fields, EntityTypeInterface $entity_type): void {
+  // Model the consumer schema in supported Simple OAuth versions before 6.0.6.
+  if ($entity_type->id() === 'consumer' && \Drupal::state()->get('simple_oauth_registration_test.legacy_scope_field', FALSE)) {
+    unset($fields['authorization_code_scopes']);
+  }
+}
 
 /**
  * Implements hook_ENTITY_TYPE_update().

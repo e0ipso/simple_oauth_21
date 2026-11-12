@@ -13,6 +13,7 @@ use Drupal\Core\Url;
 use Drupal\file\FileInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\simple_oauth\Oauth2ScopeProviderInterface;
 use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -28,6 +29,16 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 final class ClientRegistrationService {
 
   /**
+   * Consumer scope fields keyed by the grant types that use them.
+   *
+   * @see \Drupal\simple_oauth\Repositories\ScopeRepository
+   */
+  private const SCOPE_FIELDS = [
+    'authorization_code' => 'authorization_code_scopes',
+    'client_credentials' => 'scopes',
+  ];
+
+  /**
    * Temporarily stores the generated secret for return in response.
    *
    * @var string|null
@@ -35,7 +46,20 @@ final class ClientRegistrationService {
   private ?string $generatedSecret = NULL;
 
   /**
-   * Constructor.
+   * Constructs the client registration service.
+   *
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
+   *   The entity type manager.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
+   *   The configuration factory.
+   * @param \Psr\Log\LoggerInterface $logger
+   *   The registration logger.
+   * @param \Drupal\simple_oauth_client_registration\Service\RegistrationTokenService $tokenService
+   *   The registration access token service.
+   * @param \Drupal\Core\File\FileUrlGeneratorInterface $fileUrlGenerator
+   *   The file URL generator.
+   * @param \Drupal\simple_oauth\Oauth2ScopeProviderInterface $scopeProvider
+   *   The provider for configured or dynamically supplied scopes.
    */
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
@@ -43,6 +67,7 @@ final class ClientRegistrationService {
     private readonly LoggerInterface $logger,
     private readonly RegistrationTokenService $tokenService,
     private readonly FileUrlGeneratorInterface $fileUrlGenerator,
+    private readonly Oauth2ScopeProviderInterface $scopeProvider,
   ) {}
 
   /**
@@ -95,6 +120,8 @@ final class ClientRegistrationService {
       'software_id' => $clientData->softwareId ?? '',
       'software_version' => $clientData->softwareVersion ?? '',
     ];
+
+    $values += $this->buildScopeFieldValues($clientData->scope, $values['grant_types']);
 
     // Generate client secret for confidential clients.
     if ($is_confidential) {
@@ -368,6 +395,20 @@ final class ClientRegistrationService {
       $consumer->set('redirect', $redirectUris);
     }
 
+    // Omission preserves authorization defaults; an empty value clears them.
+    if ($metadata->scope !== NULL) {
+      $grant_types = array_column($consumer->get('grant_types')->getValue(), 'value');
+      foreach ($this->buildScopeFieldValues($metadata->scope, $grant_types) as $field_name => $value) {
+        // Client credentials use an administrative allowlist. Clearing it also
+        // removes its restriction, so clients must not rewrite this field.
+        // Supported schemas before 6.0.6 lack authorization-code defaults.
+        if (!$consumer->hasField($field_name) || $field_name === self::SCOPE_FIELDS['client_credentials']) {
+          continue;
+        }
+        $consumer->set($field_name, $value);
+      }
+    }
+
     $consumer->save();
 
     return $this->getClientMetadataArray($consumer);
@@ -489,6 +530,7 @@ final class ClientRegistrationService {
       'redirect_uris' => [],
       'contacts' => [],
       'grant_types' => [],
+      'scope' => $this->getRegisteredScope($consumer),
     ];
 
     // Get redirect URIs.
@@ -512,10 +554,74 @@ final class ClientRegistrationService {
       }
     }
 
-    // Remove empty fields.
-    return array_filter($metadata, function ($value) {
-      return $value !== '' && $value !== [];
-    });
+    // Report even an empty scope when the requested selection was filtered out.
+    return array_filter($metadata, static function ($value, string $key): bool {
+      return $key === 'scope' || ($value !== '' && $value !== []);
+    }, ARRAY_FILTER_USE_BOTH);
+  }
+
+  /**
+   * Builds the registered scope selection for each supported grant type.
+   *
+   * Unknown scopes and scopes disabled for the client's grants are omitted.
+   * RFC 7591 section 2 permits overriding requested scopes when the response
+   * reports the registered selection. Empty selections return empty field
+   * lists; callers decide which fields are writable.
+   *
+   * @param string|null $scope
+   *   The requested space-delimited scope names, or NULL when omitted.
+   * @param string[] $grant_types
+   *   The grant types registered for the client.
+   *
+   * @return array<string, array<int, array{scope_id: string}>>
+   *   Field values for each grant-specific consumer scope field.
+   */
+  private function buildScopeFieldValues(?string $scope, array $grant_types): array {
+    $values = array_fill_keys(self::SCOPE_FIELDS, []);
+    $names = preg_split('/\s+/', trim($scope ?? ''), -1, PREG_SPLIT_NO_EMPTY);
+    if (!$names) {
+      return $values;
+    }
+
+    $scopes = $this->scopeProvider->loadMultipleByNames($names);
+    foreach (self::SCOPE_FIELDS as $grant_type => $field_name) {
+      if (!in_array($grant_type, $grant_types, TRUE)) {
+        continue;
+      }
+      foreach ($scopes as $registered_scope) {
+        if ($registered_scope->isGrantTypeEnabled($grant_type)) {
+          $values[$field_name][] = ['scope_id' => $registered_scope->id()];
+        }
+      }
+    }
+    return $values;
+  }
+
+  /**
+   * Returns the registered scope names across grant-specific consumer fields.
+   *
+   * @param \Drupal\consumers\Entity\ConsumerInterface $consumer
+   *   The registered consumer.
+   *
+   * @return string
+   *   Unique space-delimited scope names, or an empty string for no scopes.
+   */
+  private function getRegisteredScope(ConsumerInterface $consumer): string {
+    $names = [];
+    foreach (self::SCOPE_FIELDS as $field_name) {
+      if (!$consumer->hasField($field_name)) {
+        continue;
+      }
+      $scope_ids = array_column($consumer->get($field_name)->getValue(), 'scope_id');
+      // The static provider interprets an empty ID list as every known scope.
+      if ($scope_ids === []) {
+        continue;
+      }
+      foreach ($this->scopeProvider->loadMultiple($scope_ids) as $scope) {
+        $names[$scope->getName()] = TRUE;
+      }
+    }
+    return implode(' ', array_keys($names));
   }
 
   /**

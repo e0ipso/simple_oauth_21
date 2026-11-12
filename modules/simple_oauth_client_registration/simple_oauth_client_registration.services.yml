@@ -18,6 +18,7 @@ services:
       - '@logger.channel.simple_oauth_client_registration'
       - '@simple_oauth_client_registration.service.token'
       - '@file_url_generator'
+      - '@simple_oauth.oauth2_scope.provider'
 
   simple_oauth_client_registration.service.token:
     class: Drupal\simple_oauth_client_registration\Service\RegistrationTokenService
