@@ -7,7 +7,7 @@ namespace Drupal\simple_oauth_device_flow\Service;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\simple_oauth_device_flow\Entity\DeviceCode;
-use Drupal\simple_oauth_device_flow\Repository\DeviceCodeRepository;
+use Drupal\simple_oauth_device_flow\Repository\DeviceCodeLifecycleRepositoryInterface;
 use Psr\Log\LoggerInterface;
 use League\OAuth2\Server\Entities\ScopeEntityInterface;
 use League\OAuth2\Server\Exception\OAuthServerException;
@@ -34,7 +34,7 @@ final class DeviceCodeService {
   /**
    * Constructs a DeviceCodeService.
    *
-   * @param \Drupal\simple_oauth_device_flow\Repository\DeviceCodeRepository $deviceCodeRepository
+   * @param \Drupal\simple_oauth_device_flow\Repository\DeviceCodeLifecycleRepositoryInterface $deviceCodeRepository
    *   The device code repository.
    * @param \Drupal\simple_oauth_device_flow\Service\UserCodeGenerator $userCodeGenerator
    *   The user code generator service.
@@ -48,7 +48,7 @@ final class DeviceCodeService {
    *   The scope repository, or NULL to use the container.
    */
   public function __construct(
-    protected DeviceCodeRepository $deviceCodeRepository,
+    protected DeviceCodeLifecycleRepositoryInterface $deviceCodeRepository,
     protected UserCodeGenerator $userCodeGenerator,
     protected DeviceFlowSettingsService $settings,
     protected TimeInterface $time,

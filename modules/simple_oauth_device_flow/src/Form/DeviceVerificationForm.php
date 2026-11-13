@@ -9,7 +9,7 @@ use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Url;
-use Drupal\simple_oauth_device_flow\Repository\DeviceVerificationRepositoryInterface;
+use Drupal\simple_oauth_device_flow\Repository\DeviceVerificationOperationsInterface;
 use Drupal\simple_oauth_device_flow\Entity\DeviceCode;
 use Drupal\simple_oauth\Entities\ScopeEntity;
 use League\OAuth2\Server\Repositories\DeviceCodeRepositoryInterface;
@@ -40,7 +40,7 @@ final class DeviceVerificationForm extends FormBase {
   /**
    * The device code repository.
    */
-  protected DeviceCodeRepositoryInterface $deviceCodeRepository;
+  protected ?DeviceVerificationOperationsInterface $deviceCodeRepository;
 
   /**
    * The device code service.
@@ -75,7 +75,7 @@ final class DeviceVerificationForm extends FormBase {
   /**
    * Constructs a DeviceVerificationForm object.
    *
-   * @param \League\OAuth2\Server\Repositories\DeviceCodeRepositoryInterface $device_code_repository
+   * @param \League\OAuth2\Server\Repositories\DeviceCodeRepositoryInterface|\Drupal\simple_oauth_device_flow\Repository\DeviceVerificationOperationsInterface $device_code_repository
    *   The device code repository.
    * @param \Drupal\simple_oauth_device_flow\Service\DeviceCodeService $device_code_service
    *   The device code service.
@@ -91,7 +91,7 @@ final class DeviceVerificationForm extends FormBase {
    *   The device flow settings service.
    */
   public function __construct(
-    DeviceCodeRepositoryInterface $device_code_repository,
+    DeviceCodeRepositoryInterface|DeviceVerificationOperationsInterface $device_code_repository,
     DeviceCodeService $device_code_service,
     UserCodeGenerator $user_code_generator,
     AccountInterface $current_user,
@@ -99,7 +99,9 @@ final class DeviceVerificationForm extends FormBase {
     FloodInterface $flood,
     DeviceFlowSettingsService $settings,
   ) {
-    $this->deviceCodeRepository = $device_code_repository;
+    // Retain bare League callers until a breaking release can require local
+    // operations. They continue to fail closed as verification unavailable.
+    $this->deviceCodeRepository = $device_code_repository instanceof DeviceVerificationOperationsInterface ? $device_code_repository : NULL;
     $this->deviceCodeService = $device_code_service;
     $this->userCodeGenerator = $user_code_generator;
     $this->currentUser = $current_user;
@@ -112,8 +114,13 @@ final class DeviceVerificationForm extends FormBase {
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): static {
+    // Retain independently constructed legacy containers until a breaking
+    // release can require the focused service alias.
+    $repository_id = $container->has('simple_oauth_device_flow.verification_repository')
+      ? 'simple_oauth_device_flow.verification_repository'
+      : 'simple_oauth_device_flow.device_code_repository';
     return new static(
-      $container->get('simple_oauth_device_flow.device_code_repository'),
+      $container->get($repository_id),
       $container->get('simple_oauth_device_flow.device_code_service'),
       $container->get('simple_oauth_device_flow.user_code_generator'),
       $container->get('current_user'),
@@ -228,7 +235,7 @@ final class DeviceVerificationForm extends FormBase {
         '#type' => 'value',
         '#value' => $confirmation['user_code'],
       ];
-      $device = $this->deviceCodeRepository->getDeviceCodeEntityByDeviceCode($confirmation['identifier']);
+      $device = $this->deviceCodeRepository?->getDeviceCodeEntityByDeviceCode($confirmation['identifier']);
       if ($device instanceof DeviceCode) {
         $client = $device->getClient();
         $form['instructions']['#markup'] = $this->t('Review this request before allowing access to your account.');
@@ -274,7 +281,7 @@ final class DeviceVerificationForm extends FormBase {
       return;
     }
 
-    if ($this->currentUser->isAnonymous() || !$this->deviceCodeRepository instanceof DeviceVerificationRepositoryInterface) {
+    if ($this->currentUser->isAnonymous() || $this->deviceCodeRepository === NULL) {
       $form_state->setErrorByName('user_code', $this->t('Device verification is unavailable.'));
       return;
     }
@@ -382,7 +389,7 @@ final class DeviceVerificationForm extends FormBase {
         $form_state->setRebuild();
         return;
       }
-      if (!$this->deviceCodeRepository instanceof DeviceVerificationRepositoryInterface) {
+      if ($this->deviceCodeRepository === NULL) {
         throw new \RuntimeException('Device verification is unavailable.');
       }
       $this->deviceCodeRepository->decide(
@@ -424,7 +431,7 @@ final class DeviceVerificationForm extends FormBase {
     }
 
     try {
-      if (!is_array($form_state->get('confirmation')) || !$this->deviceCodeRepository instanceof DeviceVerificationRepositoryInterface) {
+      if (!is_array($form_state->get('confirmation')) || $this->deviceCodeRepository === NULL) {
         throw new \RuntimeException('Device request has not been reviewed.');
       }
       $this->deviceCodeRepository->decide(

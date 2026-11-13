@@ -16,6 +16,12 @@ use Drupal\Core\Url;
 use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\path_alias\Entity\PathAlias;
 use Drupal\simple_oauth_device_flow\Repository\DeviceCodeRepository;
+use Drupal\simple_oauth_device_flow\Repository\DeviceCodeLifecycleRepositoryInterface;
+use Drupal\simple_oauth_device_flow\Repository\DeviceVerificationOperationsInterface;
+use Drupal\simple_oauth_device_flow\Repository\DeviceVerificationRepositoryInterface;
+use Drupal\simple_oauth_device_flow\Repository\UserCodeLookupInterface;
+use Drupal\simple_oauth_device_flow\DeviceGrantType;
+use League\OAuth2\Server\Entities\ClientEntityInterface;
 use League\OAuth2\Server\Repositories\DeviceCodeRepositoryInterface;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\simple_oauth_device_flow\Controller\DeviceAuthorizationController;
@@ -24,6 +30,7 @@ use Drupal\simple_oauth_device_flow\Form\DeviceVerificationForm;
 use Drupal\simple_oauth_device_flow\Entity\DeviceCode;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpFoundation\Session\Session;
 use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 use Drupal\simple_oauth\Entities\ScopeEntity;
@@ -372,6 +379,7 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     $this->assertSame([], $state->getErrors());
     $form_object->submitForm($form, $state);
     $this->assertTrue($state->isRebuilding());
+    $state->setRebuild(FALSE);
     $form_object->validateForm($form, $state);
     $form_object->submitForm($form, $state);
     $this->container->get('entity_type.manager')->getStorage('oauth2_device_code')->resetCache();
@@ -1113,6 +1121,186 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     $this->assertNull($repository->getDeviceCodeEntityByDeviceCode($second['device_code'])->getUserIdentifier());
     $stack->pop();
     $stack->pop();
+  }
+
+  /**
+   * Tests user-code generation retries a collision through the lookup contract.
+   */
+  public function testFocusedUserCodeLookup(): void {
+    $this->installDeviceFixtures();
+    $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_device_code');
+    $logger_factory = $this->container->get('simple_oauth_device_flow.logger_factory');
+    $lookup = $this->createMock(UserCodeLookupInterface::class);
+    $lookup->expects($this->exactly(2))->method('getDeviceCodeEntityByUserCode')
+      ->willReturnOnConsecutiveCalls($storage->create(), NULL);
+    $generator = new UserCodeGenerator($this->container->get('config.factory'), $lookup, $logger_factory);
+    $this->assertTrue($generator->validateCodeFormat($generator->generateUserCode()));
+  }
+
+  /**
+   * Tests lifecycle issuance, polling and cleanup with a focused replacement.
+   */
+  public function testFocusedLifecycleRepository(): void {
+    $this->installDeviceFixtures();
+    $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_device_code');
+    $logger_factory = $this->container->get('simple_oauth_device_flow.logger_factory');
+    $lifecycle = $this->createMock(DeviceCodeLifecycleRepositoryInterface::class);
+    $lifecycle->expects($this->once())->method('getNewDeviceCode')->willReturn($storage->create());
+    $lifecycle->expects($this->once())->method('getDeviceCodeEntityByDeviceCode')->willReturn(NULL);
+    $lifecycle->expects($this->once())->method('persistDeviceCode')->willReturnCallback(static function (DeviceCode $device): void {
+      $device->save();
+    });
+    $lifecycle->expects($this->atLeastOnce())->method('getStorage')->willReturn($storage);
+    $lifecycle->expects($this->once())->method('recordPolling')->willReturn(0);
+    $service = new DeviceCodeService(
+      $lifecycle, $this->container->get('simple_oauth_device_flow.user_code_generator'),
+      $this->container->get('simple_oauth_device_flow.settings'),
+      $this->container->get('datetime.time'), $logger_factory,
+    );
+    $client = $this->createMock(ClientEntityInterface::class);
+    $client->method('getIdentifier')->willReturn('focused-client');
+    $data = $service->generateDeviceAuthorization($client);
+    $entity = $storage->load($data['device_code']);
+    $this->assertSame($data['user_code'], $entity->getUserCode());
+    $this->assertSame(['valid' => TRUE], $service->validatePollingInterval($entity));
+    $statistics = $service->getStatistics();
+    $this->assertSame(1, $statistics['total_codes']);
+    $this->assertSame(0, $service->cleanupExpiredCodes());
+    $this->assertSame(0, $service->cleanupOldAuthorizedCodes());
+  }
+
+  /**
+   * Tests the ordinary form factory with only focused verification operations.
+   */
+  public function testFocusedVerificationFactory(): void {
+    $this->installDeviceFixtures();
+    $client = $this->createMock(ClientEntityInterface::class);
+    $client->method('getIdentifier')->willReturn('focused-client');
+    $client->method('getName')->willReturn('Focused application');
+    $service = $this->container->get('simple_oauth_device_flow.device_code_service');
+    $data = $service->generateDeviceAuthorization($client);
+    $entity = $this->container->get('entity_type.manager')->getStorage('oauth2_device_code')->load($data['device_code']);
+    $entity->setClient($client);
+    $this->container->get('request_stack')->push(Request::create('https://example.org/oauth/device'));
+    $verification = $this->createMock(DeviceVerificationOperationsInterface::class);
+    $verification->expects($this->exactly(2))->method('getDeviceCodeEntityByUserCode')
+      ->with($data['user_code'])->willReturn($entity);
+    $verification->expects($this->exactly(2))->method('isDeviceCodeRevoked')
+      ->with($data['device_code'])->willReturn(FALSE);
+    $verification->expects($this->once())->method('getDeviceCodeEntityByDeviceCode')
+      ->with($data['device_code'])->willReturn($entity);
+    $verification->expects($this->once())->method('decide')->with($data['device_code'], '7', TRUE);
+    $this->container->get('current_user')->setAccount(new UserSession(['uid' => 7]));
+    $form_container = new ContainerBuilder();
+    foreach ([
+      'simple_oauth_device_flow.device_code_service',
+      'simple_oauth_device_flow.user_code_generator',
+      'current_user', 'logger.channel.simple_oauth_device_flow', 'flood',
+      'simple_oauth_device_flow.settings',
+    ] as $id) {
+      $form_container->set($id, $this->container->get($id));
+    }
+    $form_container->set('simple_oauth_device_flow.verification_repository', $verification);
+    $form_container->set('simple_oauth_device_flow.device_code_repository', $verification);
+    $form_object = DeviceVerificationForm::create($form_container);
+    $form = [];
+    $state = (new FormState())->setValue('user_code', $data['user_code']);
+    $form_object->validateForm($form, $state);
+    $this->assertSame([], $state->getErrors());
+    $form_object->submitForm($form, $state);
+    $this->assertTrue($state->isRebuilding());
+    $review = $form_object->buildForm([], $state);
+    $this->assertSame('Focused application (focused-client)', $review['client']['#plain_text']);
+    $this->assertSame(0, $review['#cache']['max-age']);
+    $state->setRebuild(FALSE);
+    $form_object->validateForm($form, $state);
+    $this->assertSame([], $state->getErrors());
+    $form_object->submitForm($form, $state);
+    $this->assertSame('simple_oauth_device_flow.device_verification_form', $state->getRedirect()->getRouteName());
+    $this->container->get('request_stack')->pop();
+  }
+
+  /**
+   * Tests the original repository, generator and lifecycle constructor calls.
+   */
+  public function testLegacyRepositoryConstructors(): void {
+    $this->installDeviceFixtures();
+    $factory = $this->container->get('simple_oauth_device_flow.logger_factory');
+    $settings = $this->container->get('simple_oauth_device_flow.settings');
+    $repository = new DeviceCodeRepository(
+      $this->container->get('entity_type.manager'), $settings, $factory,
+      $this->container->get('simple_oauth.repositories.client'),
+    );
+    $generator = new UserCodeGenerator($this->container->get('config.factory'), $repository, $factory);
+    $service = new DeviceCodeService($repository, $generator, $settings, $this->container->get('datetime.time'), $factory);
+    $client = $this->createMock(ClientEntityInterface::class);
+    $client->method('getIdentifier')->willReturn('legacy-client');
+    $data = $service->generateDeviceAuthorization($client);
+    $entity = $repository->getDeviceCodeEntityByUserCode($data['user_code']);
+    $this->assertSame($data['device_code'], $entity->getIdentifier());
+    $this->assertSame(['valid' => TRUE], $service->validatePollingInterval($entity));
+    $repository->decide($data['device_code'], '7', FALSE);
+    $this->assertSame('7', $repository->getDeviceCodeEntityByUserCode($data['user_code'])->getUserIdentifier());
+  }
+
+  /**
+   * Tests the combined public interface remains a League-compatible decorator.
+   */
+  public function testLegacyCombinedRepositoryConstructor(): void {
+    $this->installConfig(['simple_oauth_device_flow']);
+    $repository = $this->createMock(DeviceVerificationRepositoryInterface::class);
+    $this->assertInstanceOf(DeviceCodeRepositoryInterface::class, $repository);
+    $repository->expects($this->once())->method('getDeviceCodeEntityByUserCode')->willReturn(NULL);
+    $form_object = new DeviceVerificationForm(
+      $repository, $this->container->get('simple_oauth_device_flow.device_code_service'),
+      $this->container->get('simple_oauth_device_flow.user_code_generator'),
+      new UserSession(['uid' => 7]), $this->createMock(LoggerInterface::class),
+      $this->container->get('flood'), $this->container->get('simple_oauth_device_flow.settings'),
+    );
+    $form = [];
+    $state = (new FormState())->setValue('user_code', 'BCDF-GHJK');
+    $form_object->validateForm($form, $state);
+    $this->assertStringContainsString('Invalid user code.', (string) $state->getErrors()['user_code']);
+  }
+
+  /**
+   * Tests controller/plugin eligibility and authentication for saved aliases.
+   */
+  public function testDeviceGrantEligibility(): void {
+    $this->installDeviceFixtures();
+    $this->installEntitySchema('oauth2_token');
+    $consumer = Consumer::create([
+      'label' => 'Grant eligibility',
+      'client_id' => 'eligibility-client',
+      'confidential' => TRUE,
+      'secret' => 'eligibility-secret',
+      'grant_types' => [DeviceGrantType::CANONICAL],
+    ]);
+    $consumer->save();
+    $controller = DeviceAuthorizationController::create($this->container);
+    $plugin = $this->container->get('plugin.manager.oauth2_grant.processor')->createInstance(DeviceGrantType::CANONICAL);
+    $this->assertSame(DeviceGrantType::CANONICAL, $plugin->getGrantType($consumer)->getIdentifier());
+    foreach ([
+      [DeviceGrantType::CANONICAL],
+      [DeviceGrantType::LEGACY],
+      [DeviceGrantType::LEGACY, DeviceGrantType::CANONICAL],
+      ['authorization_code'],
+    ] as $grants) {
+      $consumer->set('grant_types', $grants)->save();
+      $eligible = $grants !== ['authorization_code'];
+      $request = Request::create('/oauth/device_authorization', 'POST', [
+        'client_id' => 'eligibility-client',
+        'client_secret' => 'wrong-secret',
+      ]);
+      $this->assertSame('invalid_client', json_decode($controller->authorize($request)->getContent(), TRUE)['error']);
+      $request->request->set('client_secret', 'eligibility-secret');
+      $response = $controller->authorize($request);
+      $this->assertSame($eligible ? 200 : 400, $response->getStatusCode());
+      if (!$eligible) {
+        $this->assertSame('unauthorized_client', json_decode($response->getContent(), TRUE)['error']);
+      }
+      $this->assertSame($grants, array_column($consumer->get('grant_types')->getValue(), 'value'));
+    }
   }
 
   /**

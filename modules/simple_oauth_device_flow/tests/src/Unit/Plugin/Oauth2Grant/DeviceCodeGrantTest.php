@@ -225,21 +225,21 @@ final class DeviceCodeGrantTest extends UnitTestCase {
    * @covers ::isClientEligible
    */
   public function testIsClientEligible(): void {
-    // Test eligible client.
-    $grant_types_field = $this->prophesize(FieldItemListInterface::class);
-    $grant_types_field->getValue()->willReturn([['value' => 'device_code']]);
-    $this->consumer->get('grant_types')->willReturn($grant_types_field->reveal());
-
-    $result = $this->deviceCodeGrant->isClientEligible($this->consumer->reveal());
-    $this->assertTrue($result);
-
-    // Test ineligible client.
-    $grant_types_field2 = $this->prophesize(FieldItemListInterface::class);
-    $grant_types_field2->getValue()->willReturn([['value' => 'authorization_code']]);
-    $this->consumer->get('grant_types')->willReturn($grant_types_field2->reveal());
-
-    $result = $this->deviceCodeGrant->isClientEligible($this->consumer->reveal());
-    $this->assertFalse($result);
+    foreach ([
+      ['device_code'],
+      ['urn:ietf:params:oauth:grant-type:device_code'],
+      ['device_code', 'urn:ietf:params:oauth:grant-type:device_code'],
+      ['authorization_code'],
+      [],
+    ] as $grants) {
+      $field = $this->prophesize(FieldItemListInterface::class);
+      $field->getValue()->willReturn(array_map(static fn(string $grant): array => ['value' => $grant], $grants));
+      $this->consumer->get('grant_types')->willReturn($field->reveal());
+      $this->assertSame(
+        $grants !== [] && $grants !== ['authorization_code'],
+        $this->deviceCodeGrant->isClientEligible($this->consumer->reveal()),
+      );
+    }
   }
 
   /**
@@ -302,6 +302,7 @@ final class DeviceCodeGrantTest extends UnitTestCase {
     $clients->method('getClientEntity')->with('grant-lifetime-client')->willReturn($client);
     $grant = $this->deviceCodeGrant->getGrantType($this->consumer->reveal());
     $this->assertInstanceOf(LeagueDeviceCodeGrant::class, $grant);
+    $this->assertSame('urn:ietf:params:oauth:grant-type:device_code', $grant->getIdentifier());
     $grant->setClientRepository($clients);
     $grant->setScopeRepository($this->createMock(ScopeRepositoryInterface::class));
     $grant->setDefaultScope('');
