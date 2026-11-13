@@ -28,10 +28,10 @@ final class DeviceFlowSettingsService implements EventSubscriberInterface {
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The config factory.
-   * @param \Drupal\Core\Path\PathValidatorInterface|null $pathValidator
-   *   The path validator, or NULL to use the container.
+   * @param \Drupal\Core\Path\PathValidatorInterface $pathValidator
+   *   The path validator.
    */
-  public function __construct(ConfigFactoryInterface $configFactory, private readonly ?PathValidatorInterface $pathValidator = NULL) {
+  public function __construct(ConfigFactoryInterface $configFactory, private readonly PathValidatorInterface $pathValidator) {
     $this->configFactory = $configFactory;
   }
 
@@ -260,9 +260,7 @@ final class DeviceFlowSettingsService implements EventSubscriberInterface {
     if (!is_string($path) || !preg_match('@^/(?!/)[A-Za-z0-9/_-]*$@D', $path)) {
       throw new \UnexpectedValueException('Invalid local device verification path.');
     }
-    // phpcs:ignore DrupalPractice.Objects.GlobalDrupal.GlobalDrupal -- Preserve the original constructor for external callers.
-    $validator = $this->pathValidator ?? \Drupal::service('path.validator');
-    $url = $validator->getUrlIfValid($path);
+    $url = $this->pathValidator->getUrlIfValid($path);
     if (!$url instanceof Url || !$url->isRouted() || $url->getRouteName() !== 'simple_oauth_device_flow.device_verification_form') {
       throw new \UnexpectedValueException('Device verification path does not resolve to the verification form.');
     }

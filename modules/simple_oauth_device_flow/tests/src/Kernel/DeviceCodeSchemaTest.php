@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\simple_oauth_device_flow\Kernel;
 
+// cspell:ignore BCDF GHJK
 use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Database\IntegrityConstraintViolationException;
 use Drupal\KernelTests\KernelTestBase;
@@ -153,7 +154,7 @@ final class DeviceCodeSchemaTest extends KernelTestBase {
   }
 
   /**
-   * Tests a colliding nonunique index stops safely rather than being trusted.
+   * Tests a colliding index without uniqueness stops safely.
    */
   public function testUpgradeIndexConflictFailsSafely(): void {
     $this->installLegacySchema(FALSE);

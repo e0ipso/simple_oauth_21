@@ -52,10 +52,10 @@ final class DeviceCodeRepository implements DeviceVerificationRepositoryInterfac
    *   The logger channel factory.
    * @param \League\OAuth2\Server\Repositories\ClientRepositoryInterface $clientRepository
    *   The client repository.
-   * @param \Drupal\Core\Lock\LockBackendInterface|null $lock
-   *   The shared lock backend, or NULL to use the container.
-   * @param \Drupal\Component\Datetime\TimeInterface|null $time
-   *   The clock, or NULL to use the container.
+   * @param \Drupal\Core\Lock\LockBackendInterface $lock
+   *   The shared lock backend.
+   * @param \Drupal\Component\Datetime\TimeInterface $time
+   *   The clock.
    * @param \Drupal\simple_oauth\Oauth2ScopeAdapterInterface|null $scopeProvider
    *   The scope provider, or NULL for original constructor callers.
    */
@@ -64,8 +64,8 @@ final class DeviceCodeRepository implements DeviceVerificationRepositoryInterfac
     protected DeviceFlowSettingsService $settings,
     LoggerChannelFactoryInterface $loggerFactory,
     ClientRepositoryInterface $clientRepository,
-    private readonly ?LockBackendInterface $lock = NULL,
-    private readonly ?TimeInterface $time = NULL,
+    private readonly LockBackendInterface $lock,
+    private readonly TimeInterface $time,
     private readonly ?Oauth2ScopeAdapterInterface $scopeProvider = NULL,
   ) {
     $this->logger = $loggerFactory->get('simple_oauth_device_flow');
@@ -424,10 +424,11 @@ final class DeviceCodeRepository implements DeviceVerificationRepositoryInterfac
    *
    * @throws \RuntimeException
    *   If locking fails or the entity no longer exists.
+   * @throws \DomainException
+   *   If the operation rejects an expired or revoked code.
    */
   private function withLockedCode(string $identifier, callable $operation, bool $allow_missing = FALSE): mixed {
-    // phpcs:ignore DrupalPractice.Objects.GlobalDrupal.GlobalDrupal -- Preserve the original constructor for external callers.
-    $lock = $this->lock ?? \Drupal::lock();
+    $lock = $this->lock;
     $lock_name = 'simple_oauth_device_flow:' . hash('sha256', $identifier);
     if (!$lock->acquire($lock_name)) {
       throw new \RuntimeException('Device authorization is being updated.');
@@ -457,8 +458,7 @@ final class DeviceCodeRepository implements DeviceVerificationRepositoryInterfac
    *   The current Unix timestamp.
    */
   private function getCurrentTime(): int {
-    // phpcs:ignore DrupalPractice.Objects.GlobalDrupal.GlobalDrupal -- Preserve the original constructor for external callers.
-    return ($this->time ?? \Drupal::time())->getCurrentTime();
+    return $this->time->getCurrentTime();
   }
 
   /**

@@ -19,29 +19,26 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 final class OAuth21ComplianceController extends ControllerBase {
 
   /**
-   * Render element discovery supplied by the controller factory.
-   */
-  private ?ElementInfoManagerInterface $elementInfo = NULL;
-
-  /**
    * Constructs an OAuth21ComplianceController object.
    *
    * @param \Drupal\simple_oauth_21\Service\OAuth21ComplianceService $complianceService
    *   The OAuth 2.1 compliance service.
+   * @param \Drupal\Core\Render\ElementInfoManagerInterface $elementInfo
+   *   The render element manager.
    */
   public function __construct(
     private readonly OAuth21ComplianceService $complianceService,
+    private readonly ElementInfoManagerInterface $elementInfo,
   ) {}
 
   /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): static {
-    $controller = new static(
-      $container->get('simple_oauth_21.compliance_service')
+    return new static(
+      $container->get('simple_oauth_21.compliance_service'),
+      $container->get('plugin.manager.element_info'),
     );
-    $controller->elementInfo = $container->get('plugin.manager.element_info');
-    return $controller;
   }
 
   /**
@@ -121,11 +118,6 @@ final class OAuth21ComplianceController extends ControllerBase {
    *   Whether Drupal can render single directory components.
    */
   private function hasComponentRenderer(): bool {
-    if ($this->elementInfo === NULL) {
-      // Legacy callers supply only the compliance service to the constructor.
-      // phpcs:ignore DrupalPractice.Objects.GlobalDrupal.GlobalDrupal
-      $this->elementInfo = \Drupal::service('plugin.manager.element_info');
-    }
     return $this->elementInfo->hasDefinition('component');
   }
 

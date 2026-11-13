@@ -55,16 +55,16 @@ final class DeviceCodeService {
    *   The time service.
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $loggerFactory
    *   The logger channel factory.
-   * @param \League\OAuth2\Server\Repositories\ScopeRepositoryInterface|null $scopeRepository
-   *   The scope repository, or NULL to use the container.
+   * @param \League\OAuth2\Server\Repositories\ScopeRepositoryInterface $scopeRepository
+   *   The scope repository.
    * @param \Drupal\simple_oauth_device_flow\Repository\DeviceCodeMaintenanceInterface|null $maintenance
    *   Maintenance operations, or NULL to use repository maintenance or legacy
    *   storage. Without either, cleanup logs failure and returns zero, scheduled
    *   cleanup remains due, and statistics include an error.
-   * @param \Drupal\Core\State\StateInterface|null $state
-   *   Scheduling state, or NULL for original constructor callers.
-   * @param \Drupal\Core\Lock\LockBackendInterface|null $lock
-   *   The scheduling lock, or NULL for original constructor callers.
+   * @param \Drupal\Core\State\StateInterface $state
+   *   Scheduling state.
+   * @param \Drupal\Core\Lock\LockBackendInterface $lock
+   *   The scheduling lock.
    * @param \Drupal\simple_oauth\Oauth2ScopeAdapterInterface|null $scopeProvider
    *   The provider for issuance through replacement lifecycle repositories.
    */
@@ -74,10 +74,10 @@ final class DeviceCodeService {
     protected DeviceFlowSettingsService $settings,
     protected TimeInterface $time,
     LoggerChannelFactoryInterface $loggerFactory,
-    private readonly ?ScopeRepositoryInterface $scopeRepository = NULL,
-    private readonly ?DeviceCodeMaintenanceInterface $maintenance = NULL,
-    private readonly ?StateInterface $state = NULL,
-    private readonly ?LockBackendInterface $lock = NULL,
+    private readonly ScopeRepositoryInterface $scopeRepository,
+    private readonly ?DeviceCodeMaintenanceInterface $maintenance,
+    private readonly StateInterface $state,
+    private readonly LockBackendInterface $lock,
     private readonly ?Oauth2ScopeAdapterInterface $scopeProvider = NULL,
   ) {
     $this->logger = $loggerFactory->get('simple_oauth_device_flow');
@@ -285,8 +285,7 @@ final class DeviceCodeService {
       // Resolve all public names before issuing or persisting credentials.
       $scopes = [];
       foreach (array_filter(explode(' ', trim($scope)), static fn(string $name): bool => $name !== '') as $name) {
-        // phpcs:ignore DrupalPractice.Objects.GlobalDrupal.GlobalDrupal -- Preserve the original constructor for external callers.
-        $resolved = ($this->scopeRepository ?? \Drupal::service('simple_oauth.repositories.scope'))->getScopeEntityByIdentifier($name);
+        $resolved = $this->scopeRepository->getScopeEntityByIdentifier($name);
         if (!$resolved instanceof ScopeEntityInterface) {
           throw OAuthServerException::invalidScope($name);
         }
@@ -400,16 +399,14 @@ final class DeviceCodeService {
     if (!$this->settings->isCleanupEnabled()) {
       return NULL;
     }
-    // phpcs:ignore DrupalPractice.Objects.GlobalDrupal.GlobalDrupal -- Original constructors did not supply scheduler dependencies.
-    $lock = $this->lock ?? \Drupal::lock();
+    $lock = $this->lock;
     $lock_name = 'simple_oauth_device_flow.cleanup';
     if (!$lock->acquire($lock_name)) {
       return NULL;
     }
     try {
       // Read fresh state under the lock, after any concurrent run finishes.
-      // phpcs:ignore DrupalPractice.Objects.GlobalDrupal.GlobalDrupal -- Preserve original constructor calls.
-      $state = $this->state ?? \Drupal::state();
+      $state = $this->state;
       $state->resetCache();
       $last_success = $state->get('simple_oauth_device_flow.cleanup_last_success');
       $now = $this->time->getCurrentTime();

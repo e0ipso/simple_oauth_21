@@ -14,16 +14,15 @@ use Drupal\simple_oauth_21\Controller\OAuth21ComplianceController;
 use Drupal\simple_oauth_21\Service\OAuth21ComplianceService;
 use Drupal\simple_oauth_server_metadata\Service\ServerMetadataService;
 use PHPUnit\Framework\Attributes\Group;
-use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\Routing\Exception\RouteNotFoundException;
 
 /**
  * Tests rendering with and without the optional component render element.
  *
  * @group simple_oauth_21
+ * @runTestsInSeparateProcesses
  */
 #[Group('simple_oauth_21')]
-#[RunTestsInSeparateProcesses]
 final class OAuth21ComplianceControllerTest extends KernelTestBase {
 
   /**
@@ -107,8 +106,8 @@ final class OAuth21ComplianceControllerTest extends KernelTestBase {
     $this->removeComponentRenderer();
     $renderer = $this->container->get('renderer');
     $service = $this->container->get('simple_oauth_21.compliance_service');
-    // Preserve the direct-constructor call alongside create().
-    $controller = new OAuth21ComplianceController($service);
+    // Exercise explicit constructor injection alongside create().
+    $controller = new OAuth21ComplianceController($service, $this->container->get('plugin.manager.element_info'));
     $translation = $this->createMock(TranslationInterface::class);
     $translation->method('translateString')->willReturnCallback(static function (TranslatableMarkup $text): string {
       return $text->getUntranslatedString() === 'S256 challenge method, mandatory enforcement'
@@ -143,7 +142,7 @@ final class OAuth21ComplianceControllerTest extends KernelTestBase {
     $metadata->method('getCacheContexts')->willReturn([]);
     $metadata->method('getCacheMaxAge')->willReturn(-1);
     $service = new OAuth21ComplianceService($modules, $this->container->get('config.factory'), $routes, $metadata);
-    $controller = new OAuth21ComplianceController($service);
+    $controller = new OAuth21ComplianceController($service, $this->container->get('plugin.manager.element_info'));
     $translation = $this->createMock(TranslationInterface::class);
     $translation->method('translateString')->willReturnCallback(static fn(TranslatableMarkup $text): string => 'translated: ' . $text->getUntranslatedString());
     $controller->setStringTranslation($translation);
