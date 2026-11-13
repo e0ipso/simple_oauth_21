@@ -52,7 +52,18 @@ class NativeAppRedirectUriValidator extends ConstraintValidator implements Conta
     if ($value instanceof FieldItemListInterface && $value->getEntity() instanceof Consumer) {
       foreach ($value as $delta => $item) {
         $uri = $item->get('value')->getValue();
-        if (is_string($uri) && $uri !== '' && !$this->redirectUriValidator->validateConsumerRedirectUri($uri, $value->getEntity())) {
+        if (!is_string($uri) || $uri === '') {
+          continue;
+        }
+        try {
+          $valid = $this->redirectUriValidator->validateConsumerRedirectUri($uri, $value->getEntity());
+        }
+        catch (\UnexpectedValueException) {
+          $this->context->buildViolation($constraint->policyConflictMessage)
+            ->atPath($delta . '.value')->addViolation();
+          continue;
+        }
+        if (!$valid) {
           $this->context->buildViolation($constraint->invalidUriMessage, ['%uri' => $uri])
             ->atPath($delta . '.value')->addViolation();
         }

@@ -835,6 +835,18 @@ final class ServiceIntegrationTest extends KernelTestBase {
   }
 
   /**
+   * Tests ambiguous policy ownership becomes an entity validation violation.
+   */
+  public function testPolicyConflictIsEntityViolation(): void {
+    [$owner, , , $data] = $this->createBoundPolicyCollision();
+    $this->config('simple_oauth_native_apps.consumer.999')->setData($data)->save();
+    $owner->set('redirect', ['https://example.org/callback']);
+    $violations = $owner->get('redirect')->validate();
+    $this->assertCount(1, $violations);
+    $this->assertSame('Native policy ownership requires reconciliation before this redirect URI can be validated.', (string) $violations[0]->getMessage());
+  }
+
+  /**
    * Tests all four controls follow the UUID, never a foreign numeric slot.
    */
   public function testBoundPolicyFollowsUuid(): void {
