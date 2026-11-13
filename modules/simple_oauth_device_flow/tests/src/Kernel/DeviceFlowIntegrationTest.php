@@ -1774,6 +1774,7 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
    */
   public function testDeletedDecisionReferences(): void {
     $this->installDeviceFixtures();
+    $this->installEntitySchema('oauth2_token');
     $this->installSchema('user', ['users_data']);
     $manager = $this->container->get('entity_type.manager');
     $repository = $this->container->get('simple_oauth_device_flow.device_code_repository');

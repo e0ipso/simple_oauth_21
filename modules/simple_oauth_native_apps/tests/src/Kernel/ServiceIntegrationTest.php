@@ -85,8 +85,8 @@ final class ServiceIntegrationTest extends KernelTestBase {
     $settings = $this->config('simple_oauth_native_apps.settings');
     $settings->set('cache_detection_results', TRUE)->save();
     $detector = $this->container->get('simple_oauth_native_apps.native_client_detector');
-    $native = Consumer::create(['label' => 'Native', 'native_app_override' => 'native']);
-    $web = Consumer::create(['label' => 'Web', 'native_app_override' => 'web']);
+    $native = Consumer::create(['label' => 'Native', 'client_id' => 'cache-native', 'native_app_override' => 'native']);
+    $web = Consumer::create(['label' => 'Web', 'client_id' => 'cache-web', 'native_app_override' => 'web']);
     // Different unsaved consumers must not share the NULL-ID score slot.
     $this->assertTrue($detector->requiresEnhancedPkce($native));
     $this->assertFalse($detector->requiresEnhancedPkce($web));
