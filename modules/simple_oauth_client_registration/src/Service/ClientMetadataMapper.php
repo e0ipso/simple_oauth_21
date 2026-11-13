@@ -7,6 +7,7 @@ namespace Drupal\simple_oauth_client_registration\Service;
 use Drupal\consumers\Entity\ConsumerInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\file\FileInterface;
+use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
 
 /**
  * Maps shared consumer metadata without issuing credentials or loading scopes.
@@ -18,9 +19,12 @@ final class ClientMetadataMapper {
    *
    * @param \Drupal\Core\File\FileUrlGeneratorInterface $fileUrlGenerator
    *   The file URL generator for uploaded logos.
+   * @param \Drupal\simple_oauth_client_registration\Service\TokenEndpointAuthMethodResolverInterface|null $authMethodResolver
+   *   The effective authentication method resolver, or the built-in profile.
    */
   public function __construct(
     private readonly FileUrlGeneratorInterface $fileUrlGenerator,
+    private readonly ?TokenEndpointAuthMethodResolverInterface $authMethodResolver = NULL,
   ) {}
 
   /**
@@ -28,14 +32,27 @@ final class ClientMetadataMapper {
    *
    * @param \Drupal\consumers\Entity\ConsumerInterface $consumer
    *   The consumer to project.
+   * @param \Drupal\simple_oauth_client_registration\Dto\ClientRegistration|null $prepared
+   *   An explicitly prepared credential envelope for this consumer. Other DTO
+   *   metadata is ignored; scope selection remains the caller's responsibility.
    *
    * @return array
-   *   Nonempty metadata, without credentials or scope selection.
+   *   Nonempty metadata and supplied credentials, without scope selection.
+   *
+   * @throws \InvalidArgumentException
+   *   If the prepared credentials are incomplete or belong to another client.
    */
-  public function map(ConsumerInterface $consumer): array {
+  public function map(ConsumerInterface $consumer, ?ClientRegistration $prepared = NULL): array {
+    if ($prepared !== NULL && ($prepared->clientId !== $consumer->getClientId() ||
+      $prepared->registrationAccessToken === NULL || $prepared->registrationAccessToken === '' ||
+      $prepared->registrationClientUri === NULL || $prepared->registrationClientUri === '' ||
+      $prepared->clientIdIssuedAt === NULL)) {
+      throw new \InvalidArgumentException('Prepared registration credentials must be complete and match the consumer');
+    }
     $metadata = [
       'client_id' => $consumer->getClientId(),
       'client_name' => $consumer->label(),
+      'token_endpoint_auth_method' => ($this->authMethodResolver ?? new TokenEndpointAuthMethodResolver())->resolve($consumer),
       'client_uri' => $consumer->get('client_uri')->value ?? '',
       'logo_uri' => $this->getLogoUri($consumer),
       'tos_uri' => $consumer->get('tos_uri')->value ?? '',
@@ -66,6 +83,16 @@ final class ClientMetadataMapper {
     if (!$consumer->get('grant_types')->isEmpty()) {
       foreach ($consumer->get('grant_types') as $grant_type) {
         $metadata['grant_types'][] = $grant_type->get('value')->getValue();
+      }
+    }
+
+    if ($prepared !== NULL) {
+      $metadata['registration_access_token'] = $prepared->registrationAccessToken;
+      $metadata['registration_client_uri'] = $prepared->registrationClientUri;
+      $metadata['client_id_issued_at'] = $prepared->clientIdIssuedAt;
+      if (!in_array($prepared->clientSecret, [NULL, '', '0'], TRUE)) {
+        $metadata['client_secret'] = $prepared->clientSecret;
+        $metadata['client_secret_expires_at'] = $prepared->clientSecretExpiresAt ?? 0;
       }
     }
 

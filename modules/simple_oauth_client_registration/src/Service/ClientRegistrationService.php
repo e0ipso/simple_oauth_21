@@ -8,7 +8,6 @@ use Drupal\consumers\Entity\ConsumerInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Component\Utility\Crypt;
-use Drupal\Core\Url;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\simple_oauth\Oauth2ScopeProviderInterface;
@@ -58,6 +57,8 @@ final class ClientRegistrationService {
    *   The file URL generator.
    * @param \Drupal\simple_oauth\Oauth2ScopeProviderInterface $scopeProvider
    *   The provider for configured or dynamically supplied scopes.
+   * @param \Drupal\simple_oauth_client_registration\Service\ClientMetadataMapper|null $metadataMapper
+   *   The shared response mapper, or the built-in profile for legacy callers.
    */
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
@@ -66,6 +67,7 @@ final class ClientRegistrationService {
     private readonly RegistrationTokenService $tokenService,
     private readonly FileUrlGeneratorInterface $fileUrlGenerator,
     private readonly Oauth2ScopeProviderInterface $scopeProvider,
+    private readonly ?ClientMetadataMapper $metadataMapper = NULL,
   ) {}
 
   /**
@@ -173,33 +175,9 @@ final class ClientRegistrationService {
       $consumer = $this->createConsumer($registrationData);
       $client_id = $consumer->getClientId();
 
-      // Generate registration access token.
-      $registration_access_token = $this->tokenService->generateRegistrationAccessToken($client_id);
-
-      // Build registration client URI.
-      $registration_client_uri = Url::fromRoute('simple_oauth_client_registration.manage', [
-        'client_id' => $client_id,
-      ], ['absolute' => TRUE])->toString();
-
-      // Build response according to RFC 7591.
-      $response = [
-        'client_id' => $client_id,
-        'registration_access_token' => $registration_access_token,
-        'registration_client_uri' => $registration_client_uri,
-        'client_id_issued_at' => time(),
-      ];
-
-      // Include client secret for confidential clients.
-      if ($consumer->get('confidential')->value && !empty($this->generatedSecret)) {
-        // Return the original secret value, not the hashed version stored in
-        // DB.
-        $response['client_secret'] = $this->generatedSecret;
-        // Never expires.
-        $response['client_secret_expires_at'] = 0;
-      }
-
-      // Include all client metadata in response.
-      $response = array_merge($response, $this->getClientMetadataArray($consumer));
+      $secret = (bool) $consumer->get('confidential')->value ? $this->generatedSecret : NULL;
+      $prepared = $this->tokenService->prepareRegistrationResponse($client_id, $secret);
+      $response = $this->getClientMetadataArray($consumer, $prepared);
 
       $this->logger->info('Client registration successful for client_id: @client_id', [
         '@client_id' => $client_id,
@@ -561,12 +539,14 @@ final class ClientRegistrationService {
    *
    * @param \Drupal\consumers\Entity\ConsumerInterface $consumer
    *   The consumer entity.
+   * @param \Drupal\simple_oauth_client_registration\Dto\ClientRegistration|null $prepared
+   *   Credentials explicitly prepared during registration, when supplied.
    *
    * @return array
    *   The client metadata array.
    */
-  private function getClientMetadataArray(ConsumerInterface $consumer): array {
-    $metadata = (new ClientMetadataMapper($this->fileUrlGenerator))->map($consumer);
+  private function getClientMetadataArray(ConsumerInterface $consumer, ?ClientRegistration $prepared = NULL): array {
+    $metadata = ($this->metadataMapper ?? new ClientMetadataMapper($this->fileUrlGenerator))->map($consumer, $prepared);
     // Management responses preserve even an empty registered scope selection.
     $metadata['scope'] = $this->getRegisteredScope($consumer);
     return $metadata;
