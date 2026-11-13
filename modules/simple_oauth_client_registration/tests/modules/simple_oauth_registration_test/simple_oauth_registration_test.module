@@ -43,3 +43,12 @@ function simple_oauth_registration_test_entity_delete(EntityInterface $entity): 
     throw new EntityStorageException('Registration fixture deletion failure');
   }
 }
+
+/**
+ * Implements hook_entity_insert().
+ */
+function simple_oauth_registration_test_entity_insert(EntityInterface $entity): void {
+  if ($entity->getEntityTypeId() === 'consumer' && \Drupal::state()->get('simple_oauth_registration_test.fail_insert', FALSE)) {
+    throw new EntityStorageException('Registration fixture insertion failure');
+  }
+}

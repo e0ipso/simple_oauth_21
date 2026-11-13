@@ -23,7 +23,7 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  *
  * Implements RFC 7591 Dynamic Client Registration Protocol logic.
  */
-final class ClientRegistrationService {
+final class ClientRegistrationService implements ClientRegistrationOperationsInterface, ClientRegistrationAdministrationInterface {
 
   /**
    * Consumer scope fields keyed by the grant types that use them.
@@ -425,7 +425,7 @@ final class ClientRegistrationService {
 
     $transaction = $this->tokenService->startTransaction();
     try {
-      $this->tokenService->revokeRegistrationAccessToken($client_id);
+      $this->tokenService->revokeLifecycleCredentials($client_id);
       $consumer->delete();
       $this->logger->info('Client registration deleted for client_id: @client_id', [
         '@client_id' => $client_id,

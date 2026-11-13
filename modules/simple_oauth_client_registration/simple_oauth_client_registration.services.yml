@@ -35,6 +35,7 @@ services:
     arguments:
       - '@database'
       - '@logger.channel.simple_oauth_client_registration'
+      - '@datetime.time'
 
   simple_oauth_client_registration.response_subscriber:
     class: Drupal\simple_oauth_client_registration\EventSubscriber\RegistrationResponseSubscriber
