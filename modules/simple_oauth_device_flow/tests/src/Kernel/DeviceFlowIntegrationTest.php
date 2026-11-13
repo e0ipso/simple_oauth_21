@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\simple_oauth_device_flow\Kernel;
 
+// cspell:ignore BCDFGHJKLMNPQRSTVWXZB CDEFGHIJKLMNOPQRSTUVWXYZ ABABAB
 use Drupal\Core\Config\ConfigImporter;
 use Drupal\Core\Config\ConfigImporterException;
 use Drupal\Core\Config\MemoryStorage;
@@ -314,7 +315,7 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     $this->config('simple_oauth_device_flow.settings')
       ->clear('device_code_lifetime')->save();
     // A fresh service reads the fallback from the changed configuration.
-    $settings = new DeviceFlowSettingsService($this->container->get('config.factory'));
+    $settings = new DeviceFlowSettingsService($this->container->get('config.factory'), $this->container->get('path.validator'));
     $this->assertNull($settings->getConfig()->get('device_code_lifetime'));
     $this->assertSame(1800, $settings->getDeviceCodeExpiration());
     $this->config('simple_oauth_device_flow.settings')
@@ -919,6 +920,10 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
       $this->container->get('simple_oauth_device_flow.settings'),
       $clock,
       $this->container->get('simple_oauth_device_flow.logger_factory'),
+      $this->container->get('simple_oauth.repositories.scope'),
+      NULL,
+      $this->container->get('state'),
+      $this->container->get('lock'),
     );
     $poll_snapshot = clone $device;
     $this->assertSame(['valid' => TRUE], $legacy_service->validatePollingInterval($poll_snapshot));
@@ -952,6 +957,7 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
       $this->container->get('simple_oauth_device_flow.logger_factory'),
       $this->container->get('simple_oauth.repositories.client'),
       $lock,
+      $this->container->get('datetime.time'),
     );
     $this->expectException(\DomainException::class);
     $reloading->decide($device->getIdentifier(), '8', TRUE);
@@ -979,7 +985,7 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
   }
 
   /**
-   * Tests schema covers supported settings and rejects nonpositive limits.
+   * Tests schema covers supported settings and rejects zero or negative limits.
    */
   public function testSupportedSettingsSchema(): void {
     $this->installConfig(['simple_oauth_device_flow']);
@@ -1131,6 +1137,7 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
       $this->container->get('simple_oauth_device_flow.logger_factory'),
       $this->container->get('simple_oauth.repositories.client'),
       $lock,
+      $this->container->get('datetime.time'),
     );
     $this->expectException(\RuntimeException::class);
     $locked->decide($device->getIdentifier(), '7', TRUE);
@@ -1294,7 +1301,17 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     };
     $generator->separator = $separator;
     $generator->groupSize = $group_size;
-    $service = new DeviceCodeService($repository, $generator, $settings, $this->container->get('datetime.time'), $logger);
+    $service = new DeviceCodeService(
+      $repository,
+      $generator,
+      $settings,
+      $this->container->get('datetime.time'),
+      $logger,
+      $this->container->get('simple_oauth.repositories.scope'),
+      NULL,
+      $this->container->get('state'),
+      $this->container->get('lock'),
+    );
     $issued = $service->generateDeviceAuthorization($client);
     $this->assertStringContainsString($separator, $issued['user_code']);
     $this->assertTrue($generator->validateCodeFormat($issued['user_code']));
@@ -1375,8 +1392,15 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     $generator->expects($this->never())->method('generateUserCode');
     $repository = $this->container->get('simple_oauth_device_flow.device_code_repository');
     $service = new DeviceCodeService(
-      $repository, $generator, $this->container->get('simple_oauth_device_flow.settings'),
-      $this->container->get('datetime.time'), $this->container->get('simple_oauth_device_flow.logger_factory'),
+      $repository,
+      $generator,
+      $this->container->get('simple_oauth_device_flow.settings'),
+      $this->container->get('datetime.time'),
+      $this->container->get('simple_oauth_device_flow.logger_factory'),
+      $this->container->get('simple_oauth.repositories.scope'),
+      NULL,
+      $this->container->get('state'),
+      $this->container->get('lock'),
     );
     try {
       $service->generateDeviceAuthorization($client);
@@ -1411,8 +1435,15 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     };
     $repository = $this->container->get('simple_oauth_device_flow.device_code_repository');
     $service = new DeviceCodeService(
-      $repository, $generator, $this->container->get('simple_oauth_device_flow.settings'),
-      $this->container->get('datetime.time'), $this->container->get('simple_oauth_device_flow.logger_factory'),
+      $repository,
+      $generator,
+      $this->container->get('simple_oauth_device_flow.settings'),
+      $this->container->get('datetime.time'),
+      $this->container->get('simple_oauth_device_flow.logger_factory'),
+      $this->container->get('simple_oauth.repositories.scope'),
+      NULL,
+      $this->container->get('state'),
+      $this->container->get('lock'),
     );
     try {
       $service->generateDeviceAuthorization($client);
@@ -1473,9 +1504,15 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     $service = $combined
       ? $this->container->get('simple_oauth_device_flow.device_code_service')
       : new DeviceCodeService(
-        $lifecycle, $generator,
-        $this->container->get('simple_oauth_device_flow.settings'), $time,
-        $this->container->get('simple_oauth_device_flow.logger_factory'), NULL, $maintenance,
+        $lifecycle,
+        $generator,
+        $this->container->get('simple_oauth_device_flow.settings'),
+        $time,
+        $this->container->get('simple_oauth_device_flow.logger_factory'),
+        $this->container->get('simple_oauth.repositories.scope'),
+        $maintenance,
+        $this->container->get('state'),
+        $this->container->get('lock'),
       );
     $client = $this->createDeviceClient('focused-client');
     $scope = $this->container->get('entity_type.manager')->getStorage('oauth2_scope')->create([
@@ -1551,10 +1588,15 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     $last_success = time() - 86400;
     $state->set('simple_oauth_device_flow.cleanup_last_success', $last_success);
     $service = new DeviceCodeService(
-      $lifecycle, $this->container->get('simple_oauth_device_flow.user_code_generator'),
+      $lifecycle,
+      $this->container->get('simple_oauth_device_flow.user_code_generator'),
       $this->container->get('simple_oauth_device_flow.settings'),
-      $this->container->get('datetime.time'), $factory, NULL, NULL,
-      $state, $this->container->get('lock'),
+      $this->container->get('datetime.time'),
+      $factory,
+      $this->container->get('simple_oauth.repositories.scope'),
+      NULL,
+      $state,
+      $this->container->get('lock'),
     );
     $this->assertSame(0, $service->cleanupExpiredCodes());
     $this->assertSame(0, $service->cleanupOldAuthorizedCodes());
@@ -1582,9 +1624,15 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     $client = $this->createDeviceClient('legacy-storage-client');
     $this->container->get('simple_oauth_device_flow.device_code_service')->generateDeviceAuthorization($client);
     $legacy_service = new DeviceCodeService(
-      $legacy, $this->container->get('simple_oauth_device_flow.user_code_generator'),
+      $legacy,
+      $this->container->get('simple_oauth_device_flow.user_code_generator'),
       $this->container->get('simple_oauth_device_flow.settings'),
-      $this->container->get('datetime.time'), $this->container->get('simple_oauth_device_flow.logger_factory'),
+      $this->container->get('datetime.time'),
+      $this->container->get('simple_oauth_device_flow.logger_factory'),
+      $this->container->get('simple_oauth.repositories.scope'),
+      NULL,
+      $this->container->get('state'),
+      $this->container->get('lock'),
     );
     $this->assertInstanceOf(DeviceCodeLifecycleOperationsInterface::class, $legacy);
     $this->assertSame(1, $legacy_service->getStatistics()['total_codes']);
@@ -1648,18 +1696,32 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
   }
 
   /**
-   * Tests the original repository, generator and lifecycle constructor calls.
+   * Tests explicit repository, generator and lifecycle dependencies.
    */
-  public function testLegacyRepositoryConstructors(): void {
+  public function testExplicitRepositoryDependencies(): void {
     $this->installDeviceFixtures();
     $factory = $this->container->get('simple_oauth_device_flow.logger_factory');
     $settings = $this->container->get('simple_oauth_device_flow.settings');
     $repository = new DeviceCodeRepository(
-      $this->container->get('entity_type.manager'), $settings, $factory,
+      $this->container->get('entity_type.manager'),
+      $settings,
+      $factory,
       $this->container->get('simple_oauth.repositories.client'),
+      $this->container->get('lock'),
+      $this->container->get('datetime.time'),
     );
     $generator = new UserCodeGenerator($this->container->get('config.factory'), $repository, $factory);
-    $service = new DeviceCodeService($repository, $generator, $settings, $this->container->get('datetime.time'), $factory);
+    $service = new DeviceCodeService(
+      $repository,
+      $generator,
+      $settings,
+      $this->container->get('datetime.time'),
+      $factory,
+      $this->container->get('simple_oauth.repositories.scope'),
+      NULL,
+      $this->container->get('state'),
+      $this->container->get('lock'),
+    );
     $client = $this->createDeviceClient('legacy-client');
     $data = $service->generateDeviceAuthorization($client);
     $entity = $repository->getDeviceCodeEntityByUserCode($data['user_code']);
@@ -1804,9 +1866,13 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     $service = new DeviceCodeService(
       $this->container->get('simple_oauth_device_flow.lifecycle_repository'),
       $this->container->get('simple_oauth_device_flow.user_code_generator'),
-      $this->container->get('simple_oauth_device_flow.settings'), $time,
-      $this->container->get('simple_oauth_device_flow.logger_factory'), NULL,
-      $maintenance, $state, $lock,
+      $this->container->get('simple_oauth_device_flow.settings'),
+      $time,
+      $this->container->get('simple_oauth_device_flow.logger_factory'),
+      $this->container->get('simple_oauth.repositories.scope'),
+      $maintenance,
+      $state,
+      $lock,
     );
     $key = 'simple_oauth_device_flow.cleanup_last_success';
     $settings = $this->config('simple_oauth_device_flow.settings');
@@ -1861,9 +1927,13 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     $broken = new DeviceCodeService(
       $this->container->get('simple_oauth_device_flow.lifecycle_repository'),
       $this->container->get('simple_oauth_device_flow.user_code_generator'),
-      $this->container->get('simple_oauth_device_flow.settings'), $time,
-      $this->container->get('simple_oauth_device_flow.logger_factory'), NULL,
-      $maintenance, $broken_state, $lock,
+      $this->container->get('simple_oauth_device_flow.settings'),
+      $time,
+      $this->container->get('simple_oauth_device_flow.logger_factory'),
+      $this->container->get('simple_oauth.repositories.scope'),
+      $maintenance,
+      $broken_state,
+      $lock,
     );
     try {
       $broken->runScheduledCleanup();
@@ -2325,7 +2395,17 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     }
     $services = [
       $this->container->get('simple_oauth_device_flow.device_code_service'),
-      new DeviceCodeService($repository, $generators[1], new DeviceFlowSettingsService($factory), $this->container->get('datetime.time'), $logger),
+      new DeviceCodeService(
+        $repository,
+        $generators[1],
+        new DeviceFlowSettingsService($factory, $this->container->get('path.validator')),
+        $this->container->get('datetime.time'),
+        $logger,
+        $this->container->get('simple_oauth.repositories.scope'),
+        NULL,
+        $this->container->get('state'),
+        $this->container->get('lock'),
+      ),
     ];
     foreach ($services as $service) {
       $before = (int) $repository->getStorage()->getQuery()->accessCheck(FALSE)->count()->execute();
@@ -2496,7 +2576,7 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
           }
           $before = (int) $storage->getQuery()->accessCheck(FALSE)->count()->execute();
           $response = $controller->authorize($request);
-          $this->assertSame(400, $response->getStatusCode(), $bag . ' must reject nonstring scope.');
+          $this->assertSame(400, $response->getStatusCode(), $bag . ' must reject scope values that are not strings.');
           $this->assertSame('invalid_request', json_decode($response->getContent(), TRUE)['error']);
           $this->assertSame($before, (int) $storage->getQuery()->accessCheck(FALSE)->count()->execute());
         }

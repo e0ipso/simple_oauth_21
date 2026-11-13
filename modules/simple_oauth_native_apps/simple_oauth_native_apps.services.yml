@@ -101,7 +101,6 @@ services:
     arguments:
       - '@simple_oauth_native_apps.pkce_enhancement'
       - '@simple_oauth_native_apps.native_client_detector'
-      - '@config.factory'
       - '@logger.factory'
       - '@entity_type.manager'
     tags:

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\simple_oauth_native_apps\EventSubscriber;
 
-use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\consumers\Entity\Consumer;
@@ -61,8 +60,6 @@ final class PkceValidationSubscriber implements EventSubscriberInterface {
    *   The PKCE enhancement service.
    * @param \Drupal\simple_oauth_native_apps\Service\NativeClientDetector $native_client_detector
    *   The native client detector service.
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
-   *   Retained for constructor compatibility; the detector resolves policy.
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
    *   The logger channel factory.
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
@@ -71,7 +68,6 @@ final class PkceValidationSubscriber implements EventSubscriberInterface {
   public function __construct(
     PKCEEnhancementService $pkce_enhancement_service,
     NativeClientDetector $native_client_detector,
-    ConfigFactoryInterface $config_factory,
     LoggerChannelFactoryInterface $logger_factory,
     EntityTypeManagerInterface $entity_type_manager,
   ) {

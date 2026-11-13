@@ -453,7 +453,7 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
   }
 
   /**
-   * Tests omitted external values and explicitly empty textareas separately.
+   * Tests omitted external values and explicitly empty text areas separately.
    */
   public function testTextareaPartialAndEmptySubmissions(): void {
     $values = [
@@ -525,7 +525,7 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
   }
 
   /**
-   * Lists invalid locales and algorithms, including nonblank zero strings.
+   * Lists invalid locales and algorithms, including nonempty zero strings.
    *
    * @return array<string, array{string, string}>
    *   Invalid textarea submissions.

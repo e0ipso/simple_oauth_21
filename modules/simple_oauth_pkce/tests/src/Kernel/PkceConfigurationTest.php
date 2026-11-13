@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\simple_oauth_pkce\Kernel;
 
+// cspell:ignore mandatroy
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Form\FormState;

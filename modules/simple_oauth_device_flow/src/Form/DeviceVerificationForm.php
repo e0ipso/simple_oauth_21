@@ -114,13 +114,8 @@ final class DeviceVerificationForm extends FormBase {
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): static {
-    // Retain independently constructed legacy containers until a breaking
-    // release can require the focused service alias.
-    $repository_id = $container->has('simple_oauth_device_flow.verification_repository')
-      ? 'simple_oauth_device_flow.verification_repository'
-      : 'simple_oauth_device_flow.device_code_repository';
     return new static(
-      $container->get($repository_id),
+      $container->get('simple_oauth_device_flow.verification_repository'),
       $container->get('simple_oauth_device_flow.device_code_service'),
       $container->get('simple_oauth_device_flow.user_code_generator'),
       $container->get('current_user'),

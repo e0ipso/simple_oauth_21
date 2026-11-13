@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\simple_oauth_native_apps\Kernel;
 
+// cspell:ignore traduit traduite Faible Moyenne
 use Drupal\Core\Validation\ConstraintValidatorFactory;
 use Drupal\Core\TypedData\Type\FloatInterface;
 use Symfony\Component\Validator\Validation;

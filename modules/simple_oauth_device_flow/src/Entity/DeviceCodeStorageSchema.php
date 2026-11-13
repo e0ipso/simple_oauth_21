@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\simple_oauth_device_flow\Entity;
 
+// cspell:ignore seqno attrelid indrelid attnum indkey regclass indisunique
+// cspell:ignore indisvalid indpred indexprs indnatts attname
 use Drupal\Core\Entity\ContentEntityTypeInterface;
 use Drupal\Core\Entity\Sql\SqlContentEntityStorageSchema;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
@@ -85,7 +87,9 @@ final class DeviceCodeStorageSchema extends SqlContentEntityStorageSchema {
   }
 
   /**
-   * Checks a complete, nonpartial unique key using supported driver catalogs.
+   * Checks a complete unique key without a partial predicate.
+   *
+   * Uses supported driver catalogs.
    *
    * Schema API has no portable public unique-key inspection operation. Check
    * catalogs rather than dropping existing keys or trusting an index's name.
