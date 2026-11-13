@@ -131,11 +131,8 @@ final class PkceSettingsForm extends ConfigFormBase {
 
     parent::submitForm($form, $form_state);
 
-    // Clear caches to ensure new settings take effect.
-    drupal_flush_all_caches();
-
     $this->messenger()->addStatus(
-      $this->t('PKCE configuration has been saved. Cache cleared to apply changes.')
+      $this->t('PKCE configuration has been saved. Changes apply immediately.')
     );
   }
 

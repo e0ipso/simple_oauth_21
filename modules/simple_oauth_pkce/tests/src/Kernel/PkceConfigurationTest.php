@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\simple_oauth_pkce\Kernel;
 
+use Drupal\Core\Form\FormState;
+use Drupal\simple_oauth_21\Controller\OAuth21ComplianceController;
+use Drupal\simple_oauth_pkce\Form\PkceSettingsForm;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\simple_oauth_pkce\Service\PkceSettingsService;
 use Drupal\KernelTests\Core\Entity\EntityKernelTestBase;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
@@ -16,6 +20,7 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
  * Test PKCE configuration and service functionality.
  */
 #[Group('simple_oauth_pkce')]
+#[RunTestsInSeparateProcesses]
 final class PkceConfigurationTest extends EntityKernelTestBase {
 
   /**
@@ -219,6 +224,36 @@ final class PkceConfigurationTest extends EntityKernelTestBase {
         }
       }
     }
+  }
+
+  /**
+   * Tests config-tag invalidation without flushing unrelated caches or routes.
+   */
+  public function testSettingsSaveInvalidatesConsumers(): void {
+    $compliance = $this->container->get('simple_oauth_21.compliance_service');
+    $controller = OAuth21ComplianceController::create($this->container);
+    $build = $controller->display();
+    self::assertContains('config:simple_oauth_pkce.settings', $build['#cache']['tags']);
+    $cache = $this->container->get('cache.default');
+    $cache->set('dashboard', $build, -1, $build['#cache']['tags']);
+    $cache->set('unrelated', 'keep');
+    $routes = $this->container->get('router.route_provider');
+    $settings = $this->pkceSettings;
+    $form = PkceSettingsForm::create($this->container);
+    $state = (new FormState())->setValues([
+      'enforcement' => 'disabled',
+      's256_enabled' => FALSE,
+      'plain_enabled' => FALSE,
+    ]);
+    $elements = [];
+    $form->submitForm($elements, $state);
+    self::assertFalse($cache->get('dashboard'));
+    self::assertSame('keep', $cache->get('unrelated')->data);
+    self::assertSame($routes, $this->container->get('router.route_provider'));
+    self::assertSame($settings, $this->container->get('simple_oauth_pkce.settings'));
+    self::assertTrue($settings->isDisabled());
+    self::assertSame([], $settings->getSupportedMethods());
+    self::assertSame('needs_attention', $compliance->getRfcComplianceStatus()['rfc_7636']['status']);
   }
 
 }

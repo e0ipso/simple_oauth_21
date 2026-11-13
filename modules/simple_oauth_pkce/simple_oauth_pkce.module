@@ -5,6 +5,8 @@
  * Contains simple_oauth_pkce.module.
  */
 
+declare(strict_types=1);
+
 use Drupal\Core\Routing\RouteMatchInterface;
 
 /**
