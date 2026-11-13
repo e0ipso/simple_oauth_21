@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\simple_oauth_client_registration\Kernel;
 
+use Symfony\Component\HttpKernel\Event\RequestEvent;
+use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\Routing\RequestContext;
+use Symfony\Component\Routing\Matcher\UrlMatcher;
+use Symfony\Component\HttpKernel\EventListener\RouterListener;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Routing\RouteCollection;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Entity\EntityStorageException;
@@ -489,6 +496,118 @@ final class ClientRegistrationLifecycleTest extends KernelTestBase {
     $service = $this->registration();
     $data = $service->registerClient($dto);
     $this->assertSame(['native_app_authorization_code'], $data['grant_types']);
+  }
+
+  /**
+   * Tests declared native HTTPS clients retain routed PKCE policy and metadata.
+   */
+  public function testDeclaredApplicationTypePolicy(): void {
+    $service = $this->registration();
+    $detector = $this->container->get('simple_oauth_native_apps.native_client_detector');
+    foreach (['native', 'web', NULL] as $type) {
+      $data = $service->registerClient(new ClientRegistration(
+        redirectUris: ['https://example.org/callback'],
+        tokenEndpointAuthMethod: 'none', applicationType: $type,
+      ));
+      $id = $data['client_id'];
+      $consumer = $this->consumer($id);
+      $expected = $type === 'native';
+      $this->assertSame($expected, $detector->isNativeClient($consumer));
+      $this->assertSame($expected, $detector->requiresEnhancedPkce($consumer));
+      $this->assertSame($expected ? 'native' : 'auto-detect', $consumer->get('native_app_override')->value);
+      $this->assertSame('auto-detect', $consumer->get('native_app_enhanced_pkce')->value);
+      $responses = [
+        $data,
+        $service->getClientMetadata($id),
+        $service->updateClientMetadata($id, new ClientRegistration(clientName: 'Renamed')),
+      ];
+      foreach ($responses as $metadata) {
+        $this->assertSame($expected ? 'native' : NULL, $metadata['application_type'] ?? NULL);
+        $this->assertSame('none', $metadata['token_endpoint_auth_method']);
+        $this->assertArrayNotHasKey('client_secret', $metadata);
+        $this->assertSame(['https://example.org/callback'], $metadata['redirect_uris']);
+      }
+      $this->assertRoutedNativePkce($id, $expected);
+      // A web declaration cannot weaken a retained native classification.
+      $service->updateClientMetadata($id, new ClientRegistration(applicationType: 'web'));
+      $this->assertRoutedNativePkce($id, $expected);
+      $service->updateClientMetadata($id, new ClientRegistration(applicationType: 'native'));
+      $this->assertRoutedNativePkce($id, TRUE);
+      $consumer = $this->consumer($id);
+      $this->config('simple_oauth_native_apps.settings')->set('native.enhanced_pkce', 'not-enhanced')->save();
+      $this->assertRoutedNativePkce($id, FALSE);
+      $policy = $this->config('simple_oauth_native_apps.consumer.' . $consumer->id());
+      $policy->set('enhanced_pkce_override', 'enhanced')->save();
+      $this->assertRoutedNativePkce($id, TRUE);
+      $this->config('simple_oauth_native_apps.settings')->set('enforce_native_security', FALSE)->save();
+      $this->assertRoutedNativePkce($id, FALSE);
+      $this->config('simple_oauth_native_apps.settings')->set('enforce_native_security', TRUE)->set('native.enhanced_pkce', 'enhanced')->save();
+      $policy->set('enhanced_pkce_override', 'not-enhanced')->save();
+      $this->assertRoutedNativePkce($id, FALSE);
+      $policy->delete();
+      $this->assertRoutedNativePkce($id, TRUE);
+      // Explicit administrative classification and PKCE controls survive input.
+      $consumer->set('native_app_override', 'web')->set('native_app_enhanced_pkce', 'native')->save();
+      $updated = $service->updateClientMetadata($id, new ClientRegistration(applicationType: 'native'));
+      $this->assertSame('web', $updated['application_type']);
+      $this->assertSame('native', $this->consumer($id)->get('native_app_enhanced_pkce')->value);
+      $this->assertRoutedNativePkce($id, TRUE);
+      $this->config('simple_oauth_native_apps.settings')->set('native.enhanced_pkce', 'auto-detect')->save();
+    }
+  }
+
+  /**
+   * Tests registration remains usable without native fields or dependencies.
+   */
+  public function testDeclaredTypeWithoutNativeApps(): void {
+    $this->disableModules(['simple_oauth_native_apps']);
+    $this->container->get('entity_field.manager')->clearCachedFieldDefinitions();
+    $service = $this->registration();
+    $data = $service->registerClient(new ClientRegistration(
+      redirectUris: ['https://example.org/callback'],
+      tokenEndpointAuthMethod: 'none', applicationType: 'native',
+    ));
+    $this->assertFalse($this->consumer($data['client_id'])->hasField('native_app_override'));
+    $this->assertArrayNotHasKey('application_type', $service->getClientMetadata($data['client_id']));
+    $this->assertSame('none', $service->updateClientMetadata($data['client_id'], new ClientRegistration(clientName: 'Renamed'))['token_endpoint_auth_method']);
+  }
+
+  /**
+   * Asserts actual route matching selects authorization and token PKCE policy.
+   *
+   * @param string $client_id
+   *   The registered client's public identifier.
+   * @param bool $required
+   *   Whether the native subscriber must reject a missing challenge/verifier.
+   */
+  private function assertRoutedNativePkce(string $client_id, bool $required): void {
+    $routes = new RouteCollection();
+    $provider = $this->container->get('router.route_provider');
+    foreach (['authorize' => '/identity/consent', 'token' => '/identity/exchange'] as $endpoint => $path) {
+      $route = clone $provider->getRouteByName('oauth2_token.' . $endpoint);
+      $route->setPath($path);
+      $routes->add('oauth2_token.' . $endpoint, $route);
+    }
+    $dispatcher = new EventDispatcher();
+    $dispatcher->addSubscriber(new RouterListener(
+      new UrlMatcher($routes, new RequestContext()),
+      new RequestStack(),
+    ));
+    $dispatcher->addSubscriber($this->container->get('simple_oauth_native_apps.pkce_validation_subscriber'));
+    $requests = [
+      'authorize' => ['GET', '/identity/consent'],
+      'token' => ['POST', '/identity/exchange'],
+    ];
+    foreach ($requests as $endpoint => [$method, $path]) {
+      $request = Request::create($path, $method, ['client_id' => $client_id, 'grant_type' => 'authorization_code']);
+      $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+      $dispatcher->dispatch($event, KernelEvents::REQUEST);
+      $this->assertSame('oauth2_token.' . $endpoint, $request->attributes->get('_route'));
+      $this->assertSame($required, $event->hasResponse(), $endpoint);
+      if ($required) {
+        $this->assertSame(400, $event->getResponse()->getStatusCode());
+      }
+    }
   }
 
   /**

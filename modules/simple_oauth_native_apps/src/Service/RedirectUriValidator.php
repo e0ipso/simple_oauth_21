@@ -25,7 +25,7 @@ class RedirectUriValidator {
    *
    * Matches patterns like "com.example.app" in schemes.
    */
-  const REVERSE_DOMAIN_PATTERN = '/^[a-z][a-z0-9.-]*\.[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$/i';
+  const REVERSE_DOMAIN_PATTERN = '/^[a-z][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+$/iD';
 
   /**
    * Constructs a new RedirectUriValidator.
@@ -64,19 +64,7 @@ class RedirectUriValidator {
     if (!$policy['enabled']) {
       return TRUE;
     }
-    $parsed = parse_url($uri);
-    if (!$parsed || !isset($parsed['scheme']) || isset($parsed['fragment']) || isset($parsed['user']) || isset($parsed['pass'])) {
-      return FALSE;
-    }
-    $scheme = strtolower($parsed['scheme']);
-    $host = strtolower(trim($parsed['host'] ?? '', '[]'));
-    if (in_array($scheme, ['http', 'https'], TRUE)) {
-      if (in_array($host, ['127.0.0.1', '::1', '0:0:0:0:0:0:0:1', 'localhost'], TRUE)) {
-        return $this->validateLoopbackInterfaceWithPolicy($uri, $policy['loopback']);
-      }
-      return $this->validateStandardRedirectUri($uri);
-    }
-    return $this->validateCustomSchemeWithPolicy($uri, $policy['custom_schemes']);
+    return $this->validateUriWithPolicy($uri, $policy['custom_schemes'], $policy['loopback']);
   }
 
   /**
@@ -98,36 +86,62 @@ class RedirectUriValidator {
       return $this->validateStandardRedirectUri($uri);
     }
 
-    // Parse URI first to check structure.
-    $parsed = parse_url($uri);
-    if (!$parsed || !isset($parsed['scheme'])) {
-      $this->logger->warning('Unable to parse URI or missing scheme: @uri', ['@uri' => $uri]);
+    return $this->validateUriWithPolicy($uri, NULL, NULL);
+  }
+
+  /**
+   * Applies shared syntax and scheme rules with resolved permissions.
+   *
+   * HTTPS redirects use standard web syntax. HTTP redirects must use literal
+   * loopback addresses; the dedicated loopback API remains HTTP-only.
+   *
+   * @param string $uri
+   *   The proposed redirect URI.
+   * @param bool|null $custom_allowed
+   *   The consumer permission, or NULL to use global custom scheme policy.
+   * @param bool|null $loopback_allowed
+   *   The consumer permission, or NULL to use global loopback policy.
+   *
+   * @return bool
+   *   Whether syntax and policy permit the URI.
+   */
+  private function validateUriWithPolicy(string $uri, ?bool $custom_allowed, ?bool $loopback_allowed): bool {
+    if (!$this->hasSafeUriSyntax($uri)) {
       return FALSE;
     }
-
-    // For standard schemes, use filter_var validation.
-    $scheme = strtolower($parsed['scheme']);
-    if (in_array($scheme, ['http', 'https', 'ftp', 'ftps'])) {
-      if (!filter_var($uri, FILTER_VALIDATE_URL)) {
-        $this->logger->warning('Invalid URI format: @uri', ['@uri' => $uri]);
-        return FALSE;
-      }
-    }
-    // For custom schemes, just validate that we have a valid scheme name.
-    else {
-      // Custom schemes should follow RFC 3986:
-      // scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
-      if (!preg_match('/^[a-zA-Z][a-zA-Z0-9+.-]*$/', $scheme)) {
-        $this->logger->warning('Invalid custom scheme format: @scheme in @uri', ['@scheme' => $scheme, '@uri' => $uri]);
-        return FALSE;
-      }
-    }
-
-    // Handle different URI types based on scheme.
+    $scheme = strtolower((string) parse_url($uri, PHP_URL_SCHEME));
     return match ($scheme) {
-      'http', 'https' => $this->validateLoopbackInterface($uri),
-      default => $this->validateCustomScheme($uri),
+      'https' => $this->validateStandardRedirectUri($uri),
+      'http' => $loopback_allowed === NULL
+        ? $this->validateLoopbackInterface($uri)
+        : $this->validateLoopbackInterfaceWithPolicy($uri, $loopback_allowed),
+      default => $custom_allowed === NULL
+        ? $this->validateCustomScheme($uri)
+        : $this->validateCustomSchemeWithPolicy($uri, $custom_allowed),
     };
+  }
+
+  /**
+   * Rejects malformed structure and unsafe redirect URI components.
+   *
+   * @param string $uri
+   *   The redirect URI.
+   *
+   * @return bool
+   *   Whether the URI has a scheme and no forbidden components.
+   */
+  private function hasSafeUriSyntax(string $uri): bool {
+    if (preg_match('/[\x00-\x20\x7f\\\\]/', $uri) ||
+      preg_match('/%(?![a-f0-9]{2})/i', $uri) ||
+      preg_match('/%(?:0[0-9a-f]|1[0-9a-f]|7f)/i', $uri)) {
+      return FALSE;
+    }
+    $parsed = parse_url($uri);
+    return $parsed !== FALSE && isset($parsed['scheme']) &&
+      !array_key_exists('user', $parsed) &&
+      !array_key_exists('pass', $parsed) &&
+      !array_key_exists('fragment', $parsed) &&
+      !$this->isDangerousScheme($parsed['scheme']);
   }
 
   /**
@@ -155,6 +169,9 @@ class RedirectUriValidator {
    *   TRUE if the URI is permitted and valid.
    */
   private function validateCustomSchemeWithPolicy(string $uri, ?bool $allowed): bool {
+    if (!$this->hasSafeUriSyntax($uri)) {
+      return FALSE;
+    }
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
     $custom_schemes_setting = $allowed === NULL
@@ -229,6 +246,9 @@ class RedirectUriValidator {
    *   TRUE if the URI is permitted and valid.
    */
   private function validateLoopbackInterfaceWithPolicy(string $uri, ?bool $allowed): bool {
+    if (!$this->hasSafeUriSyntax($uri) || !filter_var($uri, FILTER_VALIDATE_URL)) {
+      return FALSE;
+    }
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
     $loopback_setting = $allowed === NULL
@@ -255,7 +275,7 @@ class RedirectUriValidator {
     }
 
     // Must be HTTP (not HTTPS for loopback per RFC 8252).
-    if (!isset($parsed['scheme']) || $parsed['scheme'] !== 'http') {
+    if (!isset($parsed['scheme']) || strtolower($parsed['scheme']) !== 'http') {
       $this->logger->warning('Loopback interface must use http:// scheme, got @scheme in URI @uri', [
         '@scheme' => $parsed['scheme'] ?? 'none',
         '@uri' => $uri,
@@ -353,8 +373,8 @@ class RedirectUriValidator {
    *   TRUE if it appears to be reverse domain notation.
    */
   protected function isReverseDomainScheme(string $scheme): bool {
-    // Simple heuristic: contains dots and looks like reverse domain.
-    return strpos($scheme, '.') !== FALSE && preg_match(self::REVERSE_DOMAIN_PATTERN, $scheme);
+    // Dotted schemes must pass reverse domain validation, even when malformed.
+    return str_contains($scheme, '.');
   }
 
   /**
@@ -367,7 +387,7 @@ class RedirectUriValidator {
    *   TRUE if valid reverse domain scheme.
    */
   protected function validateReverseDomainScheme(string $scheme): bool {
-    if (!preg_match(self::REVERSE_DOMAIN_PATTERN, $scheme)) {
+    if (strlen($scheme) > 253 || !preg_match(self::REVERSE_DOMAIN_PATTERN, $scheme)) {
       $this->logger->warning('Invalid reverse domain notation: @scheme', ['@scheme' => $scheme]);
       return FALSE;
     }
@@ -390,7 +410,7 @@ class RedirectUriValidator {
 
     // Validate each part of the domain.
     foreach ($parts as $part) {
-      if (!preg_match('/^[a-z0-9-]+$/i', $part)) {
+      if (strlen($part) > 63 || !preg_match('/^[a-z0-9-]+$/iD', $part)) {
         $this->logger->warning('Invalid domain part in reverse domain scheme: @part', ['@part' => $part]);
         return FALSE;
       }
@@ -607,7 +627,7 @@ class RedirectUriValidator {
       return 'Invalid URI format for loopback interface';
     }
 
-    if (!isset($parsed['scheme']) || $parsed['scheme'] !== 'http') {
+    if (!isset($parsed['scheme']) || strtolower($parsed['scheme']) !== 'http') {
       return 'Loopback interfaces must use http:// scheme (not https://)';
     }
 
@@ -641,8 +661,8 @@ class RedirectUriValidator {
    *   TRUE if valid standard URI.
    */
   protected function validateStandardRedirectUri(string $uri): bool {
-    // Basic URL validation.
-    if (!filter_var($uri, FILTER_VALIDATE_URL)) {
+    // Apply the same safety rules when native enforcement is disabled.
+    if (!$this->hasSafeUriSyntax($uri) || !filter_var($uri, FILTER_VALIDATE_URL)) {
       return FALSE;
     }
 
@@ -744,15 +764,8 @@ class RedirectUriValidator {
    *   TRUE if valid TLD.
    */
   protected function isValidTld(string $tld): bool {
-    $valid_tlds = [
-      'com', 'org', 'net', 'edu', 'gov', 'mil',
-      'co', 'app', 'dev', 'io', 'me', 'us',
-      'uk', 'ca', 'au', 'de', 'fr', 'it',
-      'es', 'jp', 'kr', 'cn', 'in', 'br',
-      'info', 'biz', 'name', 'pro', 'museum',
-    ];
-
-    return in_array(strtolower($tld), $valid_tlds);
+    // Validate DNS label syntax without asserting registration or ownership.
+    return (bool) preg_match('/^(?:[a-z]{1,63}|xn--[a-z0-9](?:[a-z0-9-]{0,57}[a-z0-9])?)$/iD', $tld);
   }
 
   /**
@@ -780,10 +793,13 @@ class RedirectUriValidator {
    *   The validation error message, or NULL if valid.
    */
   public function getValidationError(string $uri): ?string {
+    if ($this->validateRedirectUri($uri)) {
+      return NULL;
+    }
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
-    // Basic URL validation.
-    if (!filter_var($uri, FILTER_VALIDATE_URL)) {
+    // Apply the same safety rules when native enforcement is disabled.
+    if (!$this->hasSafeUriSyntax($uri) || !filter_var($uri, FILTER_VALIDATE_URL)) {
       return 'Invalid URI format';
     }
 

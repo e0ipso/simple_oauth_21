@@ -143,6 +143,7 @@ final class ClientRegistrationService {
 
     /** @var \Drupal\consumers\Entity\ConsumerInterface $consumer */
     $consumer = $this->entityTypeManager->getStorage('consumer')->create($values);
+    $this->applyApplicationType($consumer, $clientData->applicationType);
     $this->validateConsumer($consumer);
     try {
       $consumer->save();
@@ -344,6 +345,8 @@ final class ClientRegistrationService {
     $metadata->validateRedirectUris();
     $consumer = clone $this->loadConsumer($client_id);
 
+    $this->applyApplicationType($consumer, $metadata->applicationType);
+
     // Handle client_name specially - it maps to the label field.
     if ($metadata->clientName !== NULL) {
       $consumer->set('label', $metadata->clientName);
@@ -447,6 +450,28 @@ final class ClientRegistrationService {
   private function validateConsumer(ConsumerInterface $consumer): void {
     if ($consumer->validate()->count() > 0) {
       throw new BadRequestHttpException('Invalid client metadata');
+    }
+  }
+
+  /**
+   * Retains a native declaration using an installed classification control.
+   *
+   * Registration may opt into native policy, but cannot replace an explicit
+   * administrator classification or disable an existing native requirement.
+   * Omitted and web declarations leave classification and PKCE controls intact.
+   *
+   * @param \Drupal\consumers\Entity\ConsumerInterface $consumer
+   *   The consumer being created or updated.
+   * @param string|null $application_type
+   *   The declared application type, or NULL when omitted.
+   */
+  private function applyApplicationType(ConsumerInterface $consumer, ?string $application_type): void {
+    if ($application_type !== 'native' || !$consumer->hasField('native_app_override')) {
+      return;
+    }
+    $override = $consumer->get('native_app_override')->value;
+    if ($override === NULL || $override === '' || $override === 'auto-detect') {
+      $consumer->set('native_app_override', 'native');
     }
   }
 

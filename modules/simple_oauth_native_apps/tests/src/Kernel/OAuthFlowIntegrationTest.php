@@ -978,11 +978,12 @@ final class OAuthFlowIntegrationTest extends KernelTestBase {
       'http://127.0.0.1:8080/callback' => TRUE,
       'http://[::1]:3000/oauth' => TRUE,
 
+      // HTTPS web redirects use standard validation.
+      'https://example.com/callback' => TRUE,
+
       // Invalid/dangerous URIs.
       'javascript://malicious' => FALSE,
       'data://harmful' => FALSE,
-    // Not loopback.
-      'https://example.com/callback' => FALSE,
     ];
 
     foreach ($test_uris as $uri => $expected_valid) {

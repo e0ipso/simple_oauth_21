@@ -6,6 +6,7 @@ namespace Drupal\simple_oauth_native_apps\Service;
 
 use Drupal\Core\Cache\CacheableDependencyInterface;
 use Drupal\Core\Cache\CacheableDependencyTrait;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Psr\Log\NullLogger;
 
@@ -54,6 +55,12 @@ final class MetadataProvider implements CacheableDependencyInterface {
    */
   public function getMetadata(): array {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
+    // Rebuild for each generation so temporary overrides cannot accumulate.
+    $cacheability = CacheableMetadata::createFromObject($config);
+    $cacheability->addCacheTags(['config:simple_oauth.settings']);
+    $this->cacheTags = $cacheability->getCacheTags();
+    $this->cacheContexts = $cacheability->getCacheContexts();
+    $this->cacheMaxAge = $cacheability->getCacheMaxAge();
     $metadata = [];
 
     // Add RFC 8252 compliance fields.

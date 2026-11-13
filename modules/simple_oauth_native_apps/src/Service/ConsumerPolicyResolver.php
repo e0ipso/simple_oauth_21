@@ -6,18 +6,26 @@ namespace Drupal\simple_oauth_native_apps\Service;
 
 use Drupal\Component\Uuid\Uuid;
 use Drupal\consumers\Entity\ConsumerInterface;
+use Drupal\Core\Cache\CacheBackendInterface;
+use Drupal\Core\Cache\Cache;
+use Drupal\Core\Cache\CacheTagsChecksumInterface;
+use Drupal\Core\Config\ConfigCrudEvent;
+use Drupal\Core\Config\ConfigEvents;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ConfigImporterEvent;
+use Drupal\Core\Config\ConfigRenameEvent;
 use Drupal\Core\DependencyInjection\DependencySerializationTrait;
+use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
  * Resolves and writes whole native policy records by consumer identity.
  *
  * Numeric names remain export-compatible. Unbound records retain their legacy
  * numeric meaning; their historical owner cannot be established from config.
- * No lookup is retained between calls. ConfigFactory handles config save/delete
- * invalidation, and each resolution lists current names, including new records.
+ * A disposable UUID index narrows active reads to candidate records. Ownership
+ * always uses raw configuration, independently of runtime policy overrides.
  */
-final class ConsumerPolicyResolver {
+final class ConsumerPolicyResolver implements EventSubscriberInterface {
 
   use DependencySerializationTrait;
 
@@ -25,6 +33,11 @@ final class ConsumerPolicyResolver {
    * The existing policy configuration prefix.
    */
   public const PREFIX = 'simple_oauth_native_apps.consumer.';
+
+  /**
+   * Cache identifier for the derived UUID to configuration name index.
+   */
+  private const INDEX_CID = 'simple_oauth_native_apps:consumer_policy_index';
 
   /**
    * Policy controls, separate from binding and presentation metadata.
@@ -41,8 +54,96 @@ final class ConsumerPolicyResolver {
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The configuration factory.
+   * @param \Drupal\Core\Cache\CacheBackendInterface|null $cache
+   *   The derived index cache, or NULL for uncached original constructor calls.
+   * @param \Drupal\Core\Cache\CacheTagsChecksumInterface|null $cacheTagsChecksum
+   *   Invalidation checksums, or NULL to retain uncached compatibility.
    */
-  public function __construct(protected readonly ConfigFactoryInterface $configFactory) {}
+  public function __construct(
+    protected readonly ConfigFactoryInterface $configFactory,
+    protected readonly ?CacheBackendInterface $cache = NULL,
+    protected readonly ?CacheTagsChecksumInterface $cacheTagsChecksum = NULL,
+  ) {}
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function getSubscribedEvents(): array {
+    return [
+      ConfigEvents::SAVE => 'invalidateIndex',
+      ConfigEvents::DELETE => 'invalidateIndex',
+      ConfigEvents::RENAME => 'invalidateIndex',
+      ConfigEvents::IMPORT => 'onImport',
+    ];
+  }
+
+  /**
+   * Discards derived names after policy writes and completed imports.
+   *
+   * @param \Drupal\Core\Config\ConfigCrudEvent|null $event
+   *   The saved or deleted configuration, or NULL for a completed import.
+   */
+  public function invalidateIndex(?ConfigCrudEvent $event = NULL): void {
+    if ($event === NULL || str_starts_with($event->getConfig()->getName(), self::PREFIX) ||
+      ($event instanceof ConfigRenameEvent && str_starts_with($event->getOldName(), self::PREFIX))) {
+      $this->cache?->delete(self::INDEX_CID);
+      Cache::invalidateTags([self::INDEX_CID]);
+    }
+  }
+
+  /**
+   * Invalidates the lookup after a completed configuration import.
+   *
+   * @param \Drupal\Core\Config\ConfigImporterEvent $event
+   *   The completed import event.
+   */
+  public function onImport(ConfigImporterEvent $event): void {
+    $this->invalidateIndex();
+  }
+
+  /**
+   * Loads raw candidates without scanning unrelated policies on cache hits.
+   *
+   * @param \Drupal\consumers\Entity\ConsumerInterface $consumer
+   *   The consumer whose local slot and UUID bindings must all be inspected.
+   *
+   * @return array<string, array>
+   *   Candidate records, including malformed local and nonnumeric bound names.
+   */
+  private function getCandidates(ConsumerInterface $consumer): array {
+    if ($this->cache === NULL || $this->cacheTagsChecksum === NULL) {
+      return $this->getRecords();
+    }
+    $cached = $this->cache->get(self::INDEX_CID);
+    if ($cached === FALSE || !$this->cacheTagsChecksum->isValid($cached->data['checksum'], [self::INDEX_CID])) {
+      // Capture before reading: a concurrent write must invalidate this build,
+      // even if it finishes before the resulting cache item is stored.
+      $checksum = $this->cacheTagsChecksum->getCurrentChecksum([self::INDEX_CID]);
+      $index = [];
+      $records = $this->getRecords();
+      foreach ($records as $name => $data) {
+        $uuid = $data['consumer_uuid'] ?? NULL;
+        if (is_string($uuid) && Uuid::isValid($uuid)) {
+          $index[strtolower($uuid)][] = $name;
+        }
+      }
+      $this->cache->set(self::INDEX_CID, [
+        'checksum' => $checksum,
+        'names' => $index,
+      ], Cache::PERMANENT, [self::INDEX_CID]);
+      // The initial read already contains every candidate.
+      return $records;
+    }
+    $names = $cached->data['names'][strtolower((string) $consumer->uuid())] ?? [];
+    if ($consumer->id() !== NULL) {
+      $names[] = self::PREFIX . $consumer->id();
+    }
+    $records = [];
+    foreach ($this->configFactory->loadMultiple(array_unique($names)) as $name => $config) {
+      $records[$name] = $config->getRawData();
+    }
+    return $records;
+  }
 
   /**
    * Reads active records without interpreting numeric suffixes as UUIDs.
@@ -73,7 +174,7 @@ final class ConsumerPolicyResolver {
    *   Multiple records compete for the consumer, or its slot is malformed.
    */
   public function resolve(ConsumerInterface $consumer, ?array $records = NULL): array {
-    $records ??= $this->getRecords();
+    $records ??= $this->getCandidates($consumer);
     $consumer_id = $consumer->id();
     $local_name = $consumer_id !== NULL ? self::PREFIX . $consumer_id : NULL;
     $uuid = strtolower((string) $consumer->uuid());

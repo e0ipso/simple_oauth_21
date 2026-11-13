@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\simple_oauth_native_apps\Kernel;
 
+use Drupal\Core\Validation\ConstraintValidatorFactory;
+use Symfony\Component\Validator\Validation;
+use Drupal\Core\Cache\CacheableJsonResponse;
+use Drupal\Core\Config\ConfigFactoryOverrideInterface;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ConfigImporter;
 use Drupal\Core\Config\ConfigImporterException;
@@ -61,6 +66,239 @@ final class ServiceIntegrationTest extends KernelTestBase {
     $this->installEntitySchema('file');
     $this->installEntitySchema('consumer');
     $this->installConfig(['simple_oauth', 'simple_oauth_native_apps']);
+  }
+
+  /**
+   * Tests real configuration override cacheability and recovery per generation.
+   */
+  public function testMetadataOverrideCacheability(): void {
+    $factory = $this->container->get('config.factory');
+    $values = [];
+    $cacheability = new CacheableMetadata();
+    $override = $this->createMock(ConfigFactoryOverrideInterface::class);
+    $override->method('getCacheSuffix')->willReturn('native_metadata_test');
+    $override->method('loadOverrides')->willReturnCallback(static function (array $names) use (&$values): array {
+      return in_array('simple_oauth_native_apps.settings', $names, TRUE)
+        ? ['simple_oauth_native_apps.settings' => $values] : [];
+    });
+    $override->method('getCacheableMetadata')->willReturnCallback(static function (string $name) use (&$cacheability): CacheableMetadata {
+      return $cacheability;
+    });
+    $factory->addOverride($override);
+    $provider = $this->container->get('simple_oauth_native_apps.metadata_provider');
+    foreach ([
+      [FALSE, ['user.permissions'], ['native_override:first'], 0],
+      [TRUE, ['languages:language_interface'], ['native_override:second'], 120],
+      [TRUE, [], [], -1],
+    ] as [$enabled, $contexts, $tags, $max_age]) {
+      $values = ['enforce_native_security' => $enabled];
+      $cacheability = (new CacheableMetadata())
+        ->setCacheContexts($contexts)->setCacheTags($tags)->setCacheMaxAge($max_age);
+      $factory->reset();
+      for ($iteration = 0; $iteration < 2; $iteration++) {
+        $metadata = $provider->getMetadata();
+        $this->assertSame($enabled, $metadata['enhanced_native_security']);
+        $this->assertSame($enabled, $metadata['native_apps_pkce_required']);
+        $response = new CacheableJsonResponse($metadata);
+        $response->addCacheableDependency($provider);
+        $actual = $response->getCacheableMetadata();
+        $this->assertEqualsCanonicalizing($contexts, $actual->getCacheContexts());
+        $this->assertEqualsCanonicalizing(array_merge($tags, [
+          'config:simple_oauth_native_apps.settings', 'config:simple_oauth.settings',
+        ]), $actual->getCacheTags());
+        $this->assertSame($max_age, $actual->getCacheMaxAge());
+      }
+    }
+  }
+
+  /**
+   * Tests bounded candidate loads across resolvers and live config mutations.
+   */
+  public function testIndexedPolicyLookupWorkAndFreshness(): void {
+    [$owner, $unrelated, $name, $data] = $this->createBoundPolicyCollision();
+    for ($index = 1000; $index < 1050; $index++) {
+      $this->config(ConsumerPolicyResolver::PREFIX . $index)->setData([
+        'consumer_uuid' => \Drupal::service('uuid')->generate(),
+        'enhanced_pkce_override' => 'enhanced',
+      ])->save();
+    }
+    $real_factory = $this->container->get('config.factory');
+    $factory = $this->createMock(ConfigFactoryInterface::class);
+    $lists = 0;
+    $loads = [];
+    $factory->method('listAll')->willReturnCallback(static function (string $prefix) use ($real_factory, &$lists): array {
+      $lists++;
+      return $real_factory->listAll($prefix);
+    });
+    $factory->method('loadMultiple')->willReturnCallback(static function (array $names) use ($real_factory, &$loads): array {
+      $loads[] = count($names);
+      return $real_factory->loadMultiple($names);
+    });
+    $factory->method('get')->willReturnCallback($real_factory->get(...));
+    $cache = $this->container->get('cache.default');
+    $resolver = new ConsumerPolicyResolver($factory, $cache, $this->container->get('cache_tags.invalidator.checksum'));
+    $this->assertSame($name, $resolver->resolve($owner)['name']);
+    $this->assertSame(1, $lists);
+    $this->assertSame(51, $loads[0]);
+    for ($iteration = 0; $iteration < 5; $iteration++) {
+      // A fresh service also reuses the derived index.
+      $fresh = new ConsumerPolicyResolver($factory, $cache, $this->container->get('cache_tags.invalidator.checksum'));
+      $this->assertSame($data, $fresh->getPolicy($owner));
+      $this->assertSame(2, $loads[array_key_last($loads)]);
+      $this->assertSame([], $fresh->getPolicy($unrelated));
+      $this->assertSame(1, $loads[array_key_last($loads)]);
+    }
+    $this->assertSame(1, $lists);
+    $this->config($name)->set('consumer_uuid', $unrelated->uuid())->save();
+    $this->assertNull($resolver->resolve($owner)['name']);
+    $this->assertSame($name, $resolver->resolve($unrelated)['name']);
+    $this->assertSame(2, $lists);
+    $this->config($name)->delete();
+    $this->assertNull($resolver->resolve($unrelated)['name']);
+    $this->assertSame(3, $lists);
+    $this->config($name)->setData($data)->save();
+    $this->assertSame($name, $resolver->resolve($owner)['name']);
+    $this->assertSame(4, $lists);
+    $snapshot = [ConsumerPolicyResolver::PREFIX . '9000' => $data];
+    $this->assertSame(array_key_first($snapshot), $resolver->resolve($owner, $snapshot)['name']);
+    $this->assertSame(4, $lists);
+    $this->config(ConsumerPolicyResolver::PREFIX . $owner->id())->set('consumer_uuid', 'broken')->save();
+    try {
+      $resolver->resolve($owner);
+      $this->fail('Malformed local slots must reject even with a UUID match.');
+    }
+    catch (\UnexpectedValueException $exception) {
+      $this->assertStringContainsString('malformed', $exception->getMessage());
+    }
+    $this->config(ConsumerPolicyResolver::PREFIX . $owner->id())->delete();
+    $invalid_name = ConsumerPolicyResolver::PREFIX . 'invalid';
+    $this->config($invalid_name)->setData($data)->save();
+    $this->expectException(\UnexpectedValueException::class);
+    $this->expectExceptionMessage('numeric');
+    $resolver->resolve($owner);
+  }
+
+  /**
+   * Tests a write during index construction cannot publish a valid stale index.
+   */
+  public function testPolicyIndexConcurrentInvalidation(): void {
+    [$owner, , $name, $data] = $this->createBoundPolicyCollision();
+    $real_factory = $this->container->get('config.factory');
+    $factory = $this->createMock(ConfigFactoryInterface::class);
+    $factory->method('listAll')->willReturnCallback($real_factory->listAll(...));
+    $first_load = TRUE;
+    $factory->method('loadMultiple')->willReturnCallback(function (array $names) use ($real_factory, $data, &$first_load): array {
+      $loaded = $real_factory->loadMultiple($names);
+      if ($first_load) {
+        $first_load = FALSE;
+        $this->config(ConsumerPolicyResolver::PREFIX . '9000')->setData($data)->save();
+      }
+      return $loaded;
+    });
+    $resolver = new ConsumerPolicyResolver($factory, $this->container->get('cache.default'), $this->container->get('cache_tags.invalidator.checksum'));
+    // This read started before the competing policy was saved.
+    $this->assertSame($name, $resolver->resolve($owner)['name']);
+    $this->expectException(\UnexpectedValueException::class);
+    $this->expectExceptionMessage('Multiple');
+    $resolver->resolve($owner);
+  }
+
+  /**
+   * Tests runtime configuration overrides never select a different UUID owner.
+   */
+  public function testIndexedPolicyUsesRawOwnership(): void {
+    [$owner, $unrelated, $name] = $this->createBoundPolicyCollision();
+    $factory = $this->container->get('config.factory');
+    $override = $this->createMock(ConfigFactoryOverrideInterface::class);
+    $override->method('getCacheSuffix')->willReturn('native_policy_test');
+    $override->method('loadOverrides')->willReturn([
+      $name => ['consumer_uuid' => $unrelated->uuid(), 'enhanced_pkce_override' => 'enhanced'],
+    ]);
+    $override->method('getCacheableMetadata')->willReturn(new CacheableMetadata());
+    $factory->addOverride($override);
+    $factory->reset();
+    $resolver = $this->container->get('simple_oauth_native_apps.consumer_policy_resolver');
+    for ($iteration = 0; $iteration < 2; $iteration++) {
+      $this->assertSame($name, $resolver->resolve($owner)['name']);
+      $this->assertSame($owner->uuid(), $resolver->resolve($owner)['data']['consumer_uuid']);
+      $this->assertSame('enhanced', $resolver->getPolicy($owner)['enhanced_pkce_override']);
+      $this->assertNull($resolver->resolve($unrelated)['name']);
+    }
+    $restored = unserialize(serialize($resolver), ['allowed_classes' => [ConsumerPolicyResolver::class]]);
+    $this->assertSame($name, $restored->resolve($owner)['name']);
+    $this->assertSame('enhanced', $restored->getPolicy($owner)['enhanced_pkce_override']);
+  }
+
+  /**
+   * Tests URI rules agree across direct, constraint and consumer entry points.
+   */
+  public function testSharedRedirectUriRules(): void {
+    $validator = $this->container->get('simple_oauth_native_apps.redirect_uri_validator');
+    $legacy = new RedirectUriValidator($this->container->get('config.factory'), $this->container->get('logger.channel.simple_oauth_native_apps'));
+    $consumer = Consumer::create([
+      'label' => 'URI rules',
+      'client_id' => 'uri-rules',
+      'native_app_override' => 'native',
+    ]);
+    $consumer->save();
+    $constraint = new NativeAppRedirectUri();
+    $standalone = Validation::createValidatorBuilder()
+      ->setConstraintValidatorFactory(new ConstraintValidatorFactory($this->container->get('class_resolver')))
+      ->getValidator();
+    foreach ([
+      'https://example.org/callback' => TRUE,
+      'https://127.0.0.1:8443/callback' => TRUE,
+      'https://[::1]:8443/callback' => TRUE,
+      'http://127.0.0.1:49152/callback' => TRUE,
+      'http://[::1]:49153/callback' => TRUE,
+      'http://example.org/callback' => FALSE,
+      'http://127.0.0.2:49152/callback' => FALSE,
+      'nl.example.app:/callback' => TRUE,
+      'technology.example.app:/callback' => TRUE,
+      'nl.123example.123:/callback' => TRUE,
+      'x.example.app:/callback' => TRUE,
+      'xn--p1ai.example.app:/callback' => TRUE,
+      'com.example.app://callback' => TRUE,
+      'com..app:/callback' => FALSE,
+      'com.-example.app:/callback' => FALSE,
+      'com.example-.app:/callback' => FALSE,
+      'com.example:/callback' => FALSE,
+      'javascript:/callback' => FALSE,
+      'data:/callback' => FALSE,
+      'file:///callback' => FALSE,
+      'ftp://example.org/callback' => FALSE,
+      'https://user:pass@example.org/callback' => FALSE,
+      'nl.example.app://user@example.org/callback' => FALSE,
+      'https://example.org/callback#fragment' => FALSE,
+      'nl.example.app:/callback#fragment' => FALSE,
+      "nl.example.app:/call\nback" => FALSE,
+      'nl.example.app:/callback%0a' => FALSE,
+      'nl.example.app:/callback%zz' => FALSE,
+      'https:///callback' => FALSE,
+      'missing-scheme' => FALSE,
+    ] as $uri => $expected) {
+      $this->assertSame($expected, $validator->validateRedirectUri($uri), $uri);
+      $this->assertSame($expected, $legacy->validateRedirectUri($uri), $uri);
+      $this->assertSame($expected, $validator->validateConsumerRedirectUri($uri, $consumer), $uri);
+      $violations = $standalone->validate($uri, $constraint);
+      $this->assertSame($expected, count($violations) === 0, $uri);
+    }
+    $this->assertFalse($validator->validateLoopbackInterface('https://127.0.0.1/callback'));
+    $this->config('simple_oauth_native_apps.settings')->set('allow.custom_uri_schemes', 'web')->set('allow.loopback_redirects', 'web')->save();
+    $this->assertFalse($validator->validateRedirectUri('nl.example.app:/callback'));
+    $this->assertFalse($validator->validateConsumerRedirectUri('http://127.0.0.1/callback', $consumer));
+    $this->assertTrue($validator->validateConsumerRedirectUri('https://example.org/callback', $consumer));
+    $this->config(ConsumerPolicyResolver::PREFIX . $consumer->id())
+      ->set('allow_custom_schemes_override', 'native')->set('allow_loopback_override', 'native')->save();
+    $this->assertTrue($validator->validateConsumerRedirectUri('nl.example.app:/callback', $consumer));
+    $this->assertTrue($validator->validateConsumerRedirectUri('http://127.0.0.1/callback', $consumer));
+    $this->config('simple_oauth_native_apps.settings')->set('enforce_native_security', FALSE)->save();
+    $this->config(ConsumerPolicyResolver::PREFIX . $consumer->id())
+      ->set('allow_custom_schemes_override', 'web')->set('allow_loopback_override', 'web')->save();
+    $this->assertTrue($validator->validateConsumerRedirectUri('nl.example.app:/callback', $consumer));
+    $this->assertTrue($validator->validateConsumerRedirectUri('http://127.0.0.1/callback', $consumer));
+    $this->assertFalse($validator->validateRedirectUri('nl.example.app:/callback'));
+    $this->assertTrue($validator->validateConsumerRedirectUri('https://example.org/callback', $consumer));
   }
 
   /**
