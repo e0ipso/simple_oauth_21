@@ -24,7 +24,7 @@ use Psr\Log\LoggerInterface;
  * Implements the DeviceCodeRepositoryInterface required by league/oauth2-server
  * for the Device Authorization Grant (RFC 8628).
  */
-final class DeviceCodeRepository implements DeviceVerificationRepositoryInterface {
+final class DeviceCodeRepository implements DeviceVerificationRepositoryInterface, DeviceCodeLifecycleRepositoryInterface {
 
   /**
    * The logger instance.

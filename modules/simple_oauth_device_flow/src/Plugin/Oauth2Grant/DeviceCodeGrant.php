@@ -8,6 +8,7 @@ use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\simple_oauth\Plugin\Oauth2GrantBase;
 use Drupal\simple_oauth_device_flow\Service\DeviceFlowSettingsService;
+use Drupal\simple_oauth_device_flow\DeviceGrantType;
 use League\OAuth2\Server\Grant\DeviceCodeGrant as LeagueDeviceCodeGrant;
 use League\OAuth2\Server\Grant\GrantTypeInterface;
 use League\OAuth2\Server\Repositories\DeviceCodeRepositoryInterface;
@@ -187,14 +188,7 @@ final class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryP
    *   TRUE if the client can use device code grant.
    */
   public function isClientEligible(Consumer $client): bool {
-    // Check if device_code grant is enabled for this client.
-    foreach ($client->get('grant_types')->getValue() as $grant_type) {
-      if ($grant_type['value'] === 'device_code') {
-        return TRUE;
-      }
-    }
-
-    return FALSE;
+    return DeviceGrantType::select($client) !== NULL;
   }
 
   /**

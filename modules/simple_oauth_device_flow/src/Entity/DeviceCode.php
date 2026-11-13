@@ -25,6 +25,7 @@ use League\OAuth2\Server\Exception\OAuthServerException;
  *   label = @Translation("OAuth2 Device Code"),
  *   handlers = {
  *     "storage" = "Drupal\Core\Entity\Sql\SqlContentEntityStorage",
+ *     "storage_schema" = "Drupal\simple_oauth_device_flow\Entity\DeviceCodeStorageSchema",
  *     "views_data" = "Drupal\views\EntityViewsData",
  *   },
  *   base_table = "oauth2_device_code",

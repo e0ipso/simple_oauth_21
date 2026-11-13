@@ -26,17 +26,27 @@ services:
         '@datetime.time',
       ]
 
+  # Consumers can replace each operation contract independently.
+  simple_oauth_device_flow.verification_repository:
+    alias: simple_oauth_device_flow.device_code_repository
+
+  simple_oauth_device_flow.user_code_lookup:
+    alias: simple_oauth_device_flow.device_code_repository
+
+  simple_oauth_device_flow.lifecycle_repository:
+    alias: simple_oauth_device_flow.device_code_repository
+
   simple_oauth_device_flow.user_code_generator:
     class: Drupal\simple_oauth_device_flow\Service\UserCodeGenerator
     arguments:
       - '@config.factory'
-      - '@simple_oauth_device_flow.device_code_repository'
+      - '@simple_oauth_device_flow.user_code_lookup'
       - '@simple_oauth_device_flow.logger_factory'
 
   simple_oauth_device_flow.device_code_service:
     class: Drupal\simple_oauth_device_flow\Service\DeviceCodeService
     arguments:
-      - '@simple_oauth_device_flow.device_code_repository'
+      - '@simple_oauth_device_flow.lifecycle_repository'
       - '@simple_oauth_device_flow.user_code_generator'
       - '@simple_oauth_device_flow.settings'
       - '@datetime.time'

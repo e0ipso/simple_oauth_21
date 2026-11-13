@@ -10,6 +10,7 @@ use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Path\PathValidatorInterface;
 use Drupal\simple_oauth\Entities\ClientEntityInterface;
 use Drupal\simple_oauth_device_flow\Service\DeviceCodeService;
+use Drupal\simple_oauth_device_flow\DeviceGrantType;
 use GuzzleHttp\Psr7\Response;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use League\OAuth2\Server\Repositories\ClientRepositoryInterface;
@@ -161,17 +162,15 @@ final class DeviceAuthorizationController extends ControllerBase {
         throw $exception;
       }
 
+      $client_drupal_entity = $client_entity->getDrupalEntity();
+      $grant_type = DeviceGrantType::select($client_drupal_entity);
       if ($client_entity->isConfidential()
-        && !$this->clientRepository->validateClient($client_id, $client_secret, 'urn:ietf:params:oauth:grant-type:device_code')) {
+        && !$this->clientRepository->validateClient($client_id, $client_secret, $grant_type ?? DeviceGrantType::CANONICAL)) {
         throw OAuthServerException::invalidClient($server_request);
       }
 
-      $client_drupal_entity = $client_entity->getDrupalEntity();
-
-      // Verify client is configured for device code grant.
-      // RFC 8628 requires the full URN for the grant type identifier.
-      $grant_types = array_column($client_drupal_entity->get('grant_types')->getValue(), 'value');
-      if (!in_array('urn:ietf:params:oauth:grant-type:device_code', $grant_types, TRUE)) {
+      // Match plugin eligibility without rewriting stored grant lists.
+      if ($grant_type === NULL) {
         $this->logger->notice('Client @client_id not configured for device_code grant', [
           '@client_id' => $client_entity->getIdentifier(),
         ]);

@@ -1,10 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_device_flow\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
-use Drupal\simple_oauth_device_flow\Repository\DeviceCodeRepository;
+use Drupal\simple_oauth_device_flow\Repository\UserCodeLookupInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -37,9 +39,9 @@ class UserCodeGenerator {
   /**
    * The device code repository.
    *
-   * @var \Drupal\simple_oauth_device_flow\Repository\DeviceCodeRepository
+   * @var \Drupal\simple_oauth_device_flow\Repository\UserCodeLookupInterface
    */
-  protected DeviceCodeRepository $deviceCodeRepository;
+  protected UserCodeLookupInterface $deviceCodeRepository;
 
   /**
    * The logger instance.
@@ -53,14 +55,14 @@ class UserCodeGenerator {
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The config factory.
-   * @param \Drupal\simple_oauth_device_flow\Repository\DeviceCodeRepository $deviceCodeRepository
+   * @param \Drupal\simple_oauth_device_flow\Repository\UserCodeLookupInterface $deviceCodeRepository
    *   The device code repository for uniqueness checks.
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $loggerFactory
    *   The logger channel factory.
    */
   public function __construct(
     ConfigFactoryInterface $configFactory,
-    DeviceCodeRepository $deviceCodeRepository,
+    UserCodeLookupInterface $deviceCodeRepository,
     LoggerChannelFactoryInterface $loggerFactory,
   ) {
     $this->configFactory = $configFactory;
