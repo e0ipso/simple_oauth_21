@@ -125,7 +125,11 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
       'op_tos_uri' => $config->get('op_tos_uri'),
     ];
 
+    $discovered_endpoints = $this->endpointDiscoveryService->getCoreEndpoints();
     foreach ($optional_fields as $field => $value) {
+      if (($value === NULL || $value === '') && str_ends_with($field, '_endpoint')) {
+        $value = $discovered_endpoints[$field] ?? NULL;
+      }
       if (!empty($value)) {
         $metadata[$field] = str_ends_with($field, '_endpoint') ? $this->ensureAbsoluteUrl($value) : $value;
       }

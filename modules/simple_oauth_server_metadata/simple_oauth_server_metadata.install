@@ -5,13 +5,18 @@
  * Install/uninstall for Simple OAuth Server Metadata module.
  */
 
-use Drupal\Core\Url;
+declare(strict_types=1);
+
 use Drupal\user\Entity\User;
 
 /**
  * Implements hook_install().
  */
 function simple_oauth_server_metadata_install() {
+  if (\Drupal::isConfigSyncing()) {
+    return;
+  }
+
   $config = \Drupal::configFactory()->getEditable('simple_oauth_server_metadata.settings');
 
   // Auto-populate UI locales from enabled languages.
@@ -39,22 +44,6 @@ function simple_oauth_server_metadata_install() {
     // Merge with existing, keeping existing ones first.
     $merged_claims = array_unique(array_merge($existing_claims, $custom_claims));
     $config->set('additional_claims_supported', $merged_claims);
-  }
-
-  // Set default registration endpoint to RFC 7591 route if available.
-  // If simple_oauth_client_registration module is enabled, use its route.
-  // Otherwise, leave it empty (auto-discovery will handle it).
-  if (empty($config->get('registration_endpoint'))) {
-    try {
-      // Try the RFC 7591 compliant endpoint first.
-      $registration_url = Url::fromRoute('simple_oauth_client_registration.register')->setAbsolute()->toString();
-      $config->set('registration_endpoint', $registration_url);
-    }
-    catch (\Exception $e) {
-      // Route doesn't exist, leave empty for auto-discovery.
-      // Do not fall back to entity.consumer.add_form as it's not RFC 7591
-      // compliant.
-    }
   }
 
   $config->save();
