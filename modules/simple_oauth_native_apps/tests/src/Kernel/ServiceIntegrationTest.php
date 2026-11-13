@@ -6,6 +6,8 @@ namespace Drupal\Tests\simple_oauth_native_apps\Kernel;
 
 use Drupal\Core\Entity\EntityFormInterface;
 use Drupal\Core\Form\FormState;
+use Drupal\Core\StringTranslation\TranslationManager;
+use Drupal\Core\StringTranslation\Translator\TranslatorInterface;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\simple_oauth_native_apps\Service\ConfigurationValidator;
@@ -213,6 +215,9 @@ final class ServiceIntegrationTest extends KernelTestBase {
     $pkce = $this->container->get('simple_oauth_native_apps.pkce_enhancement');
     $this->assertFalse($pkce->getConfiguration()['enhanced_pkce_enabled']);
     $this->assertFalse($pkce->requiresS256Method($client));
+    $config->clear('enforce_native_security')->save();
+    $this->assertFalse($detector->getEffectivePolicy($client)['enabled']);
+    $this->assertFalse($detector->requiresEnhancedPkce($client));
   }
 
   /**
@@ -359,6 +364,90 @@ final class ServiceIntegrationTest extends KernelTestBase {
       $this->assertSame('announce', $commands[1]['command']);
       $this->assertNotSame('', $commands[1]['text']);
     }
+  }
+
+  /**
+   * Tests translation and escaping of detector presentation.
+   */
+  public function testDetectionPresentationTranslationAndEscaping(): void {
+    $translations = [
+      'Terminal' => 'Terminal traduit',
+      'Mobile' => 'Mobile traduit',
+      'Desktop' => 'Bureau',
+      'Web' => 'Toile',
+      'Low' => 'Faible',
+      'Medium' => 'Moyenne',
+      'High' => 'Haute',
+      'Terminal/CLI application using loopback redirects' => 'Application terminal traduite',
+      'Mobile native application' => 'Application mobile traduite',
+      'Desktop native application' => 'Application bureau traduite',
+      'Web application' => 'Application web traduite',
+    ];
+    $translator = $this->createMock(TranslatorInterface::class);
+    $translator->method('getStringTranslation')->willReturnCallback(
+      static fn(string $langcode, string $string, string $context): string|false => $translations[$string] ?? FALSE
+    );
+    $translation = new TranslationManager($this->container->get('language.default'));
+    $translation->addTranslator($translator);
+    $handler = $this->container->get('simple_oauth_native_apps.consumer_form_alter');
+    $handler->setStringTranslation($translation);
+    $render = new \ReflectionMethod($handler, 'renderDetectionResult');
+    $detector = $this->container->get('simple_oauth_native_apps.native_client_detector');
+    foreach ([
+      'http://127.0.0.1:43210/callback' => ['terminal', 'Terminal/CLI application using loopback redirects'],
+      'com.example.policy:/callback' => ['mobile', 'Mobile native application'],
+      'http://127.0.0.1/callback' => ['desktop', 'Desktop native application'],
+      'https://example.com/callback' => ['web', 'Web application'],
+    ] as $uri => [$type, $description]) {
+      $result = $detector->detectClientType([$uri]);
+      $this->assertSame($type, $result['type']);
+      $this->assertSame($description, $result['details']['description']);
+      $markup = $render->invoke($handler, $result, [$uri]);
+      $this->assertStringContainsString($translations[ucfirst($type)], $markup);
+      $this->assertStringContainsString('Haute', $markup);
+      $this->assertStringContainsString($translations[$description], $markup);
+      // Rendering must preserve the public detector result and English values.
+      $this->assertSame($result, $detector->detectClientType([$uri]));
+    }
+    $mixed = $detector->detectClientType([
+      'http://127.0.0.1:43210/callback',
+      'https://example.com/callback',
+    ]);
+    $markup = $render->invoke($handler, $mixed, []);
+    $this->assertStringContainsString('Moyenne', $markup);
+    $this->assertStringContainsString('Terminal traduit, Toile', $markup);
+    $markup = $render->invoke($handler, ['type' => 'web', 'confidence' => 'low'], []);
+    $this->assertStringContainsString('Faible', $markup);
+
+    $form = [];
+    $state = (new FormState())->setValues(['redirect' => [['value' => 'com.example.policy:/callback']]]);
+    $commands = $handler->detectClientTypeAjax($form, $state)->getCommands();
+    $this->assertSame('announce', $commands[1]['command']);
+    $this->assertStringContainsString('Mobile traduit', $commands[1]['text']);
+    $this->assertStringContainsString('Application mobile traduite', $commands[1]['text']);
+    $this->assertStringContainsString('Enable enhanced PKCE for native app security', $commands[0]['data']);
+  }
+
+  /**
+   * Tests unknown detector text and confidence cannot inject markup.
+   */
+  public function testDetectionPresentationEscapesUnknownValues(): void {
+    $handler = $this->container->get('simple_oauth_native_apps.consumer_form_alter');
+    $render = new \ReflectionMethod($handler, 'renderDetectionResult');
+    $untrusted = '<img src=x onerror=alert(1)>';
+    $markup = $render->invoke($handler, [
+      'type' => $untrusted,
+      'confidence' => 'high" onclick="alert(1)',
+      'details' => ['description' => $untrusted],
+      'mixed_types' => ['web', $untrusted],
+    ], [$untrusted]);
+    $this->assertStringContainsString('confidence-unknown', $markup);
+    $this->assertStringContainsString('&lt;img', $markup);
+    $this->assertStringContainsString('Web, &lt;img', $markup);
+    $this->assertStringNotContainsString('<img', $markup);
+    $this->assertStringNotContainsString(' onclick="', $markup);
+    $this->assertStringNotContainsString('&amp;lt;', $markup);
+
   }
 
   /**

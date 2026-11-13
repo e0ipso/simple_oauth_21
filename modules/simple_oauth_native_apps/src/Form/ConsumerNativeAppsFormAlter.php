@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\simple_oauth_native_apps\Form;
 
+use Drupal\Component\Utility\Html;
 use Drupal\consumers\Entity\ConsumerInterface;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\Core\Ajax\AjaxResponse;
@@ -520,13 +521,28 @@ final class ConsumerNativeAppsFormAlter {
     $confidence = $result['confidence'];
     $details = $result['details'] ?? [];
 
-    $markup = '<div class="client-detection-result confidence-' . $confidence . '">';
+    $confidence_labels = [
+      'low' => $this->t('Low'),
+      'medium' => $this->t('Medium'),
+      'high' => $this->t('High'),
+    ];
+    $confidence_class = isset($confidence_labels[$confidence]) ? $confidence : 'unknown';
+    $confidence_label = $confidence_labels[$confidence] ?? ucfirst($confidence);
+
+    $markup = '<div class="client-detection-result confidence-' . $confidence_class . '">';
     $markup .= '<h4>' . $this->t('Detection Result') . '</h4>';
-    $markup .= '<p><strong>' . $this->t('Detected Client Type:') . '</strong> ' . ucfirst($type) . '</p>';
-    $markup .= '<p><strong>' . $this->t('Detection Confidence:') . '</strong> ' . ucfirst($confidence) . '</p>';
+    $markup .= '<p><strong>' . $this->t('Detected Client Type:') . '</strong> ' . Html::escape($this->getClientTypeLabel($type)) . '</p>';
+    $markup .= '<p><strong>' . $this->t('Detection Confidence:') . '</strong> ' . Html::escape((string) $confidence_label) . '</p>';
 
     if (isset($details['description'])) {
-      $markup .= '<p><strong>' . $this->t('Description:') . '</strong> ' . $details['description'] . '</p>';
+      $description = match ($details['description']) {
+        'Terminal/CLI application using loopback redirects' => $this->t('Terminal/CLI application using loopback redirects'),
+        'Mobile native application' => $this->t('Mobile native application'),
+        'Desktop native application' => $this->t('Desktop native application'),
+        'Web application' => $this->t('Web application'),
+        default => $details['description'],
+      };
+      $markup .= '<p><strong>' . $this->t('Description:') . '</strong> ' . Html::escape((string) $description) . '</p>';
     }
 
     // Show analyzed URIs.
@@ -534,7 +550,7 @@ final class ConsumerNativeAppsFormAlter {
     $markup .= '<h5>' . $this->t('Analyzed Redirect URIs:') . '</h5>';
     $markup .= '<ul>';
     foreach ($redirect_uris as $uri) {
-      $markup .= '<li><code>' . htmlspecialchars($uri) . '</code></li>';
+      $markup .= '<li><code>' . Html::escape($uri) . '</code></li>';
     }
     $markup .= '</ul>';
     $markup .= '</div>';
@@ -557,7 +573,7 @@ final class ConsumerNativeAppsFormAlter {
       $markup .= '<div class="messages messages--warning">';
       $markup .= '<strong>' . $this->t('Mixed Client Types Detected:') . '</strong> ';
       $markup .= $this->t('Your redirect URIs suggest multiple client types (@types). Consider using consistent URI patterns for better security.', [
-        '@types' => implode(', ', $result['mixed_types']),
+        '@types' => implode(', ', array_map($this->getClientTypeLabel(...), $result['mixed_types'])),
       ]);
       $markup .= '</div>';
     }
@@ -565,6 +581,25 @@ final class ConsumerNativeAppsFormAlter {
     $markup .= '</div>';
 
     return $markup;
+  }
+
+  /**
+   * Presents stable detector type values without changing detector results.
+   *
+   * @param string $type
+   *   The detector type.
+   *
+   * @return string
+   *   A translated label or unescaped fallback for the caller to escape.
+   */
+  private function getClientTypeLabel(string $type): string {
+    return (string) match ($type) {
+      'terminal' => $this->t('Terminal'),
+      'mobile' => $this->t('Mobile'),
+      'desktop' => $this->t('Desktop'),
+      'web' => $this->t('Web'),
+      default => ucfirst($type),
+    };
   }
 
   /**

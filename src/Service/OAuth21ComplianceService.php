@@ -253,7 +253,7 @@ final class OAuth21ComplianceService implements CacheableDependencyInterface {
     $allow_custom_schemes = in_array($custom_schemes_setting, ['native', 'auto-detect'], TRUE);
     $allow_loopback = in_array($loopback_setting, ['native', 'auto-detect'], TRUE);
 
-    return ($allow_custom_schemes && $allow_loopback) ? 'configured' : 'needs_attention';
+    return ((bool) $config->get('enforce_native_security') && $allow_custom_schemes && $allow_loopback) ? 'configured' : 'needs_attention';
   }
 
   /**
