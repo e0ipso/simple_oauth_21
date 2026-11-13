@@ -8,7 +8,7 @@ use Drupal\Core\Cache\CacheableDependencyInterface;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Url;
-use Drupal\simple_oauth_server_metadata\Cache\MetadataCacheabilityTrait;
+use Drupal\simple_oauth_server_metadata\Trait\MetadataCacheabilityTrait;
 use Drupal\simple_oauth_server_metadata\Event\ResourceMetadataEvent;
 use Drupal\simple_oauth_server_metadata\Event\ResourceMetadataEvents;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -42,6 +42,7 @@ class ResourceMetadataService implements CacheableDependencyInterface {
 
     $this->cacheContexts = [
       'url.path',
+      'url.site',
       'user.permissions',
     ];
   }

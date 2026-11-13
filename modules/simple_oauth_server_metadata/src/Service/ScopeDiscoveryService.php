@@ -9,7 +9,7 @@ use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\simple_oauth\Oauth2ScopeProviderInterface;
-use Drupal\simple_oauth_server_metadata\Cache\MetadataCacheabilityTrait;
+use Drupal\simple_oauth_server_metadata\Trait\MetadataCacheabilityTrait;
 
 /**
  * Service for discovering OAuth 2.0 scopes.

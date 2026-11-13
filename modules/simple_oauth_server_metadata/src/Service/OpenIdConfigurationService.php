@@ -8,7 +8,7 @@ use Drupal\Core\Cache\CacheableDependencyInterface;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Url;
-use Drupal\simple_oauth_server_metadata\Cache\MetadataCacheabilityTrait;
+use Drupal\simple_oauth_server_metadata\Trait\MetadataCacheabilityTrait;
 
 /**
  * Service for generating OpenID Connect Discovery metadata.

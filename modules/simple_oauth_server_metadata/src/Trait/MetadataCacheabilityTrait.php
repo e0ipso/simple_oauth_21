@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\simple_oauth_server_metadata\Cache;
+namespace Drupal\simple_oauth_server_metadata\Trait;
 
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Cache\CacheableDependencyTrait;

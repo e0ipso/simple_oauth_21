@@ -65,6 +65,34 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
   }
 
   /**
+   * Tests absolute discovery URLs vary by the current site origin in caches.
+   */
+  public function testDiscoveryVariesBySiteOrigin(): void {
+    $stack = $this->container->get('request_stack');
+    $context = $this->container->get('router.request_context');
+    foreach (['first.example.org', 'second.example.org'] as $host) {
+      $request = Request::create('https://' . $host . '/.well-known/oauth-authorization-server');
+      $stack->push($request);
+      $context->fromRequest($request);
+      try {
+        $responses = [
+          ServerMetadataController::create($this->container)->__invoke(),
+          OpenIdConfigurationController::create($this->container)->configuration(),
+          ResourceMetadataController::create($this->container)->__invoke(),
+        ];
+        foreach ($responses as $response) {
+          $metadata = json_decode($response->getContent(), TRUE);
+          $this->assertSame($host, parse_url($metadata['issuer'] ?? $metadata['resource'], PHP_URL_HOST));
+          $this->assertContains('url.site', $response->getCacheableMetadata()->getCacheContexts());
+        }
+      }
+      finally {
+        $stack->pop();
+      }
+    }
+  }
+
+  /**
    * Tests JSON responses and tag invalidation on scope add, edit and delete.
    */
   public function testScopeCollectionInvalidationAndJsonLists(): void {
