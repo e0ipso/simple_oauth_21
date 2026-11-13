@@ -616,6 +616,27 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     $consumer->save();
     $controller = DeviceAuthorizationController::create($this->container);
     $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_device_code');
+    foreach (['client_id', 'client_secret'] as $parameter) {
+      $parameters = [
+        'client_id' => $consumer->getClientId(),
+        'client_secret' => 'correct-device-secret',
+      ];
+      $parameters[$parameter] = ['invalid'];
+      $request = Request::create('/oauth/device_authorization', 'POST', $parameters);
+      $response = $controller->authorize($request);
+      $this->assertSame(400, $response->getStatusCode());
+      $this->assertSame('invalid_request', json_decode($response->getContent(), TRUE)['error']);
+      $this->assertSame(0, (int) $storage->getQuery()->accessCheck(FALSE)->count()->execute());
+    }
+    $request = Request::create('/oauth/device_authorization', 'POST', [
+      'client_id' => $consumer->getClientId(),
+      'client_secret' => 'correct-device-secret',
+    ]);
+    $request->query->set('client_id', ['invalid']);
+    $response = $controller->authorize($request);
+    $this->assertSame(400, $response->getStatusCode());
+    $this->assertSame('invalid_request', json_decode($response->getContent(), TRUE)['error']);
+    $this->assertSame(0, (int) $storage->getQuery()->accessCheck(FALSE)->count()->execute());
     foreach ([NULL, 'wrong-device-secret'] as $secret) {
       $parameters = ['client_id' => $consumer->getClientId()];
       if ($secret !== NULL) {

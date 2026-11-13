@@ -137,8 +137,11 @@ final class DeviceAuthorizationController extends ControllerBase {
           [$basic_id, $basic_secret] = explode(':', $decoded, 2);
         }
       }
-      $client_id = $request->attributes->get('client_id', $request->query->get('client_id', $request->request->get('client_id', $basic_id)));
-      $client_secret = $request->request->get('client_secret', $basic_secret);
+      $body = $request->request->all();
+      $body += ['client_id' => $basic_id, 'client_secret' => $basic_secret];
+      $parameters = $request->query->all() + $body;
+      $client_id = $request->attributes->get('client_id', $parameters['client_id']);
+      $client_secret = $body['client_secret'];
       if (!is_string($client_id) || $client_id === '') {
         throw OAuthServerException::invalidRequest('client_id');
       }
