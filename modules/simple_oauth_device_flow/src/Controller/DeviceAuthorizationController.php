@@ -10,6 +10,7 @@ use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Path\PathValidatorInterface;
 use Drupal\simple_oauth\Entities\ClientEntityInterface;
 use Drupal\simple_oauth_device_flow\Service\DeviceCodeService;
+use Drupal\simple_oauth_device_flow\Service\DeviceFlowSettingsService;
 use Drupal\simple_oauth_device_flow\DeviceGrantType;
 use GuzzleHttp\Psr7\Response;
 use League\OAuth2\Server\Exception\OAuthServerException;
@@ -56,11 +57,9 @@ final class DeviceAuthorizationController extends ControllerBase {
   private ImmutableConfig $settings;
 
   /**
-   * The path validator.
-   *
-   * @var \Drupal\Core\Path\PathValidatorInterface
+   * The shared verification destination settings.
    */
-  private PathValidatorInterface $pathValidator;
+  private DeviceFlowSettingsService $deviceFlowSettings;
 
   /**
    * Constructs a DeviceAuthorizationController object.
@@ -77,6 +76,8 @@ final class DeviceAuthorizationController extends ControllerBase {
    *   The configuration factory.
    * @param \Drupal\Core\Path\PathValidatorInterface $path_validator
    *   The path validator.
+   * @param \Drupal\simple_oauth_device_flow\Service\DeviceFlowSettingsService|null $device_flow_settings
+   *   Shared settings, or NULL for original constructor callers.
    */
   public function __construct(
     HttpMessageFactoryInterface $http_message_factory,
@@ -85,13 +86,14 @@ final class DeviceAuthorizationController extends ControllerBase {
     LoggerInterface $logger,
     ConfigFactoryInterface $config_factory,
     PathValidatorInterface $path_validator,
+    ?DeviceFlowSettingsService $device_flow_settings = NULL,
   ) {
     $this->httpMessageFactory = $http_message_factory;
     $this->clientRepository = $client_repository;
     $this->deviceCodeService = $device_code_service;
     $this->logger = $logger;
     $this->settings = $config_factory->get('simple_oauth_device_flow.settings');
-    $this->pathValidator = $path_validator;
+    $this->deviceFlowSettings = $device_flow_settings ?? new DeviceFlowSettingsService($config_factory, $path_validator);
   }
 
   /**
@@ -105,6 +107,7 @@ final class DeviceAuthorizationController extends ControllerBase {
       $container->get('logger.channel.simple_oauth_device_flow'),
       $container->get('config.factory'),
       $container->get('path.validator'),
+      $container->get('simple_oauth_device_flow.settings'),
     );
   }
 
@@ -181,15 +184,7 @@ final class DeviceAuthorizationController extends ControllerBase {
       $scope = $request->attributes->get('scope', $request->query->get('scope', $request->request->get('scope', '')));
 
       // Reject invalid imported settings before issuing device credentials.
-      $verification_path = $this->settings->get('verification_uri') ?? '/oauth/device';
-      if (!is_string($verification_path) || !preg_match('@^/(?!/)[A-Za-z0-9/_-]*$@D', $verification_path)) {
-        throw new \UnexpectedValueException('Invalid local device verification path.');
-      }
-      $verification_url = $this->pathValidator->getUrlIfValid($verification_path);
-      if (!$verification_url || !$verification_url->isRouted() || $verification_url->getRouteName() !== 'simple_oauth_device_flow.device_verification_form') {
-        throw new \UnexpectedValueException('Device verification path does not resolve to the verification form.');
-      }
-      $verification_uri = $verification_url->setAbsolute()->toString();
+      $verification_uri = $this->deviceFlowSettings->getAbsoluteVerificationUri();
 
       // Generate device and user codes using the service.
       $authorization_data = $this->deviceCodeService->generateDeviceAuthorization(

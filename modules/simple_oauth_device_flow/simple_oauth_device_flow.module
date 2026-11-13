@@ -5,6 +5,8 @@
  * Contains simple_oauth_device_flow.module.
  */
 
+declare(strict_types=1);
+
 use Drupal\Core\Routing\RouteMatchInterface;
 
 /**
@@ -84,10 +86,10 @@ function simple_oauth_device_flow_cron() {
     $deviceCodeService = \Drupal::service('simple_oauth_device_flow.device_code_service');
 
     // Perform comprehensive cleanup of device codes.
-    $result = $deviceCodeService->performCleanup();
+    $result = $deviceCodeService->runScheduledCleanup();
 
     // Log cleanup results if any codes were deleted.
-    if ($result['total_deleted'] > 0) {
+    if ($result !== NULL && $result['total_deleted'] > 0) {
       \Drupal::service('logger.channel.simple_oauth_device_flow')->info(
         'Cron cleanup: @total device codes deleted (@expired expired, @authorized old authorized) in @time ms',
         [
@@ -101,8 +103,8 @@ function simple_oauth_device_flow_cron() {
   }
   catch (\Exception $e) {
     \Drupal::service('logger.channel.simple_oauth_device_flow')->error(
-      'Failed to perform device code cleanup during cron: @message',
-      ['@message' => $e->getMessage()]
+      'Failed to perform device code cleanup during cron: @exception_type',
+      ['@exception_type' => get_class($e)]
     );
   }
 }

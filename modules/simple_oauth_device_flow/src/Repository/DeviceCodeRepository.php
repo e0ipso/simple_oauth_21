@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\simple_oauth_device_flow\Entity\DeviceCode;
+use Drupal\simple_oauth\Oauth2ScopeAdapterInterface;
 use Drupal\simple_oauth_device_flow\Service\DeviceFlowSettingsService;
 use League\OAuth2\Server\Entities\ClientEntityInterface;
 use League\OAuth2\Server\Entities\DeviceCodeEntityInterface;
@@ -24,7 +25,7 @@ use Psr\Log\LoggerInterface;
  * Implements the DeviceCodeRepositoryInterface required by league/oauth2-server
  * for the Device Authorization Grant (RFC 8628).
  */
-final class DeviceCodeRepository implements DeviceVerificationRepositoryInterface, DeviceCodeLifecycleRepositoryInterface {
+final class DeviceCodeRepository implements DeviceVerificationRepositoryInterface, DeviceCodeLifecycleRepositoryInterface, DeviceCodeMaintenanceInterface {
 
   /**
    * The logger instance.
@@ -55,6 +56,8 @@ final class DeviceCodeRepository implements DeviceVerificationRepositoryInterfac
    *   The shared lock backend, or NULL to use the container.
    * @param \Drupal\Component\Datetime\TimeInterface|null $time
    *   The clock, or NULL to use the container.
+   * @param \Drupal\simple_oauth\Oauth2ScopeAdapterInterface|null $scopeProvider
+   *   The scope provider, or NULL for original constructor callers.
    */
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
@@ -63,6 +66,7 @@ final class DeviceCodeRepository implements DeviceVerificationRepositoryInterfac
     ClientRepositoryInterface $clientRepository,
     private readonly ?LockBackendInterface $lock = NULL,
     private readonly ?TimeInterface $time = NULL,
+    private readonly ?Oauth2ScopeAdapterInterface $scopeProvider = NULL,
   ) {
     $this->logger = $loggerFactory->get('simple_oauth_device_flow');
     $this->clientRepository = $clientRepository;
@@ -79,6 +83,8 @@ final class DeviceCodeRepository implements DeviceVerificationRepositoryInterfac
         throw new \RuntimeException('Failed to create device code entity: invalid entity type');
       }
 
+      $device_code->set('created_at', $this->getCurrentTime());
+      $this->attachScopeProvider($device_code);
       return $device_code;
     }
     catch (\Exception $e) {
@@ -100,6 +106,12 @@ final class DeviceCodeRepository implements DeviceVerificationRepositoryInterfac
     try {
       // Before creating a new device code verify it's not a duplicate.
       if ($deviceCodeEntity->isNew()) {
+        $this->attachScopeProvider($deviceCodeEntity);
+        // Validate completed issuance against installed field constraints.
+        if ($deviceCodeEntity->validate()->count() > 0) {
+          throw new \InvalidArgumentException('Invalid device authorization data.');
+        }
+        $this->assertReferences($deviceCodeEntity);
         // Check for existing device code with same identifier.
         $existing = $this->getDeviceCodeEntityByDeviceCode($deviceCodeEntity->getIdentifier());
         if ($existing !== NULL) {
@@ -170,6 +182,7 @@ final class DeviceCodeRepository implements DeviceVerificationRepositoryInterfac
         return NULL;
       }
 
+      $this->attachScopeProvider($entity);
       $this->attachClientToDeviceCode($entity);
       return $entity;
     }
@@ -206,6 +219,7 @@ final class DeviceCodeRepository implements DeviceVerificationRepositoryInterfac
         return NULL;
       }
 
+      $this->attachScopeProvider($entity);
       $this->attachClientToDeviceCode($entity);
       return $entity;
     }
@@ -288,22 +302,11 @@ final class DeviceCodeRepository implements DeviceVerificationRepositoryInterfac
    */
   public function cleanupExpiredDeviceCodes(): int {
     try {
-      $current_time = time();
-
-      $query = $this->entityTypeManager->getStorage('oauth2_device_code')->getQuery()
-        ->accessCheck(FALSE);
-      $query->condition('expires_at', $current_time, '<');
-
-      $expired_ids = $query->execute();
-
-      if (empty($expired_ids)) {
+      $limit = max(1, $this->settings->getConfig()->get('max_cleanup_batch_size') ?? 1000);
+      $count = $this->deleteExpired($this->getCurrentTime(), $limit);
+      if ($count === 0) {
         return 0;
       }
-
-      $expired_entities = $this->entityTypeManager->getStorage('oauth2_device_code')->loadMultiple($expired_ids);
-      $this->entityTypeManager->getStorage('oauth2_device_code')->delete($expired_entities);
-
-      $count = count($expired_entities);
       $this->logger->info('Cleaned up @count expired device codes', [
         '@count' => $count,
       ]);
@@ -373,13 +376,19 @@ final class DeviceCodeRepository implements DeviceVerificationRepositoryInterfac
    *   Whether the user approved the request.
    *
    * @throws \DomainException
-   *   If the request is expired, terminal, or the user is anonymous.
+   *   If expired, terminal, or a user, client or scope reference is invalid.
    */
   private function applyDecision(DeviceCode $entity, string $user_id, bool $approved): void {
     if (!ctype_digit($user_id) || (int) $user_id <= 0 || $entity->getExpiryDateTime()->getTimestamp() <= $this->getCurrentTime()
       || $entity->getUserApproved() || $entity->getUserIdentifier() !== NULL || (int) $entity->get('authorized_at')->value !== 0) {
       throw new \DomainException('Device authorization is no longer available.');
     }
+    $user_storage = $this->entityTypeManager->getStorage('user');
+    $user_storage->resetCache([$user_id]);
+    if ($user_storage->load($user_id) === NULL) {
+      throw new \DomainException('Device authorization is no longer available.');
+    }
+    $this->assertReferences($entity);
     $entity->setUserIdentifier($user_id);
     $entity->setUserApproved($approved);
     $entity->set('authorized_at', $this->getCurrentTime());
@@ -418,6 +427,7 @@ final class DeviceCodeRepository implements DeviceVerificationRepositoryInterfac
         }
         throw new \RuntimeException('Device authorization is no longer available.');
       }
+      $this->attachScopeProvider($entity);
       return $operation($entity);
     }
     finally {
@@ -444,6 +454,73 @@ final class DeviceCodeRepository implements DeviceVerificationRepositoryInterfac
    */
   public function getStorage(): EntityStorageInterface {
     return $this->entityTypeManager->getStorage('oauth2_device_code');
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function deleteExpired(int $now, int $limit): int {
+    return (new DeviceCodeStorageMaintenance($this->entityTypeManager))->deleteExpired($now, $limit);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function deleteOldAuthorized(int $cutoff, int $limit): int {
+    return (new DeviceCodeStorageMaintenance($this->entityTypeManager))->deleteOldAuthorized($cutoff, $limit);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function countDeviceCodes(int $now): array {
+    return (new DeviceCodeStorageMaintenance($this->entityTypeManager))->countDeviceCodes($now);
+  }
+
+  /**
+   * Supplies scope hydration for normal injected repository operations.
+   *
+   * Original constructors retain the entity's compatibility fallback.
+   *
+   * @param \Drupal\simple_oauth_device_flow\Entity\DeviceCode $entity
+   *   The request to hydrate.
+   */
+  private function attachScopeProvider(DeviceCode $entity): void {
+    if ($this->scopeProvider !== NULL) {
+      $entity->setScopeProvider($this->scopeProvider);
+    }
+  }
+
+  /**
+   * Checks mutable references at issuance and fresh decision boundaries.
+   *
+   * @param \Drupal\simple_oauth_device_flow\Entity\DeviceCode $entity
+   *   The completed issuance or freshly reloaded pending request.
+   *
+   * @throws \DomainException
+   *   When a client, user or scope no longer resolves.
+   */
+  private function assertReferences(DeviceCode $entity): void {
+    // client_id stores the public OAuth identifier, not the consumer entity ID.
+    $client_id = (string) $entity->get('client_id')->value;
+    if ($client_id === '' || !$this->clientRepository->getClientEntity($client_id) instanceof ClientEntityInterface) {
+      throw new \DomainException('Device authorization is no longer available.');
+    }
+    $user_id = $entity->getUserIdentifier();
+    if ($entity->getUserApproved() && $user_id === NULL) {
+      throw new \DomainException('Device authorization is no longer available.');
+    }
+    if ($user_id !== NULL) {
+      $storage = $this->entityTypeManager->getStorage('user');
+      $storage->resetCache([$user_id]);
+      if ($storage->load($user_id) === NULL) {
+        throw new \DomainException('Device authorization is no longer available.');
+      }
+    }
+    // Hydration accepts canonical IDs and historical names without mutation.
+    if (count($entity->getScopes()) !== count($entity->get('scopes')->getValue())) {
+      throw new \DomainException('Device authorization is no longer available.');
+    }
   }
 
   /**

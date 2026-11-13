@@ -111,9 +111,6 @@ final class DeviceVerificationController extends ControllerBase {
       'max-age' => 0,
     ];
 
-    // Add CSS for better presentation.
-    $form['#attached']['library'][] = 'simple_oauth_device_flow/device_verification';
-
     return $form;
   }
 

@@ -6,7 +6,12 @@ namespace Drupal\simple_oauth_device_flow\Service;
 
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\Core\Lock\LockBackendInterface;
+use Drupal\Core\State\StateInterface;
+use Drupal\simple_oauth_device_flow\Repository\DeviceCodeMaintenanceInterface;
+use Drupal\simple_oauth_device_flow\Repository\DeviceCodeStorageMaintenance;
 use Drupal\simple_oauth_device_flow\Entity\DeviceCode;
+use Drupal\simple_oauth\Oauth2ScopeAdapterInterface;
 use Drupal\simple_oauth_device_flow\Repository\DeviceCodeLifecycleRepositoryInterface;
 use Psr\Log\LoggerInterface;
 use League\OAuth2\Server\Entities\ScopeEntityInterface;
@@ -32,6 +37,11 @@ final class DeviceCodeService {
   protected LoggerInterface $logger;
 
   /**
+   * Whether either operation in the current cleanup failed.
+   */
+  private bool $cleanupFailed = FALSE;
+
+  /**
    * Constructs a DeviceCodeService.
    *
    * @param \Drupal\simple_oauth_device_flow\Repository\DeviceCodeLifecycleRepositoryInterface $deviceCodeRepository
@@ -46,6 +56,14 @@ final class DeviceCodeService {
    *   The logger channel factory.
    * @param \League\OAuth2\Server\Repositories\ScopeRepositoryInterface|null $scopeRepository
    *   The scope repository, or NULL to use the container.
+   * @param \Drupal\simple_oauth_device_flow\Repository\DeviceCodeMaintenanceInterface|null $maintenance
+   *   Maintenance operations, or NULL to adapt the lifecycle repository.
+   * @param \Drupal\Core\State\StateInterface|null $state
+   *   Scheduling state, or NULL for original constructor callers.
+   * @param \Drupal\Core\Lock\LockBackendInterface|null $lock
+   *   The scheduling lock, or NULL for original constructor callers.
+   * @param \Drupal\simple_oauth\Oauth2ScopeAdapterInterface|null $scopeProvider
+   *   The provider for issuance through replacement lifecycle repositories.
    */
   public function __construct(
     protected DeviceCodeLifecycleRepositoryInterface $deviceCodeRepository,
@@ -54,6 +72,10 @@ final class DeviceCodeService {
     protected TimeInterface $time,
     LoggerChannelFactoryInterface $loggerFactory,
     private readonly ?ScopeRepositoryInterface $scopeRepository = NULL,
+    private readonly ?DeviceCodeMaintenanceInterface $maintenance = NULL,
+    private readonly ?StateInterface $state = NULL,
+    private readonly ?LockBackendInterface $lock = NULL,
+    private readonly ?Oauth2ScopeAdapterInterface $scopeProvider = NULL,
   ) {
     $this->logger = $loggerFactory->get('simple_oauth_device_flow');
   }
@@ -72,22 +94,10 @@ final class DeviceCodeService {
       $batch_size = $this->getCleanupBatchSize();
       $current_time = $this->time->getCurrentTime();
 
-      $storage = $this->deviceCodeRepository->getStorage();
-      $query = $storage->getQuery()
-        ->accessCheck(FALSE)
-        ->condition('expires_at', $current_time, '<')
-        ->range(0, $batch_size);
-
-      $expired_ids = $query->execute();
-
-      if (empty($expired_ids)) {
+      $count = $this->getMaintenance()->deleteExpired($current_time, $batch_size);
+      if ($count === 0) {
         return 0;
       }
-
-      $expired_entities = $storage->loadMultiple($expired_ids);
-      $storage->delete($expired_entities);
-
-      $count = count($expired_entities);
 
       if ($this->isStatisticsLoggingEnabled()) {
         $this->logger->info('Cleaned up @count expired device codes (batch size: @batch_size)', [
@@ -99,6 +109,7 @@ final class DeviceCodeService {
       return $count;
     }
     catch (\Exception $e) {
+      $this->cleanupFailed = TRUE;
       $this->logger->error('Failed to cleanup expired device codes: @exception_type', [
         '@exception_type' => get_class($e),
       ]);
@@ -123,23 +134,10 @@ final class DeviceCodeService {
       $batch_size = $this->getCleanupBatchSize();
       $cutoff_time = $this->time->getCurrentTime() - ($retention_days * 86400);
 
-      $storage = $this->deviceCodeRepository->getStorage();
-      $query = $storage->getQuery()
-        ->accessCheck(FALSE)
-        ->condition('authorized', TRUE)
-        ->condition('created_at', $cutoff_time, '<')
-        ->range(0, $batch_size);
-
-      $old_ids = $query->execute();
-
-      if (empty($old_ids)) {
+      $count = $this->getMaintenance()->deleteOldAuthorized($cutoff_time, $batch_size);
+      if ($count === 0) {
         return 0;
       }
-
-      $old_entities = $storage->loadMultiple($old_ids);
-      $storage->delete($old_entities);
-
-      $count = count($old_entities);
 
       if ($this->isStatisticsLoggingEnabled()) {
         $this->logger->info('Cleaned up @count old authorized device codes (retention: @days days, batch size: @batch_size)', [
@@ -152,6 +150,7 @@ final class DeviceCodeService {
       return $count;
     }
     catch (\Exception $e) {
+      $this->cleanupFailed = TRUE;
       $this->logger->error('Failed to cleanup old authorized device codes: @exception_type', [
         '@exception_type' => get_class($e),
       ]);
@@ -224,37 +223,7 @@ final class DeviceCodeService {
   public function getStatistics(): array {
     try {
       $current_time = $this->time->getCurrentTime();
-      $storage = $this->deviceCodeRepository->getStorage();
-
-      // Count active device codes (not expired, not authorized).
-      $active_query = $storage->getQuery()
-        ->accessCheck(FALSE)
-        ->condition('authorized', FALSE)
-        ->condition('expires_at', $current_time, '>=');
-      $active_count = $active_query->count()->execute();
-
-      // Count authorized device codes.
-      $authorized_query = $storage->getQuery()
-        ->accessCheck(FALSE)
-        ->condition('authorized', TRUE);
-      $authorized_count = $authorized_query->count()->execute();
-
-      // Count expired device codes.
-      $expired_query = $storage->getQuery()
-        ->accessCheck(FALSE)
-        ->condition('expires_at', $current_time, '<');
-      $expired_count = $expired_query->count()->execute();
-
-      // Count total device codes.
-      $total_query = $storage->getQuery()
-        ->accessCheck(FALSE);
-      $total_count = $total_query->count()->execute();
-
-      $statistics = [
-        'active_codes' => (int) $active_count,
-        'authorized_codes' => (int) $authorized_count,
-        'expired_codes' => (int) $expired_count,
-        'total_codes' => (int) $total_count,
+      $statistics = $this->getMaintenance()->countDeviceCodes($current_time) + [
         'timestamp' => $current_time,
         'retention_days' => $this->getCleanupRetentionDays(),
         'cleanup_batch_size' => $this->getCleanupBatchSize(),
@@ -332,6 +301,9 @@ final class DeviceCodeService {
 
       // Create device code entity.
       $device_code_entity = $this->deviceCodeRepository->getNewDeviceCode();
+      if ($this->scopeProvider !== NULL) {
+        $device_code_entity->setScopeProvider($this->scopeProvider);
+      }
       $device_code_entity->setIdentifier($device_code);
       $device_code_entity->setUserCode($user_code);
       $device_code_entity->setClient($client_entity);
@@ -382,6 +354,7 @@ final class DeviceCodeService {
    *   Array with cleanup results including counts for both operations.
    */
   public function performCleanup(): array {
+    $this->cleanupFailed = FALSE;
     $start_time = microtime(TRUE);
 
     $expired_count = $this->cleanupExpiredCodes();
@@ -409,6 +382,64 @@ final class DeviceCodeService {
   }
 
   /**
+   * Runs due scheduled maintenance, recording only fully successful runs.
+   *
+   * Manual cleanup methods do not consult or update scheduling state. Failed
+   * batches retain the last success time and retry on the next cron invocation.
+   * An empty successful cleanup advances the schedule normally.
+   *
+   * @return array|null
+   *   Existing cleanup result keys, or NULL when skipped or a batch failed.
+   */
+  public function runScheduledCleanup(): ?array {
+    if (!$this->settings->isCleanupEnabled()) {
+      return NULL;
+    }
+    // phpcs:ignore DrupalPractice.Objects.GlobalDrupal.GlobalDrupal -- Original constructors did not supply scheduler dependencies.
+    $lock = $this->lock ?? \Drupal::lock();
+    $lock_name = 'simple_oauth_device_flow.cleanup';
+    if (!$lock->acquire($lock_name)) {
+      return NULL;
+    }
+    try {
+      // Read fresh state under the lock, after any concurrent run finishes.
+      // phpcs:ignore DrupalPractice.Objects.GlobalDrupal.GlobalDrupal -- Preserve original constructor calls.
+      $state = $this->state ?? \Drupal::state();
+      $state->resetCache();
+      $last_success = $state->get('simple_oauth_device_flow.cleanup_last_success');
+      $now = $this->time->getCurrentTime();
+      if ($last_success !== NULL && $now < $last_success + $this->settings->getCleanupInterval()) {
+        return NULL;
+      }
+      $result = $this->performCleanup();
+      if ($this->cleanupFailed) {
+        return NULL;
+      }
+      $state->set('simple_oauth_device_flow.cleanup_last_success', $this->time->getCurrentTime());
+      return $result;
+    }
+    finally {
+      $lock->release($lock_name);
+    }
+  }
+
+  /**
+   * Gets focused operations, adapting only legacy storage-based replacements.
+   *
+   * @return \Drupal\simple_oauth_device_flow\Repository\DeviceCodeMaintenanceInterface
+   *   The supplied operations or bounded compatibility adapter.
+   */
+  private function getMaintenance(): DeviceCodeMaintenanceInterface {
+    if ($this->maintenance !== NULL) {
+      return $this->maintenance;
+    }
+    if ($this->deviceCodeRepository instanceof DeviceCodeMaintenanceInterface) {
+      return $this->deviceCodeRepository;
+    }
+    return new DeviceCodeStorageMaintenance($this->deviceCodeRepository);
+  }
+
+  /**
    * Gets the cleanup retention period in days.
    *
    * @return int
@@ -425,7 +456,7 @@ final class DeviceCodeService {
    *   Maximum number of codes to delete per cleanup operation.
    */
   protected function getCleanupBatchSize(): int {
-    return $this->settings->getConfig()->get('max_cleanup_batch_size') ?? 1000;
+    return max(1, $this->settings->getConfig()->get('max_cleanup_batch_size') ?? 1000);
   }
 
   /**
