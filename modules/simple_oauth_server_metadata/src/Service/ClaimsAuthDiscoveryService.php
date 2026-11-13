@@ -1,23 +1,38 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_server_metadata\Service;
 
+use Drupal\Core\Cache\CacheableDependencyInterface;
+use Drupal\Core\Cache\CacheableDependencyTrait;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\simple_oauth_pkce\Service\PkceSettingsService;
 
 /**
  * Service for discovering claims, authentication methods, and algorithms.
  */
-class ClaimsAuthDiscoveryService {
+class ClaimsAuthDiscoveryService implements CacheableDependencyInterface {
+
+  use CacheableDependencyTrait;
 
   /**
    * Constructs a ClaimsAuthDiscoveryService object.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The configuration factory.
+   * @param \Drupal\simple_oauth_pkce\Service\PkceSettingsService|null $pkceSettings
+   *   The optional global PKCE policy settings.
    */
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
-  ) {}
+    private readonly ?PkceSettingsService $pkceSettings = NULL,
+  ) {
+    $this->cacheTags = ['config:core.extension'];
+    if ($pkceSettings !== NULL) {
+      $this->cacheTags[] = 'config:simple_oauth_pkce.settings';
+    }
+  }
 
   /**
    * Gets supported claims.
@@ -103,7 +118,10 @@ class ClaimsAuthDiscoveryService {
    *   An array of supported code challenge methods.
    */
   public function getCodeChallengeMethodsSupported(): array {
-    // Simple OAuth supports PKCE with these methods.
+    if ($this->pkceSettings !== NULL && !$this->pkceSettings->isDisabled()) {
+      return $this->pkceSettings->getSupportedMethods();
+    }
+    // Disabled global enforcement leaves upstream PKCE capabilities intact.
     return ['S256', 'plain'];
   }
 

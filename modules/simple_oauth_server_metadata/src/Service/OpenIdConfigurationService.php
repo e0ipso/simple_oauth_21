@@ -5,15 +5,21 @@ declare(strict_types=1);
 namespace Drupal\simple_oauth_server_metadata\Service;
 
 use Drupal\Core\Cache\CacheableDependencyInterface;
-use Drupal\Core\Cache\CacheableDependencyTrait;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Url;
+use Drupal\simple_oauth_server_metadata\Cache\MetadataCacheabilityTrait;
 
 /**
  * Service for generating OpenID Connect Discovery metadata.
  */
 class OpenIdConfigurationService implements CacheableDependencyInterface {
 
-  use CacheableDependencyTrait;
+  use MetadataCacheabilityTrait {
+    getCacheTags as private getMetadataCacheTags;
+    getCacheContexts as private getMetadataCacheContexts;
+    getCacheMaxAge as private getMetadataCacheMaxAge;
+  }
 
   /**
    * Constructs an OpenIdConfigurationService object.
@@ -38,7 +44,16 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
     private readonly GrantTypeDiscoveryService $grantTypeDiscoveryService,
     private readonly ClaimsAuthDiscoveryService $claimsAuthDiscoveryService,
     private readonly array $supportedClaims,
-  ) {}
+  ) {
+    $this->cacheTags = [
+      'config:simple_oauth_server_metadata.settings',
+      'config:simple_oauth.settings',
+      'simple_oauth_server_metadata',
+      'config:core.extension',
+    ];
+    $this->cacheContexts = ['url.site'];
+    $this->cacheMaxAge = 3600;
+  }
 
   /**
    * Gets the complete OpenID Connect Discovery metadata.
@@ -85,9 +100,12 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
     ];
 
     // Add registration endpoint if available.
-    $registration_endpoint = $this->endpointDiscoveryService->getRegistrationEndpoint();
+    $registration_endpoint = $config->get('registration_endpoint');
+    if ($registration_endpoint === NULL || $registration_endpoint === '') {
+      $registration_endpoint = $this->endpointDiscoveryService->getRegistrationEndpoint();
+    }
     if ($registration_endpoint !== NULL) {
-      $metadata['registration_endpoint'] = $registration_endpoint;
+      $metadata['registration_endpoint'] = $this->ensureAbsoluteUrl($registration_endpoint);
     }
 
     // Add claims locales if supported.
@@ -98,6 +116,9 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
 
     // Add optional configured endpoints and URIs.
     $optional_fields = [
+      'revocation_endpoint' => $config->get('revocation_endpoint'),
+      'introspection_endpoint' => $config->get('introspection_endpoint'),
+      'device_authorization_endpoint' => $config->get('device_authorization_endpoint'),
       'service_documentation' => $config->get('service_documentation'),
       'op_policy_uri' => $config->get('op_policy_uri'),
       'op_tos_uri' => $config->get('op_tos_uri'),
@@ -105,7 +126,7 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
 
     foreach ($optional_fields as $field => $value) {
       if (!empty($value)) {
-        $metadata[$field] = $value;
+        $metadata[$field] = str_ends_with($field, '_endpoint') ? $this->ensureAbsoluteUrl($value) : $value;
       }
     }
 
@@ -127,7 +148,31 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
     // Validate the metadata before returning.
     $this->validateMetadata($metadata);
 
+    $this->generationCacheability = CacheableMetadata::createFromObject($this->scopeDiscoveryService)
+      ->addCacheableDependency($this->claimsAuthDiscoveryService);
+
     return $metadata;
+  }
+
+  /**
+   * Converts configured relative URLs to absolute URLs.
+   *
+   * @param string $url
+   *   The configured URL.
+   *
+   * @return string
+   *   The absolute URL, or the original value when conversion is unavailable.
+   */
+  protected function ensureAbsoluteUrl(string $url): string {
+    if (str_starts_with($url, '/')) {
+      try {
+        return Url::fromUserInput($url)->setAbsolute()->toString();
+      }
+      catch (\Exception) {
+        return $url;
+      }
+    }
+    return $url;
   }
 
   /**
@@ -144,7 +189,7 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
       array_unshift($scopes, 'openid');
     }
 
-    return array_unique($scopes);
+    return array_values(array_unique($scopes));
   }
 
   /**
@@ -237,25 +282,21 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
    * {@inheritdoc}
    */
   public function getCacheContexts(): array {
-    return ['url.site'];
+    return $this->getMetadataCacheContexts();
   }
 
   /**
    * {@inheritdoc}
    */
   public function getCacheTags(): array {
-    return [
-      'config:simple_oauth_server_metadata.settings',
-      'config:simple_oauth.settings',
-    ];
+    return $this->getMetadataCacheTags();
   }
 
   /**
    * {@inheritdoc}
    */
   public function getCacheMaxAge(): int {
-    // Cache for 1 hour as this metadata rarely changes.
-    return 3600;
+    return $this->getMetadataCacheMaxAge();
   }
 
 }

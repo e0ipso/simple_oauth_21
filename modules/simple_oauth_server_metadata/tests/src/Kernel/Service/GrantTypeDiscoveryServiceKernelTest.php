@@ -158,7 +158,13 @@ final class GrantTypeDiscoveryServiceKernelTest extends KernelTestBase {
     }
     $scopes = $this->createMock(ScopeDiscoveryService::class);
     $scopes->method('getScopesSupported')->willReturn(['openid']);
+    $scopes->method('getCacheTags')->willReturn([]);
+    $scopes->method('getCacheContexts')->willReturn([]);
+    $scopes->method('getCacheMaxAge')->willReturn(-1);
     $claims = $this->createMock(ClaimsAuthDiscoveryService::class);
+    $claims->method('getCacheTags')->willReturn([]);
+    $claims->method('getCacheContexts')->willReturn([]);
+    $claims->method('getCacheMaxAge')->willReturn(-1);
     $claims->method('getSubjectTypesSupported')->willReturn(['public']);
     $claims->method('getIdTokenSigningAlgValuesSupported')->willReturn(['RS256']);
     foreach ([FALSE, TRUE] as $disabled) {
