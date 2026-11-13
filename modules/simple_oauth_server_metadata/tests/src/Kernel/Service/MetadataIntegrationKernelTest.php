@@ -84,6 +84,24 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
   }
 
   /**
+   * Tests discovery uses its own claims without replacing upstream claims.
+   */
+  public function testDiscoveryClaimsParameterIsolation(): void {
+    $upstream = $this->container->getParameter('simple_oauth.openid.claims');
+    foreach (['name', 'preferred_username', 'email', 'email_verified'] as $claim) {
+      $this->assertContains($claim, $upstream);
+    }
+    $expected = ['sub', 'iss', 'aud', 'exp', 'iat', 'auth_time', 'nonce', 'acr', 'amr', 'azp'];
+    $this->assertSame($expected, $this->container->getParameter('simple_oauth_server_metadata.openid.claims'));
+    $metadata = $this->container->get('simple_oauth_server_metadata.openid_configuration')->getOpenIdConfiguration();
+    $this->assertSame([
+      'sub', 'iss', 'aud', 'exp', 'iat', 'auth_time', 'name', 'given_name',
+      'family_name', 'preferred_username', 'email', 'email_verified',
+      'nonce', 'acr', 'amr', 'azp',
+    ], $metadata['claims_supported']);
+  }
+
+  /**
    * Tests real configuration overrides on repeated controller responses.
    *
    * @param string $config_name

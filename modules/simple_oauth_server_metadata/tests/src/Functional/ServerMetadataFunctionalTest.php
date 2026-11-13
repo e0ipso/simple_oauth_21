@@ -16,6 +16,11 @@ use Drupal\Tests\simple_oauth\Functional\RequestHelperTrait;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\Tests\simple_oauth\Functional\SimpleOauthTestTrait;
 use Drupal\simple_oauth_21\Trait\DebugLoggingTrait;
+use Lcobucci\JWT\Encoding\JoseEncoder;
+use Lcobucci\JWT\Signer\Key\InMemory;
+use Lcobucci\JWT\Signer\Rsa\Sha256;
+use Lcobucci\JWT\Token\Parser;
+use Lcobucci\JWT\UnencryptedToken;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
@@ -150,6 +155,63 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
 
     // Clear caches to ensure services are properly initialized.
     drupal_flush_all_caches();
+  }
+
+  /**
+   * Tests cached discovery errors invalidate when OpenID Connect is enabled.
+   */
+  public function testDisabledDiscoveryCacheInvalidation(): void {
+    $this->container->get('module_installer')->install(['page_cache']);
+    $this->rebuildContainer();
+    $this->config('simple_oauth.settings')->set('disable_openid_connect', TRUE)->save();
+    $path = '/.well-known/openid-configuration';
+    $this->drupalGet($path);
+    $this->assertSession()->statusCodeEquals(404);
+    $this->drupalGet($path);
+    $this->assertSession()->statusCodeEquals(404);
+    $this->assertSession()->responseHeaderEquals('X-Drupal-Cache', 'HIT');
+
+    // Saving the dependency must invalidate the error without a cache flush.
+    $this->config('simple_oauth.settings')->set('disable_openid_connect', FALSE)->save();
+    $this->drupalGet($path);
+    $this->assertSession()->statusCodeEquals(200);
+    $this->drupalGet($path);
+    $this->assertSession()->responseHeaderEquals('X-Drupal-Cache', 'HIT');
+    $this->config('simple_oauth.settings')->set('disable_openid_connect', TRUE)->save();
+    $this->drupalGet($path);
+    $this->assertSession()->statusCodeEquals(404);
+  }
+
+  /**
+   * Tests that discovery preserves upstream claims in issued ID tokens.
+   */
+  public function testIssuedIdTokenPreservesUserClaims(): void {
+    foreach (['openid', 'profile', 'email'] as $name) {
+      Oauth2Scope::create([
+        'name' => $name,
+        'description' => $name,
+        'grant_types' => ['authorization_code' => ['status' => TRUE]],
+        'umbrella' => FALSE,
+        'granularity_id' => Oauth2ScopeInterface::GRANULARITY_PERMISSION,
+        'granularity_configuration' => ['permission' => 'access content'],
+      ])->save();
+    }
+    $owner = $this->drupalCreateUser(['access content', 'grant simple_oauth codes']);
+    [, , $response] = $this->issueToken($this->testClient, $this->clientSecret, 'access_token', $owner, [
+      'openid',
+      'profile',
+      'email',
+    ]);
+    $this->assertArrayHasKey('id_token', $response);
+    $token = (new Parser(new JoseEncoder()))->parse($response['id_token']);
+    $this->assertInstanceOf(UnencryptedToken::class, $token);
+    $key = InMemory::file($this->config('simple_oauth.settings')->get('public_key'));
+    $this->assertTrue((new Sha256())->verify($token->signature()->hash(), $token->payload(), $key));
+    $this->assertSame((string) $owner->id(), $token->claims()->get('sub'));
+    $this->assertSame($owner->getDisplayName(), $token->claims()->get('name'));
+    $this->assertSame($owner->getAccountName(), $token->claims()->get('preferred_username'));
+    $this->assertSame($owner->getEmail(), $token->claims()->get('email'));
+    $this->assertTrue($token->claims()->get('email_verified'));
   }
 
   /**
@@ -1309,14 +1371,16 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
    *   The issued access_token or refresh_token representation to return.
    * @param \Drupal\user\UserInterface|null $owner
    *   The authorizing user, or NULL to use the default test administrator.
+   * @param string[]|null $scope_names
+   *   Requested scopes, or NULL to use the revocation test scope.
    *
-   * @return array{0: \Drupal\simple_oauth\Entity\Oauth2TokenInterface, 1: string}
-   *   The persisted token entity and the credential issued by the server.
+   * @return array{0: \Drupal\simple_oauth\Entity\Oauth2TokenInterface, 1: string, 2: array}
+   *   The persisted token, its credential, and the complete token response.
    *
    * @throws \GuzzleHttp\Exception\GuzzleException
    *   If an HTTP request cannot be completed.
    */
-  private function issueToken(Consumer $client, ?string $client_secret = NULL, string $token_type = 'access_token', ?UserInterface $owner = NULL): array {
+  private function issueToken(Consumer $client, ?string $client_secret = NULL, string $token_type = 'access_token', ?UserInterface $owner = NULL, ?array $scope_names = NULL): array {
     $redirect_uri = $this->getAbsoluteUrl('/.well-known/oauth-authorization-server');
     $client->set('grant_types', ['authorization_code', 'refresh_token']);
     $client->set('redirect', [$redirect_uri]);
@@ -1333,7 +1397,7 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
         'response_type' => 'code',
         'client_id' => $client->getClientId(),
         'redirect_uri' => $redirect_uri,
-        'scope' => $this->revocationScope->getName(),
+        'scope' => implode(' ', $scope_names ?? [$this->revocationScope->getName()]),
         'code_challenge' => self::base64urlencode(hash('sha256', $verifier, TRUE)),
         'code_challenge_method' => 'S256',
       ],
@@ -1365,7 +1429,7 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     $this->assertFalse($token->isRevoked());
     $this->getSession()->restart();
     $this->loggedInUser = FALSE;
-    return [$token, $tokens[$token_type]];
+    return [$token, $tokens[$token_type], $tokens];
   }
 
   /**

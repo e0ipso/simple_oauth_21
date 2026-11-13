@@ -1,5 +1,5 @@
 parameters:
-  simple_oauth.openid.claims:
+  simple_oauth_server_metadata.openid.claims:
     - 'sub'
     - 'iss'
     - 'aud'
@@ -67,7 +67,7 @@ services:
       - '@simple_oauth_server_metadata.scope_discovery'
       - '@simple_oauth_server_metadata.grant_type_discovery'
       - '@simple_oauth_server_metadata.claims_auth_discovery'
-      - '%simple_oauth.openid.claims%'
+      - '%simple_oauth_server_metadata.openid.claims%'
   simple_oauth_server_metadata.route_subscriber:
     class: Drupal\simple_oauth_server_metadata\Routing\RouteSubscriber
     arguments: ['@cache_tags.invalidator']
