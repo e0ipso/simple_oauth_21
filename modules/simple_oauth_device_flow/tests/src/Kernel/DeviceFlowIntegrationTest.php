@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\simple_oauth_device_flow\Kernel;
 
 use Drupal\Core\State\StateInterface;
+use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Lock\DatabaseLockBackend;
 use Drupal\Component\Datetime\TimeInterface;
 use GuzzleHttp\Psr7\ServerRequest;
@@ -24,6 +25,7 @@ use Drupal\Core\Path\PathValidatorInterface;
 use Drupal\path_alias\Entity\PathAlias;
 use Drupal\simple_oauth_device_flow\Repository\DeviceCodeRepository;
 use Drupal\simple_oauth_device_flow\Repository\DeviceCodeLifecycleRepositoryInterface;
+use Drupal\simple_oauth_device_flow\Repository\DeviceCodeLifecycleOperationsInterface;
 use Drupal\simple_oauth_device_flow\Repository\DeviceVerificationOperationsInterface;
 use Drupal\simple_oauth_device_flow\Repository\DeviceVerificationRepositoryInterface;
 use Drupal\simple_oauth_device_flow\Repository\UserCodeLookupInterface;
@@ -47,6 +49,7 @@ use Drupal\simple_oauth_device_flow\Service\DeviceCodeService;
 use Drupal\simple_oauth_device_flow\Service\UserCodeGenerator;
 use Drupal\simple_oauth_device_flow\Service\DeviceFlowSettingsService;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Kernel tests for device flow services integration.
@@ -1205,50 +1208,168 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
   }
 
   /**
-   * Tests lifecycle issuance, polling and cleanup with a focused replacement.
+   * Tests storage-free issuance, lookup, polling and bounded maintenance.
+   *
+   * @param bool $combined
+   *   Whether the lifecycle replacement also provides maintenance.
+   *
+   * @dataProvider lifecycleMaintenanceProvider
    */
-  public function testFocusedLifecycleRepository(): void {
+  #[DataProvider('lifecycleMaintenanceProvider')]
+  public function testStorageFreeLifecycleRepository(bool $combined): void {
+    // Assert the contract before construction to identify incompatible types.
+    $constructor = new \ReflectionMethod(DeviceCodeService::class, '__construct');
+    $this->assertSame(DeviceCodeLifecycleOperationsInterface::class, $constructor->getParameters()[0]->getType()->getName());
     $this->installDeviceFixtures();
-    $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_device_code');
-    $logger_factory = $this->container->get('simple_oauth_device_flow.logger_factory');
-    $lifecycle = $this->createMock(DeviceCodeLifecycleRepositoryInterface::class);
-    $lifecycle->expects($this->once())->method('getNewDeviceCode')->willReturn($storage->create());
-    $lifecycle->expects($this->once())->method('getDeviceCodeEntityByDeviceCode')->willReturn(NULL);
-    $lifecycle->expects($this->once())->method('persistDeviceCode')->willReturnCallback(static function (DeviceCode $device): void {
-      $device->save();
-    });
-    $lifecycle->expects($this->never())->method('getStorage');
-    $maintenance = $this->createMock(DeviceCodeMaintenanceInterface::class);
-    $maintenance->expects($this->once())->method('countDeviceCodes')->willReturn([
-      'active_codes' => 1,
-      'authorized_codes' => 0,
-      'expired_codes' => 0,
-      'total_codes' => 1,
+    $repository = $this->container->get('simple_oauth_device_flow.device_code_repository');
+    $this->assertInstanceOf(DeviceCodeLifecycleOperationsInterface::class, $repository);
+    $this->assertInstanceOf(DeviceCodeLifecycleRepositoryInterface::class, $repository);
+    $lifecycle = $combined
+      ? $this->createMockForIntersectionOfInterfaces([
+        DeviceCodeLifecycleOperationsInterface::class,
+        DeviceCodeMaintenanceInterface::class,
+      ])
+      : $this->createMock(DeviceCodeLifecycleOperationsInterface::class);
+    $this->assertFalse(method_exists($lifecycle, 'getStorage'));
+    $this->assertNotInstanceOf(DeviceCodeLifecycleRepositoryInterface::class, $lifecycle);
+    foreach (['getNewDeviceCode', 'persistDeviceCode', 'getDeviceCodeEntityByDeviceCode', 'recordPolling'] as $method) {
+      $lifecycle->expects($this->atLeastOnce())->method($method)->willReturnCallback([$repository, $method]);
+    }
+    $maintenance = $combined ? $lifecycle : $this->createMock(DeviceCodeMaintenanceInterface::class);
+    $now = $this->container->get('datetime.time')->getCurrentTime();
+    $maintenance->expects($this->exactly(2))->method('countDeviceCodes')->with($now)
+      ->willReturnCallback([$repository, 'countDeviceCodes']);
+    $maintenance->expects($this->once())->method('deleteExpired')->with($now, 2)
+      ->willReturnCallback([$repository, 'deleteExpired']);
+    $maintenance->expects($this->once())->method('deleteOldAuthorized')->with($now - 7 * 86400, 2)
+      ->willReturnCallback([$repository, 'deleteOldAuthorized']);
+    $time = $this->createMock(TimeInterface::class);
+    $time->method('getCurrentTime')->willReturn($now);
+    $this->config('simple_oauth_device_flow.settings')->set('max_cleanup_batch_size', 2)->save();
+    $generator = $this->container->get('simple_oauth_device_flow.user_code_generator');
+    if ($combined) {
+      // Resolve the lifecycle dependency through the configured default alias.
+      $this->container->set('simple_oauth_device_flow.device_code_repository', $lifecycle);
+      $this->assertSame($lifecycle, $this->container->get('simple_oauth_device_flow.lifecycle_repository'));
+    }
+    $this->container->set('datetime.time', $time);
+    $service = $combined
+      ? $this->container->get('simple_oauth_device_flow.device_code_service')
+      : new DeviceCodeService(
+        $lifecycle, $generator,
+        $this->container->get('simple_oauth_device_flow.settings'), $time,
+        $this->container->get('simple_oauth_device_flow.logger_factory'), NULL, $maintenance,
+      );
+    $client = $this->createDeviceClient('focused-client');
+    $scope = $this->container->get('entity_type.manager')->getStorage('oauth2_scope')->create([
+      'name' => 'focused:read',
+      'description' => 'Read',
     ]);
-    $maintenance->expects($this->once())->method('deleteExpired')->willReturn(0);
-    $maintenance->expects($this->once())->method('deleteOldAuthorized')->willReturn(0);
-    $lifecycle->expects($this->once())->method('recordPolling')->willReturn(0);
+    $scope->save();
+    $data = $service->generateDeviceAuthorization($client, 'focused:read');
+    $entity = $lifecycle->getDeviceCodeEntityByDeviceCode($data['device_code']);
+    $this->assertCount(0, $entity->validate());
+    $this->assertSame($data['user_code'], $entity->getUserCode());
+    $this->assertSame('focused-client', $entity->getClient()->getIdentifier());
+    $this->assertSame('focused:read', $entity->getScopes()[0]->getIdentifier());
+    $this->assertSame(['valid' => TRUE], $service->validatePollingInterval($entity));
+    $this->assertSame('slow_down', $service->validatePollingInterval($entity)['error']);
+    for ($number = 0; $number < 3; $number++) {
+      $expired = $service->generateDeviceAuthorization($client);
+      $expired_entity = $lifecycle->getDeviceCodeEntityByDeviceCode($expired['device_code']);
+      $expired_entity->setExpiryDateTime(new \DateTimeImmutable('@' . ($now - 1)));
+      $this->assertCount(0, $expired_entity->validate());
+      $expired_entity->save();
+      $authorized = $service->generateDeviceAuthorization($client);
+      $repository->decide($authorized['device_code'], '7', TRUE);
+      $authorized_entity = $lifecycle->getDeviceCodeEntityByDeviceCode($authorized['device_code']);
+      $authorized_entity->set('created_at', $now - 8 * 86400);
+      $this->assertCount(0, $authorized_entity->validate());
+      $authorized_entity->save();
+    }
+    $statistics = $service->getStatistics();
+    $this->assertSame($repository->countDeviceCodes($now) + [
+      'timestamp' => $now,
+      'retention_days' => 7,
+      'cleanup_batch_size' => 2,
+    ], $statistics);
+    $this->assertSame(7, $statistics['total_codes']);
+    $this->assertSame(3, $statistics['expired_codes']);
+    $this->assertSame(3, $statistics['authorized_codes']);
+    $this->assertIsInt($statistics['active_codes']);
+    $result = $service->performCleanup();
+    $this->assertSame(2, $result['expired_codes_deleted']);
+    $this->assertSame(2, $result['old_authorized_codes_deleted']);
+    $this->assertSame(4, $result['total_deleted']);
+    $this->assertArrayHasKey('execution_time_ms', $result);
+    $this->assertSame(3, $service->getStatistics()['total_codes']);
+  }
+
+  /**
+   * Provides independent and repository-provided maintenance replacements.
+   *
+   * @return array<string, array{bool}>
+   *   Whether maintenance is provided by the lifecycle replacement.
+   */
+  public static function lifecycleMaintenanceProvider(): array {
+    return ['independent maintenance' => [FALSE], 'combined maintenance' => [TRUE]];
+  }
+
+  /**
+   * Tests unavailable maintenance preserves public failure and retry behavior.
+   */
+  public function testStorageFreeLifecycleWithoutMaintenance(): void {
+    $constructor = new \ReflectionMethod(DeviceCodeService::class, '__construct');
+    $this->assertSame(DeviceCodeLifecycleOperationsInterface::class, $constructor->getParameters()[0]->getType()->getName());
+    $this->installDeviceFixtures();
+    $lifecycle = $this->createMock(DeviceCodeLifecycleOperationsInterface::class);
+    $this->assertFalse(method_exists($lifecycle, 'getStorage'));
+    $logger = $this->createMock(LoggerInterface::class);
+    $logger->expects($this->exactly(7))->method('error')->with(
+      $this->anything(), ['@exception_type' => \RuntimeException::class],
+    );
+    $factory = $this->createMock(LoggerChannelFactoryInterface::class);
+    $factory->method('get')->with('simple_oauth_device_flow')->willReturn($logger);
+    $state = $this->container->get('state');
+    $last_success = time() - 86400;
+    $state->set('simple_oauth_device_flow.cleanup_last_success', $last_success);
     $service = new DeviceCodeService(
       $lifecycle, $this->container->get('simple_oauth_device_flow.user_code_generator'),
       $this->container->get('simple_oauth_device_flow.settings'),
-      $this->container->get('datetime.time'), $logger_factory, NULL, $maintenance,
+      $this->container->get('datetime.time'), $factory, NULL, NULL,
+      $state, $this->container->get('lock'),
     );
-    $client = $this->createDeviceClient('focused-client');
-    $data = $service->generateDeviceAuthorization($client);
-    $entity = $storage->load($data['device_code']);
-    $this->assertSame($data['user_code'], $entity->getUserCode());
-    $this->assertSame(['valid' => TRUE], $service->validatePollingInterval($entity));
-    $statistics = $service->getStatistics();
-    $this->assertSame(1, $statistics['total_codes']);
     $this->assertSame(0, $service->cleanupExpiredCodes());
     $this->assertSame(0, $service->cleanupOldAuthorizedCodes());
+    $this->assertSame(0, $service->performCleanup()['total_deleted']);
+    $this->assertNull($service->runScheduledCleanup());
+    $this->assertSame($last_success, $state->get('simple_oauth_device_flow.cleanup_last_success'));
+    $this->assertTrue($this->container->get('lock')->acquire('simple_oauth_device_flow.cleanup'));
+    $this->container->get('lock')->release('simple_oauth_device_flow.cleanup');
+    $statistics = $service->getStatistics();
+    $this->assertSame('Device code maintenance operations are not available.', $statistics['error']);
+    foreach (['active_codes', 'authorized_codes', 'expired_codes', 'total_codes'] as $key) {
+      $this->assertSame(0, $statistics[$key]);
+    }
+    $this->assertIsInt($statistics['timestamp']);
+  }
+
+  /**
+   * Tests the retained lifecycle storage contract uses bounded maintenance.
+   */
+  public function testLegacyLifecycleStorageFallback(): void {
+    $this->installDeviceFixtures();
+    $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_device_code');
     $legacy = $this->createMock(DeviceCodeLifecycleRepositoryInterface::class);
     $legacy->expects($this->atLeastOnce())->method('getStorage')->willReturn($storage);
+    $client = $this->createDeviceClient('legacy-storage-client');
+    $this->container->get('simple_oauth_device_flow.device_code_service')->generateDeviceAuthorization($client);
     $legacy_service = new DeviceCodeService(
       $legacy, $this->container->get('simple_oauth_device_flow.user_code_generator'),
       $this->container->get('simple_oauth_device_flow.settings'),
-      $this->container->get('datetime.time'), $logger_factory,
+      $this->container->get('datetime.time'), $this->container->get('simple_oauth_device_flow.logger_factory'),
     );
+    $this->assertInstanceOf(DeviceCodeLifecycleOperationsInterface::class, $legacy);
     $this->assertSame(1, $legacy_service->getStatistics()['total_codes']);
     $this->assertSame(0, $legacy_service->performCleanup()['total_deleted']);
   }

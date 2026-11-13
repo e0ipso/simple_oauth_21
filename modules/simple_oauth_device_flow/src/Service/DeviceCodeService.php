@@ -13,6 +13,7 @@ use Drupal\simple_oauth_device_flow\Repository\DeviceCodeStorageMaintenance;
 use Drupal\simple_oauth_device_flow\Entity\DeviceCode;
 use Drupal\simple_oauth\Oauth2ScopeAdapterInterface;
 use Drupal\simple_oauth_device_flow\Repository\DeviceCodeLifecycleRepositoryInterface;
+use Drupal\simple_oauth_device_flow\Repository\DeviceCodeLifecycleOperationsInterface;
 use Psr\Log\LoggerInterface;
 use League\OAuth2\Server\Entities\ScopeEntityInterface;
 use League\OAuth2\Server\Exception\OAuthServerException;
@@ -44,7 +45,7 @@ final class DeviceCodeService {
   /**
    * Constructs a DeviceCodeService.
    *
-   * @param \Drupal\simple_oauth_device_flow\Repository\DeviceCodeLifecycleRepositoryInterface $deviceCodeRepository
+   * @param \Drupal\simple_oauth_device_flow\Repository\DeviceCodeLifecycleOperationsInterface $deviceCodeRepository
    *   The device code repository.
    * @param \Drupal\simple_oauth_device_flow\Service\UserCodeGenerator $userCodeGenerator
    *   The user code generator service.
@@ -57,7 +58,9 @@ final class DeviceCodeService {
    * @param \League\OAuth2\Server\Repositories\ScopeRepositoryInterface|null $scopeRepository
    *   The scope repository, or NULL to use the container.
    * @param \Drupal\simple_oauth_device_flow\Repository\DeviceCodeMaintenanceInterface|null $maintenance
-   *   Maintenance operations, or NULL to adapt the lifecycle repository.
+   *   Maintenance operations, or NULL to use repository maintenance or legacy
+   *   storage. Without either, cleanup logs failure and returns zero, scheduled
+   *   cleanup remains due, and statistics include an error.
    * @param \Drupal\Core\State\StateInterface|null $state
    *   Scheduling state, or NULL for original constructor callers.
    * @param \Drupal\Core\Lock\LockBackendInterface|null $lock
@@ -66,7 +69,7 @@ final class DeviceCodeService {
    *   The provider for issuance through replacement lifecycle repositories.
    */
   public function __construct(
-    protected DeviceCodeLifecycleRepositoryInterface $deviceCodeRepository,
+    protected DeviceCodeLifecycleOperationsInterface $deviceCodeRepository,
     protected UserCodeGenerator $userCodeGenerator,
     protected DeviceFlowSettingsService $settings,
     protected TimeInterface $time,
@@ -428,6 +431,9 @@ final class DeviceCodeService {
    *
    * @return \Drupal\simple_oauth_device_flow\Repository\DeviceCodeMaintenanceInterface
    *   The supplied operations or bounded compatibility adapter.
+   *
+   * @throws \RuntimeException
+   *   If neither maintenance operations nor legacy storage are available.
    */
   private function getMaintenance(): DeviceCodeMaintenanceInterface {
     if ($this->maintenance !== NULL) {
@@ -436,7 +442,10 @@ final class DeviceCodeService {
     if ($this->deviceCodeRepository instanceof DeviceCodeMaintenanceInterface) {
       return $this->deviceCodeRepository;
     }
-    return new DeviceCodeStorageMaintenance($this->deviceCodeRepository);
+    if ($this->deviceCodeRepository instanceof DeviceCodeLifecycleRepositoryInterface) {
+      return new DeviceCodeStorageMaintenance($this->deviceCodeRepository);
+    }
+    throw new \RuntimeException('Device code maintenance operations are not available.');
   }
 
   /**
