@@ -5,6 +5,8 @@
  * Install/uninstall functions for Simple OAuth Client Registration module.
  */
 
+declare(strict_types=1);
+
 use Drupal\Core\Url;
 
 /**
@@ -109,8 +111,18 @@ function simple_oauth_client_registration_uninstall($is_syncing): void {
   // Clear the registration endpoint from server metadata if it points to
   // our endpoint.
   $config = \Drupal::configFactory()->getEditable('simple_oauth_server_metadata.settings');
+  if ($config->isNew()) {
+    return;
+  }
   $registration_endpoint = $config->get('registration_endpoint');
-  if (!empty($registration_endpoint) && strpos($registration_endpoint, '/oauth/register') !== FALSE) {
+  try {
+    $owned_endpoint = Url::fromRoute('simple_oauth_client_registration.register')->setAbsolute()->toString();
+  }
+  catch (\Exception) {
+    // Without the route, ownership cannot be established safely.
+    return;
+  }
+  if ($registration_endpoint === $owned_endpoint) {
     $config->set('registration_endpoint', '');
     $config->save();
   }

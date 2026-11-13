@@ -26,10 +26,16 @@ services:
       - '@database'
       - '@logger.channel.simple_oauth_client_registration'
 
+  simple_oauth_client_registration.response_subscriber:
+    class: Drupal\simple_oauth_client_registration\EventSubscriber\RegistrationResponseSubscriber
+    tags:
+      - { name: event_subscriber }
+
   simple_oauth_client_registration.normalizer:
     class: Drupal\simple_oauth_client_registration\Normalizer\ClientRegistrationNormalizer
     arguments:
       - '@simple_oauth_client_registration.service.token'
       - '@file_url_generator'
+      - '@plugin.manager.oauth2_grant.processor'
     tags:
       - { name: normalizer, priority: 10 }
