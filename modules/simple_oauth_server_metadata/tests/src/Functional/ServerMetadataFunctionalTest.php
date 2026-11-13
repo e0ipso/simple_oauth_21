@@ -7,6 +7,7 @@ namespace Drupal\Tests\simple_oauth_server_metadata\Functional;
 use Drupal\Component\Serialization\Json;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\Core\Url;
+use Drupal\user\UserInterface;
 use Drupal\language\Entity\ConfigurableLanguage;
 use Drupal\simple_oauth\Entity\Oauth2Scope;
 use Drupal\simple_oauth\Entity\Oauth2TokenInterface;
@@ -149,6 +150,105 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
 
     // Clear caches to ensure services are properly initialized.
     drupal_flush_all_caches();
+  }
+
+  /**
+   * Tests session bypass protection through real login and token HTTP requests.
+   */
+  public function testSessionAuthorizedRevocation(): void {
+    $public_client = Consumer::create([
+      'label' => 'Public revoker',
+      'client_id' => 'public-revoker',
+      'confidential' => FALSE,
+    ]);
+    $public_client->save();
+    $privileged = $this->createUser(['bypass token revocation restrictions']);
+    $ordinary = $this->createUser([]);
+    $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_token');
+    foreach (['access_token', 'refresh_token'] as $type) {
+      [$foreign, $value] = $this->issueToken($this->testClient, $this->clientSecret, $type);
+      $this->drupalLogin($privileged);
+      foreach ([[], ['X-CSRF-Token' => 'invalid']] as $headers) {
+        $response = $this->postRevocationRequest([
+          'client_id' => $public_client->getClientId(),
+          'token' => $value,
+        ], $headers);
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('', (string) $response->getBody());
+        $storage->resetCache([$foreign->id()]);
+        $this->assertFalse($storage->load($foreign->id())->isRevoked(), 'Session permission requires a valid CSRF header.');
+      }
+      // Even a valid session token cannot grant a missing permission.
+      $this->getSession()->restart();
+      $this->loggedInUser = FALSE;
+      $this->drupalLogin($ordinary);
+      $csrf = $this->drupalGet('/session/token');
+      $this->assertSession()->statusCodeEquals(200);
+      $response = $this->postRevocationRequest([
+        'client_id' => $public_client->getClientId(),
+        'token' => $value,
+      ], ['X-CSRF-Token' => $csrf]);
+      $this->assertSame(200, $response->getStatusCode());
+      $storage->resetCache([$foreign->id()]);
+      $this->assertFalse($storage->load($foreign->id())->isRevoked());
+      $this->getSession()->restart();
+      $this->loggedInUser = FALSE;
+      $this->drupalLogin($privileged);
+      $csrf = $this->drupalGet('/session/token');
+      $this->assertSession()->statusCodeEquals(200);
+      $this->assertNotSame('', $csrf);
+      $response = $this->postRevocationRequest([
+        'client_id' => $public_client->getClientId(),
+        'token' => $value,
+      ], ['X-CSRF-Token' => $csrf]);
+      $this->assertSame(200, $response->getStatusCode());
+      $this->assertSame('', (string) $response->getBody());
+      $storage->resetCache([$foreign->id()]);
+      $this->assertTrue($storage->load($foreign->id())->isRevoked());
+      // Ownership needs no session authority, even with an admin cookie.
+      foreach ([FALSE, TRUE] as $cookie) {
+        [$owned, $owned_value] = $this->issueToken($public_client, NULL, $type);
+        if ($cookie) {
+          $this->drupalLogin($privileged);
+        }
+        $response = $this->postRevocationRequest([
+          'client_id' => $public_client->getClientId(),
+          'token' => $owned_value,
+        ]);
+        $this->assertSame(200, $response->getStatusCode());
+        $storage->resetCache([$owned->id()]);
+        $this->assertTrue($storage->load($owned->id())->isRevoked());
+      }
+    }
+  }
+
+  /**
+   * Tests real stateless OAuth authentication retains scoped bypass authority.
+   */
+  public function testStatelessRevocationPermissions(): void {
+    $client = Consumer::create([
+      'label' => 'Stateless revoker',
+      'client_id' => 'stateless-revoker',
+      'confidential' => FALSE,
+    ]);
+    $client->save();
+    $actor = $this->createUser(['access content', 'bypass token revocation restrictions', 'grant simple_oauth codes']);
+    $this->assertNotSame('1', (string) $actor->id());
+    $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_token');
+    foreach (['access content', 'bypass token revocation restrictions'] as $permission) {
+      $this->revocationScope->set('granularity_configuration', ['permission' => $permission])->save();
+      [, $bearer] = $this->issueToken($client, NULL, 'access_token', $actor);
+      [$foreign, $value] = $this->issueToken($this->testClient, $this->clientSecret);
+      // issueToken restarts the browser. Only the bearer authenticates.
+      $response = $this->postRevocationRequest([
+        'client_id' => $client->getClientId(),
+        'token' => $value,
+      ], ['Authorization' => 'Bearer ' . $bearer]);
+      $this->assertSame(200, $response->getStatusCode());
+      $this->assertSame('', (string) $response->getBody());
+      $storage->resetCache([$foreign->id()]);
+      $this->assertSame($permission === 'bypass token revocation restrictions', $storage->load($foreign->id())->isRevoked());
+    }
   }
 
   /**
@@ -999,7 +1099,20 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     ], [
       'Authorization' => 'Basic ' . $credentials,
     ]);
+    $this->assertEquals(200, $response->getStatusCode());
+    $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_token');
+    $storage->resetCache([$otherToken->id()]);
+    $this->assertFalse($storage->load($otherToken->id())->isRevoked());
 
+    // Retrieve the standard session token before using session authority.
+    $csrf = $this->drupalGet('/session/token');
+    $this->assertSession()->statusCodeEquals(200);
+    $response = $this->postRevocationRequest([
+      'token' => $token_value,
+    ], [
+      'Authorization' => 'Basic ' . $credentials,
+      'X-CSRF-Token' => $csrf,
+    ]);
     $this->assertEquals(200, $response->getStatusCode());
 
     // Verify token WAS revoked (because of bypass permission).
@@ -1194,6 +1307,8 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
    *   The client secret, or NULL for a public client.
    * @param string $token_type
    *   The issued access_token or refresh_token representation to return.
+   * @param \Drupal\user\UserInterface|null $owner
+   *   The authorizing user, or NULL to use the default test administrator.
    *
    * @return array{0: \Drupal\simple_oauth\Entity\Oauth2TokenInterface, 1: string}
    *   The persisted token entity and the credential issued by the server.
@@ -1201,7 +1316,7 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
    * @throws \GuzzleHttp\Exception\GuzzleException
    *   If an HTTP request cannot be completed.
    */
-  private function issueToken(Consumer $client, ?string $client_secret = NULL, string $token_type = 'access_token'): array {
+  private function issueToken(Consumer $client, ?string $client_secret = NULL, string $token_type = 'access_token', ?UserInterface $owner = NULL): array {
     $redirect_uri = $this->getAbsoluteUrl('/.well-known/oauth-authorization-server');
     $client->set('grant_types', ['authorization_code', 'refresh_token']);
     $client->set('redirect', [$redirect_uri]);
@@ -1211,7 +1326,7 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     // Clear browser authentication without revoking previously issued tokens.
     $this->getSession()->restart();
     $this->loggedInUser = FALSE;
-    $this->drupalLogin($this->rootUser);
+    $this->drupalLogin($owner ?? $this->rootUser);
     $verifier = str_repeat('m', 64);
     $this->drupalGet(Url::fromRoute('oauth2_token.authorize'), [
       'query' => [

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\simple_oauth_server_metadata\Controller;
 
+use Drupal\Core\Access\CsrfRequestHeaderAccessCheck;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\simple_oauth_server_metadata\Service\ClientAuthenticationService;
 use Drupal\simple_oauth_server_metadata\Service\TokenRevocationService;
 use Psr\Log\LoggerInterface;
@@ -36,12 +38,19 @@ final class TokenRevocationController extends ControllerBase {
    *   The HTTP message factory for PSR-7 conversion.
    * @param \Psr\Log\LoggerInterface $logger
    *   The logger service.
+   * @param \Drupal\Core\Session\AccountInterface|null $account
+   *   The authenticated request account. Without the optional collaborators,
+   *   legacy constructors enforce client ownership and cannot grant bypass.
+   * @param \Drupal\Core\Access\CsrfRequestHeaderAccessCheck|null $csrfRequestHeaderAccess
+   *   The core session-aware CSRF header checker.
    */
   public function __construct(
     private readonly ClientAuthenticationService $clientAuthentication,
     private readonly TokenRevocationService $tokenRevocation,
     private readonly HttpMessageFactoryInterface $httpMessageFactory,
     private readonly LoggerInterface $logger,
+    private readonly ?AccountInterface $account = NULL,
+    private readonly ?CsrfRequestHeaderAccessCheck $csrfRequestHeaderAccess = NULL,
   ) {}
 
   /**
@@ -53,6 +62,8 @@ final class TokenRevocationController extends ControllerBase {
       $container->get('simple_oauth_server_metadata.token_revocation'),
       $container->get('psr7.http_message_factory'),
       $container->get('logger.channel.simple_oauth'),
+      $container->get('current_user'),
+      $container->get('access_check.header.csrf'),
     );
   }
 
@@ -63,6 +74,13 @@ final class TokenRevocationController extends ControllerBase {
    * client authentication and a token parameter. Per RFC 7009, the endpoint
    * always returns HTTP 200 for privacy reasons, regardless of whether the
    * token existed or was successfully revoked.
+   *
+   * Session-derived ownership bypass also requires core CSRF header access.
+   * Send the value retrieved from /session/token as X-CSRF-Token with the same
+   * session cookie. Core owns token-key compatibility across supported core
+   * versions. Denied bypass falls back to ownership with the privacy response.
+   * Core exempts stateless requests from the session CSRF requirement; account
+   * permissions remain those supplied by the active authentication provider.
    *
    * Request parameters (POST body):
    * - token (required): The token value to revoke
@@ -116,8 +134,11 @@ final class TokenRevocationController extends ControllerBase {
       // Prevent unused variable warning - accepted per RFC 7009.
       unset($tokenTypeHint);
 
-      // Check if user has permission to bypass ownership restrictions.
-      $bypassOwnership = $this->currentUser()->hasPermission('bypass token revocation restrictions');
+      // Core's session CSRF check gates permission-based ownership bypass.
+      $bypassOwnership = $this->account !== NULL
+        && $this->csrfRequestHeaderAccess !== NULL
+        && $this->account->hasPermission('bypass token revocation restrictions')
+        && $this->csrfRequestHeaderAccess->access($request, $this->account)->isAllowed();
 
       // Get the client ID for ownership validation.
       $clientId = $client->getClientId();
