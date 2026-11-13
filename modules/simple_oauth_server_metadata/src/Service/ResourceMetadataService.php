@@ -1,11 +1,14 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_server_metadata\Service;
 
 use Drupal\Core\Cache\CacheableDependencyInterface;
-use Drupal\Core\Cache\CacheableDependencyTrait;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Url;
+use Drupal\simple_oauth_server_metadata\Trait\MetadataCacheabilityTrait;
 use Drupal\simple_oauth_server_metadata\Event\ResourceMetadataEvent;
 use Drupal\simple_oauth_server_metadata\Event\ResourceMetadataEvents;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -15,7 +18,7 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  */
 class ResourceMetadataService implements CacheableDependencyInterface {
 
-  use CacheableDependencyTrait;
+  use MetadataCacheabilityTrait;
 
   /**
    * Constructs a ResourceMetadataService object.
@@ -39,6 +42,7 @@ class ResourceMetadataService implements CacheableDependencyInterface {
 
     $this->cacheContexts = [
       'url.path',
+      'url.site',
       'user.permissions',
     ];
   }
@@ -70,6 +74,7 @@ class ResourceMetadataService implements CacheableDependencyInterface {
     $event = new ResourceMetadataEvent($metadata);
     $this->eventDispatcher->dispatch($event, ResourceMetadataEvents::BUILD);
     $metadata = $event->metadata;
+    $this->generationCacheability = CacheableMetadata::createFromObject($event);
 
     // Remove empty optional fields per RFC 9728.
     $metadata = $this->filterEmptyFields($metadata);

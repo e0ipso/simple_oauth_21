@@ -5,16 +5,17 @@ declare(strict_types=1);
 namespace Drupal\simple_oauth_server_metadata\Service;
 
 use Drupal\Core\Cache\CacheableDependencyInterface;
-use Drupal\Core\Cache\CacheableDependencyTrait;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Url;
+use Drupal\simple_oauth_server_metadata\Trait\MetadataCacheabilityTrait;
 
 /**
  * Main service for generating RFC 8414 server metadata.
  */
 class ServerMetadataService implements CacheableDependencyInterface {
 
-  use CacheableDependencyTrait;
+  use MetadataCacheabilityTrait;
 
   /**
    * Constructs a ServerMetadataService object.
@@ -50,6 +51,7 @@ class ServerMetadataService implements CacheableDependencyInterface {
 
     $this->cacheContexts = [
       'url.path',
+      'url.site',
       'user.permissions',
     ];
   }
@@ -109,6 +111,9 @@ class ServerMetadataService implements CacheableDependencyInterface {
     // Remove empty optional fields per RFC 8414.
     $metadata = $this->filterEmptyFields($metadata);
 
+    $this->generationCacheability = CacheableMetadata::createFromObject($this->scopeDiscovery)
+      ->addCacheableDependency($this->claimsAuthDiscovery);
+
     return $metadata;
   }
 
@@ -125,6 +130,9 @@ class ServerMetadataService implements CacheableDependencyInterface {
   protected function addConfigurableFields(array &$metadata, $config, array $config_override = []): void {
     $configurable_fields = [
       'registration_endpoint',
+      'revocation_endpoint',
+      'introspection_endpoint',
+      'device_authorization_endpoint',
       'service_documentation',
       'op_policy_uri',
       'op_tos_uri',
@@ -136,6 +144,9 @@ class ServerMetadataService implements CacheableDependencyInterface {
     // Fields that should be converted to absolute URLs if they are relative.
     $url_fields = [
       'registration_endpoint',
+      'revocation_endpoint',
+      'introspection_endpoint',
+      'device_authorization_endpoint',
       'service_documentation',
       'op_policy_uri',
       'op_tos_uri',
