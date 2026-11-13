@@ -121,10 +121,7 @@ final class MetadataProvider implements CacheableDependencyInterface {
 
     // Auto-detect enables enhanced PKCE for native clients.
     $enhanced_pkce = $this->policyResolver->getEffectivePolicy()['enhanced_pkce'];
-    $enforced_method = $config->get('native.enforce') ?? 'S256';
-    if (!in_array($enforced_method, ['off', 'S256', 'plain'], TRUE)) {
-      $enforced_method = 'S256';
-    }
+    $enforced_method = $this->policyResolver->getEnforcedPkceMethod();
     $metadata['native_apps_pkce_required'] = $enhanced_pkce;
     $metadata['pkce_required'] = $enhanced_pkce;
     $metadata['pkce_s256_enforced'] = $enhanced_pkce && $enforced_method === 'S256';

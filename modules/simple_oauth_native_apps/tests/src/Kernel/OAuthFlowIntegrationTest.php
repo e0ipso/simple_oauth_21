@@ -371,6 +371,54 @@ final class OAuthFlowIntegrationTest extends KernelTestBase {
   }
 
   /**
+   * Tests absent native method settings require S256 at authorization.
+   */
+  public function testMissingNativeMethodRequiresS256AtAuthorization(): void {
+    $client = Consumer::create([
+      'label' => 'Missing native method',
+      'client_id' => 'missing-native-method',
+      'confidential' => FALSE,
+      'native_app_override' => 'native',
+      'pkce' => FALSE,
+    ]);
+    $client->save();
+    $subscriber = $this->container->get('simple_oauth_native_apps.pkce_validation_subscriber');
+    $config = $this->config('simple_oauth_native_apps.settings');
+    $verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+    foreach ([TRUE, FALSE] as $missing) {
+      if ($missing) {
+        $config->clear('native.enforce')->save();
+      }
+      else {
+        $config->set('native.enforce', NULL)->save();
+      }
+      foreach ([NULL, 'plain', 'S256'] as $method) {
+        $parameters = [
+          'client_id' => $client->getClientId(),
+          'response_type' => 'code',
+          'code_challenge' => $method === 'S256'
+            ? rtrim(strtr(base64_encode(hash('sha256', $verifier, TRUE)), '+/', '-_'), '=')
+            : $verifier,
+        ];
+        if ($method !== NULL) {
+          $parameters['code_challenge_method'] = $method;
+        }
+        $request = Request::create('/oauth/authorize', 'GET', $parameters);
+        $request->attributes->set('_route', 'oauth2_token.authorize');
+        $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+        $subscriber->onOauthRequest($event);
+        $this->assertSame($method !== 'S256', $event->hasResponse());
+        if ($event->hasResponse()) {
+          $this->assertSame(400, $event->getResponse()->getStatusCode());
+          $data = json_decode($event->getResponse()->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+          $this->assertSame('invalid_request', $data['error']);
+          $this->assertStringContainsString('S256', $data['error_description']);
+        }
+      }
+    }
+  }
+
+  /**
    * Tests query-only authorization, plain tokens and enhanced web requirements.
    */
   public function testEffectivePkceAtRequestBoundaries(): void {

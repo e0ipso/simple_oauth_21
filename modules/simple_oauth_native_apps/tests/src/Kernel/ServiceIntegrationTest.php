@@ -78,6 +78,35 @@ final class ServiceIntegrationTest extends KernelTestBase {
   }
 
   /**
+   * Tests method enforcement, requirement helpers and metadata agree.
+   */
+  public function testEffectivePkceMethodDefaults(): void {
+    $client = Consumer::create([
+      'label' => 'Native method policy',
+      'client_id' => 'native-method-policy',
+      'native_app_override' => 'native',
+    ]);
+    $config = $this->config('simple_oauth_native_apps.settings');
+    $pkce = $this->container->get('simple_oauth_native_apps.pkce_enhancement');
+    $provider = $this->container->get('simple_oauth_native_apps.metadata_provider');
+    foreach ([NULL, 'off', 'plain', 'S256', 'invalid', '', FALSE, 0] as $configured) {
+      $config->set('native.enforce', $configured)->save();
+      $expected = in_array($configured, ['off', 'plain', 'S256'], TRUE) ? $configured : 'S256';
+      $this->assertSame($expected === 'off' || $expected === 'plain', $pkce->validateChallengeMethod('plain', TRUE)['valid']);
+      $this->assertSame($expected !== 'plain', $pkce->validateChallengeMethod('S256', TRUE)['valid']);
+      $this->assertTrue($pkce->validateChallengeMethod('plain', FALSE)['valid']);
+      $this->assertSame($expected === 'S256', $pkce->requiresS256Method($client));
+      $this->assertSame($expected === 'S256', $provider->getMetadata()['pkce_s256_enforced']);
+      $this->assertSame($expected, $pkce->getConfiguration($client)['enforce_method']);
+    }
+    $config->clear('native.enforce')->save();
+    $this->assertFalse($pkce->validateChallengeMethod('plain', TRUE)['valid']);
+    $this->assertTrue($pkce->requiresS256Method($client));
+    $this->assertTrue($provider->getMetadata()['pkce_s256_enforced']);
+    $this->assertSame('S256', $pkce->getConfiguration($client)['enforce_method']);
+  }
+
+  /**
    * Tests cached scores and policy follow every default classifier input.
    */
   public function testDetectionCacheEntityInputs(): void {

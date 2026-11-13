@@ -15,6 +15,19 @@ use Drupal\Core\Config\ImmutableConfig;
 class NativeSecurityPolicy {
 
   /**
+   * Resolves a configured PKCE method, defaulting to S256 for absent values.
+   *
+   * @param mixed $configured
+   *   The configured method, including missing or invalid legacy values.
+   *
+   * @return string
+   *   One of off, plain or S256. Invalid values require S256.
+   */
+  public function resolvePkceMethod(mixed $configured): string {
+    return in_array($configured, ['off', 'plain', 'S256'], TRUE) ? $configured : 'S256';
+  }
+
+  /**
    * Calculates effective policy using one selected record for all controls.
    *
    * @param \Drupal\Core\Config\ImmutableConfig $config

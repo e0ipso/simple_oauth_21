@@ -258,6 +258,17 @@ class NativeClientDetector {
   }
 
   /**
+   * Gets the effective native PKCE method without changing stored settings.
+   *
+   * @return string
+   *   One of off, plain or S256. Missing or invalid values require S256.
+   */
+  public function getEnforcedPkceMethod(): string {
+    $config = $this->configFactory->get('simple_oauth_native_apps.settings');
+    return $this->securityPolicy->resolvePkceMethod($config->get('native.enforce'));
+  }
+
+  /**
    * Resolves native security policy without changing stored overrides.
    *
    * Explicit config overrides take precedence over entity controls, then global
