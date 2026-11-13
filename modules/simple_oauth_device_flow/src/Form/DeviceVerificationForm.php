@@ -188,7 +188,8 @@ final class DeviceVerificationForm extends FormBase {
 
     // Bound prefilled input before passing it to the text element.
     $prefilled = $this->getRequest()->query->all()['user_code'] ?? '';
-    $prefilled = is_string($prefilled) && strlen($prefilled) <= 32 ? $prefilled : '';
+    $prefilled = is_string($prefilled) && strlen($prefilled) <= 128
+      && mb_strlen($prefilled, 'UTF-8') <= 32 ? $prefilled : '';
 
     // User code input field.
     $form['user_code'] = [

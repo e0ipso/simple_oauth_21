@@ -1256,6 +1256,95 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
   }
 
   /**
+   * Tests custom formatter codes retain bounded exact pending lookup.
+   *
+   * @param string $separator
+   *   The formatter's separator, including multibyte output.
+   * @param int $group_size
+   *   The number of significant characters in each displayed group.
+   *
+   * @dataProvider customFormatterProvider
+   */
+  #[DataProvider('customFormatterProvider')]
+  public function testCustomFormatterPendingCompatibility(string $separator, int $group_size): void {
+    $this->installDeviceFixtures();
+    $client = $this->createDeviceClient('custom-format-client');
+    $repository = $this->container->get('simple_oauth_device_flow.device_code_repository');
+    $settings = $this->container->get('simple_oauth_device_flow.settings');
+    $logger = $this->container->get('simple_oauth_device_flow.logger_factory');
+    $generator = new class($this->container->get('config.factory'), $repository, $logger) extends UserCodeGenerator {
+
+      /**
+       * The configured display separator.
+       */
+      public string $separator = ' ';
+
+      /**
+       * The number of significant characters per display group.
+       */
+      public int $groupSize = 4;
+
+      /**
+       * {@inheritdoc}
+       */
+      public function formatUserCode(string $rawCode): string {
+        return implode($this->separator, str_split($rawCode, $this->groupSize));
+      }
+
+    };
+    $generator->separator = $separator;
+    $generator->groupSize = $group_size;
+    $service = new DeviceCodeService($repository, $generator, $settings, $this->container->get('datetime.time'), $logger);
+    $issued = $service->generateDeviceAuthorization($client);
+    $this->assertStringContainsString($separator, $issued['user_code']);
+    $this->assertTrue($generator->validateCodeFormat($issued['user_code']));
+    $this->assertLessThanOrEqual(32, mb_strlen($issued['user_code'], 'UTF-8'));
+    if ($group_size === 1) {
+      $this->assertGreaterThan(32, strlen($issued['user_code']));
+    }
+    $form_object = new DeviceVerificationForm(
+      $repository, $service, $generator, new UserSession(['uid' => 7]),
+      $logger->get('simple_oauth_device_flow'), $this->container->get('flood'), $settings,
+    );
+    $stack = $this->container->get('request_stack');
+    $stack->push(Request::create('https://example.org/oauth/device', 'GET', ['user_code' => $issued['user_code']]));
+    try {
+      $built = $form_object->buildForm([], new FormState());
+      $this->assertSame($issued['user_code'], $built['user_code']['#default_value']);
+    }
+    finally {
+      $stack->pop();
+    }
+    $form = [];
+    foreach ([$issued['user_code'], str_replace($separator, '', $issued['user_code'])] as $input) {
+      $state = (new FormState())->setValue('user_code', strtolower($input));
+      $form_object->validateForm($form, $state);
+      $this->assertSame([], $state->getErrors(), 'Issued custom formatting remains verifiable.');
+      $this->assertSame($issued['device_code'], $state->getTemporaryValue('device_code_entity')->id());
+    }
+    // Exact historical output also survives replacing the formatter itself.
+    $this->container->get('current_user')->setAccount(new UserSession(['uid' => 7]));
+    $this->config('simple_oauth_device_flow.settings')->set('user_code_length', 6)->set('user_code_charset', 'AB')->save();
+    $state = (new FormState())->setValue('user_code', $issued['user_code']);
+    DeviceVerificationForm::create($this->container)->validateForm($form, $state);
+    $this->assertSame([], $state->getErrors());
+    $this->assertSame($issued['device_code'], $state->getTemporaryValue('device_code_entity')->id());
+  }
+
+  /**
+   * Provides formatter layouts accepted by the existing normalization API.
+   *
+   * @return array<string, array{string, int}>
+   *   Separators and significant display group sizes.
+   */
+  public static function customFormatterProvider(): array {
+    return [
+      'space separator' => [' ', 4],
+      'four-byte separator' => ["\u{1F539}", 1],
+    ];
+  }
+
+  /**
    * Tests raw-generation extensions cannot bypass unsafe effective settings.
    */
   public function testGeneratorRawExtensionPolicy(): void {
@@ -2467,7 +2556,11 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
       // Raw storage avoids schema coercion of the deliberately malformed limit.
       $this->container->get('config.storage')->write('simple_oauth_device_flow.settings', $config->getRawData());
       $this->container->get('config.factory')->reset('simple_oauth_device_flow.settings');
-      foreach ([$issued['user_code'], strtolower(str_replace('-', '', $issued['user_code']))] as $input) {
+      foreach ([
+        $issued['user_code'],
+        strtolower(str_replace('-', '', $issued['user_code'])),
+        str_replace('-', '/', $issued['user_code']),
+      ] as $input) {
         $state = (new FormState())->setValue('user_code', $input);
         DeviceVerificationForm::create($this->container)->validateForm($form, $state);
         $this->assertSame([], $state->getErrors());
@@ -2518,7 +2611,16 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
       new UserSession(['uid' => 7]), $this->createMock(LoggerInterface::class),
       $this->container->get('flood'), $this->container->get('simple_oauth_device_flow.settings'),
     );
-    foreach ([str_repeat(' ', 100000) . 'BCDF-GHJK', 'BC-DFGHJK', 'BCDF--GHJK', 'BCDF/GHJK', [], NULL] as $input) {
+    foreach ([
+      str_repeat(' ', 100000) . 'BCDF-GHJK',
+      str_repeat('A', 33),
+      str_repeat("\u{1F539}", 33),
+      '',
+      '---',
+      '   ',
+      [],
+      NULL,
+    ] as $input) {
       $this->container->get('flood')->clear('simple_oauth_device_flow.verification', '7');
       $state = (new FormState())->setValue('user_code', $input);
       $form = [];

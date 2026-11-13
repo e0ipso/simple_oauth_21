@@ -208,7 +208,7 @@ final class DeviceCodeRepository implements DeviceVerificationRepositoryInterfac
    */
   public function getDeviceCodeEntityByUserCode(string $userCode): ?DeviceCode {
     try {
-      if (strlen($userCode) > 32 || $userCode === '') {
+      if (strlen($userCode) > 128 || mb_strlen($userCode, 'UTF-8') > 32 || $userCode === '') {
         return NULL;
       }
       $storage = $this->entityTypeManager->getStorage('oauth2_device_code');

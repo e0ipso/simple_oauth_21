@@ -180,24 +180,39 @@ class UserCodeGenerator {
    *   Raw user input, bounded before trimming or case normalization.
    *
    * @return string[]
-   *   The raw and known middle-dash layouts, or no candidates for bad syntax.
+   *   At most four exact layouts: raw, middle dash, submitted and formatter
+   *   output. No candidates are returned for empty or oversized input.
    */
   public function getVerificationCandidates(string $userCode): array {
-    if (strlen($userCode) > 32) {
+    // Storage permits 32 characters, each occupying at most four UTF-8 bytes.
+    if (strlen($userCode) > 128 || mb_strlen($userCode, 'UTF-8') > 32) {
       return [];
     }
     $code = strtoupper(trim($userCode));
-    if (!preg_match('/^[A-Z0-9]+(?:-[A-Z0-9]+)?$/D', $code)) {
+    // Preserve bounded separator normalization and public formatter extensions.
+    $raw = $this->normalizeUserCode($code);
+    if (!preg_match('/^[A-Z0-9]+$/D', $raw) || strlen($raw) > 32) {
       return [];
     }
-    $raw = str_replace('-', '', $code);
     $length = strlen($raw);
     $candidates = [$raw];
     if ($length >= 4 && $length % 2 === 0 && $length < 32) {
       $half = intdiv($length, 2);
       $candidates[] = substr($raw, 0, $half) . '-' . substr($raw, $half);
     }
-    return in_array($code, $candidates, TRUE) ? $candidates : [];
+    // Exact historical formatting remains usable after formatter replacement.
+    $candidates[] = $code;
+    try {
+      $formatted = $this->formatUserCode($raw);
+      if (strlen($formatted) <= 128 && mb_strlen($formatted, 'UTF-8') <= 32
+        && $this->normalizeUserCode($formatted) === $raw) {
+        $candidates[] = $formatted;
+      }
+    }
+    catch (\Throwable) {
+      // Optional formatter hints cannot disable lookup of stored pending codes.
+    }
+    return array_values(array_unique($candidates));
   }
 
   /**
