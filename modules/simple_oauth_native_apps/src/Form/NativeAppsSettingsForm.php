@@ -374,7 +374,11 @@ final class NativeAppsSettingsForm extends ConfigFormBase {
       'native' => $values['native'] ?? [],
     ];
 
-    return $config;
+    // Runtime-only controls have no form widgets. Validate their stored values
+    // before an unrelated save can cast malformed data through the schema.
+    return $config + array_intersect_key($this->config('simple_oauth_native_apps.settings')->get(), array_flip([
+      'detection_sensitivity', 'cache_detection_results', 'allow_plain_pkce',
+    ]));
   }
 
   /**
