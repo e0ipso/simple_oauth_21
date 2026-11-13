@@ -202,16 +202,25 @@ final class DeviceCodeRepository implements DeviceVerificationRepositoryInterfac
    *
    * @return \Drupal\simple_oauth_device_flow\Entity\DeviceCode|null
    *   The device code entity or NULL if not found.
+   *
+   * @throws \UnexpectedValueException
+   *   When more than one stored record matches the exact candidate.
    */
   public function getDeviceCodeEntityByUserCode(string $userCode): ?DeviceCode {
     try {
-      $entities = $this->entityTypeManager->getStorage('oauth2_device_code')->loadByProperties([
-        'user_code' => $userCode,
-      ]);
-
-      if (empty($entities)) {
+      if (strlen($userCode) > 32 || $userCode === '') {
         return NULL;
       }
+      $storage = $this->entityTypeManager->getStorage('oauth2_device_code');
+      $ids = $storage->getQuery()->accessCheck(FALSE)
+        ->condition('user_code', $userCode)->range(0, 2)->execute();
+      if (count($ids) > 1) {
+        throw new \UnexpectedValueException('Ambiguous device user code.');
+      }
+      if ($ids === []) {
+        return NULL;
+      }
+      $entities = $storage->loadMultiple($ids);
 
       $entity = reset($entities);
       if (!$entity instanceof DeviceCode) {
@@ -219,9 +228,15 @@ final class DeviceCodeRepository implements DeviceVerificationRepositoryInterfac
         return NULL;
       }
 
+      if ($entity->getUserCode() !== $userCode) {
+        return NULL;
+      }
       $this->attachScopeProvider($entity);
       $this->attachClientToDeviceCode($entity);
       return $entity;
+    }
+    catch (\UnexpectedValueException $e) {
+      throw $e;
     }
     catch (\Exception $e) {
       $this->logger->error('Failed to retrieve device code entity by user code: @exception_type', [

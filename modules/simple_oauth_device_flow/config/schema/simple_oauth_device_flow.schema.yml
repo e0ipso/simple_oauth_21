@@ -1,6 +1,8 @@
 simple_oauth_device_flow.settings:
   type: config_object
   label: 'Simple OAuth Device Flow settings'
+  constraints:
+    DeviceCodeGeneration: []
   mapping:
     device_code_lifetime:
       type: integer

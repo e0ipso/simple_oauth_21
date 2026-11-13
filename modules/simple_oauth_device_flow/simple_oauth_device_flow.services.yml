@@ -13,6 +13,8 @@ services:
   simple_oauth_device_flow.settings:
     class: Drupal\simple_oauth_device_flow\Service\DeviceFlowSettingsService
     arguments: ['@config.factory', '@path.validator']
+    tags:
+      - { name: event_subscriber }
 
   simple_oauth_device_flow.device_code_repository:
     class: Drupal\simple_oauth_device_flow\Repository\DeviceCodeRepository

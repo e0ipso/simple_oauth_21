@@ -15,7 +15,7 @@ interface UserCodeLookupInterface {
    * Finds a request by its human-readable code.
    *
    * @param string $userCode
-   *   The formatted user code.
+   *   An exact stored code candidate, formatted or raw.
    *
    * @return \Drupal\simple_oauth_device_flow\Entity\DeviceCode|null
    *   The request, or NULL if it cannot be found.

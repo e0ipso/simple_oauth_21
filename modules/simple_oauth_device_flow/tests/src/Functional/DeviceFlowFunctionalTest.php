@@ -794,6 +794,8 @@ final class DeviceFlowFunctionalTest extends BrowserTestBase {
       ['user_code_charset' => 'AA'],
       ['user_code_charset' => 'A-'],
       ['user_code_charset' => 'ab'],
+      ['user_code_length' => 6, 'user_code_charset' => 'AB'],
+      ['device_code_lifetime' => 86400],
     ];
     foreach ($invalid_values as $values) {
       $this->drupalGet($path);
@@ -804,7 +806,8 @@ final class DeviceFlowFunctionalTest extends BrowserTestBase {
     $saved = [
       'device_code_lifetime' => 143,
       'polling_interval' => 7,
-      'user_code_length' => 6,
+      // The former six-character setting is below the issuance safety floor.
+      'user_code_length' => 9,
       'user_code_charset' => 'BCDFGHJKLMNPQRSTVWXYZ',
       'cleanup_retention_days' => 3,
       'max_cleanup_batch_size' => 50,
@@ -819,7 +822,7 @@ final class DeviceFlowFunctionalTest extends BrowserTestBase {
     $data = $this->requestDeviceAuthorization();
     $this->assertSame(143, $data['expires_in']);
     $this->assertSame(7, $data['interval']);
-    $this->assertSame(6, strlen(str_replace('-', '', $data['user_code'])));
+    $this->assertSame(9, strlen(str_replace('-', '', $data['user_code'])));
     $this->assertMatchesRegularExpression('/^[BCDFGHJKLMNPQRSTVWXYZ-]+$/D', $data['user_code']);
     $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_device_code');
     $device = $storage->load($data['device_code']);
@@ -828,6 +831,76 @@ final class DeviceFlowFunctionalTest extends BrowserTestBase {
     $this->drupalLogout();
     $this->drupalGet($path);
     $this->assertSession()->statusCodeEquals(403);
+  }
+
+  /**
+   * Tests scope input errors over HTTP without issuing partial records.
+   */
+  public function testScopeInputErrorsOverHttp(): void {
+    $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_device_code');
+    foreach ([
+      [RequestOptions::FORM_PARAMS => ['scope' => ['bad']]],
+      [RequestOptions::QUERY => ['scope' => ['bad']]],
+    ] as $options) {
+      $options[RequestOptions::FORM_PARAMS]['client_id'] = $this->consumer->getClientId();
+      $options[RequestOptions::HTTP_ERRORS] = FALSE;
+      $response = $this->httpClient->post($this->buildUrl('/oauth/device_authorization'), $options);
+      $this->assertSame(400, $response->getStatusCode());
+      $this->assertSame('invalid_request', Json::decode((string) $response->getBody())['error']);
+      $this->assertSame(0, (int) $storage->getQuery()->accessCheck(FALSE)->count()->execute());
+    }
+    // A valid query value takes precedence over a malformed body value.
+    $response = $this->httpClient->post($this->buildUrl('/oauth/device_authorization'), [
+      RequestOptions::QUERY => ['scope' => ''],
+      RequestOptions::FORM_PARAMS => ['client_id' => $this->consumer->getClientId(), 'scope' => ['bad']],
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame(1, (int) $storage->getQuery()->accessCheck(FALSE)->count()->execute());
+  }
+
+  /**
+   * Tests old pending codes survive policy changes through real HTTP consent.
+   */
+  public function testPendingCodeContinuityOverHttp(): void {
+    $first = $this->requestDeviceAuthorization();
+    $second = $this->requestDeviceAuthorization();
+    $config = $this->config('simple_oauth_device_flow.settings');
+    $config->set('user_code_length', 11)->set('user_code_charset', '0123456789')
+      ->set('user_code_format', 'XXXXXXXXXXX')->set('device_code_lifetime', 7200)
+      ->set('max_authorization_attempts', 10)->save();
+    $this->drupalLogin($this->testUser);
+    $this->drupalGet('/oauth/device');
+    $this->submitForm(['user_code' => strtolower(str_replace('-', '', $first['user_code']))], 'Review request');
+    $this->assertSession()->pageTextContains('Test Device Client');
+    $this->assertSession()->pageTextContains('Requested access');
+    $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_device_code');
+    $storage->resetCache();
+    $this->assertNull($storage->load($first['device_code'])->getUserIdentifier());
+    // Invalid runtime configuration blocks only new issuance, including between
+    // review and consent, while the server-side confirmation stays bound.
+    $config->set('user_code_length', 6)->set('user_code_charset', 'AB')
+      ->set('device_code_lifetime', 1)->set('max_authorization_attempts', 1)->save();
+    $response = $this->httpClient->post($this->buildUrl('/oauth/device_authorization'), [
+      RequestOptions::FORM_PARAMS => ['client_id' => $this->consumer->getClientId()],
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+    $this->assertSame(500, $response->getStatusCode());
+    $this->assertSame('server_error', Json::decode((string) $response->getBody())['error']);
+    $this->assertSame(2, (int) $storage->getQuery()->accessCheck(FALSE)->count()->execute());
+    $this->submitForm([], 'Authorize Device');
+    $this->assertSession()->pageTextContains('Device authorized successfully');
+    $storage->resetCache();
+    $this->assertSame((string) $this->testUser->id(), $storage->load($first['device_code'])->getUserIdentifier());
+    $this->assertNull($storage->load($second['device_code'])->getUserIdentifier());
+    $this->drupalGet('/oauth/device');
+    $this->submitForm(['user_code' => strtolower($second['user_code'])], 'Review request');
+    $this->assertSession()->pageTextContains('Test Device Client');
+    $this->submitForm([], 'Deny Access');
+    $this->assertSession()->pageTextContains('Device authorization was denied');
+    $storage->resetCache();
+    $this->assertFalse($storage->load($second['device_code'])->getUserApproved());
+    $this->assertSame((string) $this->testUser->id(), $storage->load($second['device_code'])->getUserIdentifier());
   }
 
   /**

@@ -280,6 +280,8 @@ final class DeviceCodeService {
    */
   public function generateDeviceAuthorization($client_entity, string $scope = ''): array {
     try {
+      // Validate independently of generator extensions before creating codes.
+      $generation = $this->settings->getGenerationSettings();
       // Resolve all public names before issuing or persisting credentials.
       $scopes = [];
       foreach (array_filter(explode(' ', trim($scope)), static fn(string $name): bool => $name !== '') as $name) {
@@ -297,7 +299,7 @@ final class DeviceCodeService {
       $user_code = $this->userCodeGenerator->generateUserCode();
 
       // Get configuration values.
-      $expires_in = $this->settings->getDeviceCodeExpiration();
+      $expires_in = $generation['lifetime'];
       $polling_interval = $this->settings->getPollingInterval();
       $current_time = $this->time->getCurrentTime();
       $expires_at = $current_time + $expires_in;

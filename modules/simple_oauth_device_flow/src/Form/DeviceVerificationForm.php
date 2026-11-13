@@ -186,13 +186,17 @@ final class DeviceVerificationForm extends FormBase {
       '</div>',
     ];
 
+    // Bound prefilled input before passing it to the text element.
+    $prefilled = $this->getRequest()->query->all()['user_code'] ?? '';
+    $prefilled = is_string($prefilled) && strlen($prefilled) <= 32 ? $prefilled : '';
+
     // User code input field.
     $form['user_code'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Device Code'),
       '#description' => $this->t('Enter the code shown on your device (e.g., ABCD-EFGH).'),
       '#required' => TRUE,
-      '#maxlength' => 16,
+      '#maxlength' => 32,
       '#size' => 16,
       '#placeholder' => 'XXXX-XXXX',
       '#attributes' => [
@@ -201,7 +205,7 @@ final class DeviceVerificationForm extends FormBase {
         'autocapitalize' => 'characters',
         'spellcheck' => 'false',
       ],
-      '#default_value' => $this->getRequest()->query->get('user_code', ''),
+      '#default_value' => $prefilled,
     ];
 
     // Action buttons.
@@ -286,27 +290,25 @@ final class DeviceVerificationForm extends FormBase {
       return;
     }
     $confirmation = $form_state->get('confirmation');
-    $user_code = $confirmation['user_code'] ?? trim((string) $form_state->getValue('user_code'));
+    $user_code = $confirmation['user_code'] ?? $form_state->getValue('user_code');
 
-    if (empty($user_code)) {
-      $this->registerFailedVerification();
-      $form_state->setErrorByName('user_code', $this->t('Device code is required.'));
-      return;
+    // Reject oversized raw input before any normalization or storage lookup.
+    $candidates = is_string($user_code) ? $this->userCodeGenerator->getVerificationCandidates($user_code) : [];
+    $device_code_entity = NULL;
+    try {
+      foreach ($candidates as $candidate) {
+        $found = $this->deviceCodeRepository->getDeviceCodeEntityByUserCode($candidate);
+        if ($found !== NULL) {
+          if ($device_code_entity !== NULL && $device_code_entity->getIdentifier() !== $found->getIdentifier()) {
+            throw new \UnexpectedValueException('Ambiguous device user code.');
+          }
+          $device_code_entity = $found;
+        }
+      }
     }
-
-    // Validate user code format.
-    if (!$this->userCodeGenerator->validateCodeFormat($user_code)) {
-      $this->registerFailedVerification();
-      $form_state->setErrorByName('user_code', $this->t('Invalid user code. Please check the code and try again.'));
-      return;
+    catch (\Exception) {
+      $device_code_entity = NULL;
     }
-
-    // Normalize the user code for lookup.
-    $normalized_code = $this->userCodeGenerator->normalizeUserCode($user_code);
-    $formatted_code = $this->userCodeGenerator->formatUserCode($normalized_code);
-
-    // Find device code by user code.
-    $device_code_entity = $this->deviceCodeRepository->getDeviceCodeEntityByUserCode($formatted_code);
 
     if (empty($device_code_entity) || (is_array($confirmation) && $device_code_entity->getIdentifier() !== $confirmation['identifier'])) {
       $this->registerFailedVerification();

@@ -8,6 +8,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\simple_oauth_device_flow\Service\DeviceFlowSettingsService;
 use Drupal\Core\Path\PathValidatorInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -124,7 +125,7 @@ final class DeviceFlowSettingsForm extends ConfigFormBase {
     $form['user_code_charset'] = [
       '#type' => 'textfield',
       '#title' => $this->t('User code character set'),
-      '#description' => $this->t('At least two distinct uppercase ASCII letters or digits. Exclude ambiguous characters for readability.'),
+      '#description' => $this->t('Unique uppercase ASCII letters or digits. Alphabet and length must provide at least the default code space and support the configured lifetime and per-user attempt budget.'),
       '#default_value' => $config->get('user_code_charset') ?? 'BCDFGHJKLMNPQRSTVWXZ',
       '#required' => TRUE,
     ];
@@ -155,9 +156,19 @@ final class DeviceFlowSettingsForm extends ConfigFormBase {
    */
   public function validateForm(array &$form, FormStateInterface $form_state): void {
     parent::validateForm($form, $form_state);
-    $charset = (string) $form_state->getValue('user_code_charset');
-    if (!preg_match('/^[A-Z0-9]+$/D', $charset) || count(array_unique(str_split($charset))) < 2 || strlen(count_chars($charset, 3)) !== strlen($charset)) {
-      $form_state->setErrorByName('user_code_charset', $this->t('Use at least two distinct uppercase letters or digits without duplicates or separators.'));
+    // Form number values are strings; preserve invalid values for rejection.
+    $data = $this->config('simple_oauth_device_flow.settings')->getRawData();
+    foreach (['user_code_length', 'device_code_lifetime'] as $key) {
+      $value = $form_state->getValue($key);
+      $integer = filter_var($value, FILTER_VALIDATE_INT);
+      $data[$key] = $integer !== FALSE ? $integer : $value;
+    }
+    $data['user_code_charset'] = $form_state->getValue('user_code_charset');
+    try {
+      DeviceFlowSettingsService::resolveGenerationSettings($data);
+    }
+    catch (\UnexpectedValueException $exception) {
+      $form_state->setErrorByName('user_code_charset', $this->t('Invalid code generation settings. Use unique uppercase letters or digits and a length from 6 to 12. The code space must support the default-strength floor and the configured lifetime and per-user attempt budget.'));
     }
     $uri = (string) $form_state->getValue('verification_uri');
     if (!preg_match('@^/(?!/)[A-Za-z0-9/_-]*$@D', $uri)) {
