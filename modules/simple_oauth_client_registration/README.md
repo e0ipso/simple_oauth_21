@@ -19,7 +19,7 @@ The Simple OAuth Client Registration module provides a complete implementation o
 
 ### Drupal Core
 
-- Drupal 10.2 or later in the 10.x series, or Drupal 11.x
+- Drupal 10.3 or later in the 10.x series, or Drupal 11.x
 
 Selected dependency releases may require a newer Drupal version. Use PHP and
 dependency versions supported by the chosen Drupal release.
@@ -27,7 +27,7 @@ dependency versions supported by the chosen Drupal release.
 ### Module Dependencies
 
 - `simple_oauth_21` - Main OAuth 2.1 umbrella module
-- `simple_oauth` - OAuth 2.0 functionality, version >=6.0.3,<7.0
+- `simple_oauth` - OAuth 2.0 functionality, version >=6.1.4,<7.0
 - `consumers` - OAuth consumer entity management
 - `serialization` - JSON serialization support
 
@@ -805,6 +805,6 @@ This module is licensed under the GNU General Public License v2.0 or later.
 
 ---
 
-**Version**: Compatible with Drupal 10.2 or later in the 10.x series, or Drupal 11.x, subject to dependency requirements
+**Version**: Compatible with Drupal 10.3 or later in the 10.x series, or Drupal 11.x, subject to dependency requirements
 **Maintained by**: Simple OAuth 2.1 project maintainers
 **Last Updated**: September 2025

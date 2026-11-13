@@ -17,7 +17,7 @@
     "drupal/simple_oauth_server_metadata": "self.version"
   },
   "require": {
-    "drupal/simple_oauth": ">=6.0.3 <7.0"
+    "drupal/simple_oauth": ">=6.1.4 <7.0"
   },
   "require-dev": {
     "drupal/coder": "^8",

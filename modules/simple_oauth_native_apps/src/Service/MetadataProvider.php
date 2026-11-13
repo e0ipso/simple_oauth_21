@@ -6,7 +6,9 @@ namespace Drupal\simple_oauth_native_apps\Service;
 
 use Drupal\Core\Cache\CacheableDependencyInterface;
 use Drupal\Core\Cache\CacheableDependencyTrait;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Psr\Log\NullLogger;
 
 /**
  * Service for describing global native app OAuth capabilities.
@@ -20,14 +22,25 @@ final class MetadataProvider implements CacheableDependencyInterface {
   use CacheableDependencyTrait;
 
   /**
+   * The shared native security policy resolver.
+   *
+   * @var \Drupal\simple_oauth_native_apps\Service\NativeClientDetector
+   */
+  private readonly NativeClientDetector $policyResolver;
+
+  /**
    * Constructs a new MetadataProvider.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The config factory.
+   * @param \Drupal\simple_oauth_native_apps\Service\NativeClientDetector|null $nativeClientDetector
+   *   The shared resolver, optional for existing constructor callers.
    */
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
+    ?NativeClientDetector $nativeClientDetector = NULL,
   ) {
+    $this->policyResolver = $nativeClientDetector ?? new NativeClientDetector($configFactory, new NullLogger());
     $this->cacheTags = [
       'config:simple_oauth_native_apps.settings',
       'config:simple_oauth.settings',
@@ -42,6 +55,12 @@ final class MetadataProvider implements CacheableDependencyInterface {
    */
   public function getMetadata(): array {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
+    // Rebuild for each generation so temporary overrides cannot accumulate.
+    $cacheability = CacheableMetadata::createFromObject($config);
+    $cacheability->addCacheTags(['config:simple_oauth.settings']);
+    $this->cacheTags = $cacheability->getCacheTags();
+    $this->cacheContexts = $cacheability->getCacheContexts();
+    $this->cacheMaxAge = $cacheability->getCacheMaxAge();
     $metadata = [];
 
     // Add RFC 8252 compliance fields.
@@ -101,12 +120,8 @@ final class MetadataProvider implements CacheableDependencyInterface {
     $metadata['code_challenge_methods_supported'] = $pkce_methods;
 
     // Auto-detect enables enhanced PKCE for native clients.
-    $enhanced_pkce = (bool) $config->get('enforce_native_security')
-      && ($config->get('native.enhanced_pkce') ?? 'auto-detect') !== 'not-enhanced';
-    $enforced_method = $config->get('native.enforce') ?? 'S256';
-    if (!in_array($enforced_method, ['off', 'S256', 'plain'], TRUE)) {
-      $enforced_method = 'S256';
-    }
+    $enhanced_pkce = $this->policyResolver->getEffectivePolicy()['enhanced_pkce'];
+    $enforced_method = $this->policyResolver->getEnforcedPkceMethod();
     $metadata['native_apps_pkce_required'] = $enhanced_pkce;
     $metadata['pkce_required'] = $enhanced_pkce;
     $metadata['pkce_s256_enforced'] = $enhanced_pkce && $enforced_method === 'S256';
@@ -125,7 +140,7 @@ final class MetadataProvider implements CacheableDependencyInterface {
     $metadata['native_apps_supported'] = (bool) ($config->get('enforce_native_security') ?? FALSE);
 
     // WebView detection capability - based on detection mode.
-    $detection_mode = $config->get('webview.detection') ?? 'warn';
+    $detection_mode = $this->policyResolver->getEffectivePolicy()['webview'];
     $metadata['webview_detection_supported'] = $detection_mode !== 'off';
     $metadata['webview_detection_policy'] = $detection_mode;
 
@@ -149,14 +164,16 @@ final class MetadataProvider implements CacheableDependencyInterface {
    *   Module configuration.
    */
   protected function addRedirectUriSupport(array &$metadata, $config): void {
+    $policy = $this->policyResolver->getEffectivePolicy();
+
     // Custom URI schemes support.
-    $metadata['custom_uri_schemes_supported'] = ($config->get('allow.custom_uri_schemes') ?? 'auto-detect') !== 'web';
+    $metadata['custom_uri_schemes_supported'] = $policy['custom_schemes'];
 
     // Loopback interface support (RFC 8252)
-    $metadata['loopback_redirects_supported'] = ($config->get('allow.loopback_redirects') ?? 'auto-detect') !== 'web';
+    $metadata['loopback_redirects_supported'] = $policy['loopback'];
 
     // Terminal applications support.
-    $metadata['terminal_applications_supported'] = ($config->get('allow.loopback_redirects') ?? 'auto-detect') !== 'web';
+    $metadata['terminal_applications_supported'] = $policy['loopback'];
 
     // Private-use URI scheme registration.
     $metadata['private_use_uri_schemes_allowed'] = $metadata['custom_uri_schemes_supported'];

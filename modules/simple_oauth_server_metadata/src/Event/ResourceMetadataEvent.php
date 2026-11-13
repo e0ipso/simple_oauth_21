@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\simple_oauth_server_metadata\Event;
 
+use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
+use Drupal\Core\Cache\RefinableCacheableDependencyTrait;
 use Symfony\Contracts\EventDispatcher\Event;
 
 /**
@@ -18,7 +20,9 @@ use Symfony\Contracts\EventDispatcher\Event;
  *
  * @see https://datatracker.ietf.org/doc/html/rfc9728
  */
-final class ResourceMetadataEvent extends Event {
+final class ResourceMetadataEvent extends Event implements RefinableCacheableDependencyInterface {
+
+  use RefinableCacheableDependencyTrait;
 
   /**
    * Constructs a ResourceMetadataEvent.

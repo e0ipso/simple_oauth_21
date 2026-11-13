@@ -1,10 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_device_flow\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
-use Drupal\simple_oauth_device_flow\Repository\DeviceCodeRepository;
+use Drupal\simple_oauth_device_flow\Repository\UserCodeLookupInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -37,9 +39,9 @@ class UserCodeGenerator {
   /**
    * The device code repository.
    *
-   * @var \Drupal\simple_oauth_device_flow\Repository\DeviceCodeRepository
+   * @var \Drupal\simple_oauth_device_flow\Repository\UserCodeLookupInterface
    */
-  protected DeviceCodeRepository $deviceCodeRepository;
+  protected UserCodeLookupInterface $deviceCodeRepository;
 
   /**
    * The logger instance.
@@ -53,14 +55,14 @@ class UserCodeGenerator {
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The config factory.
-   * @param \Drupal\simple_oauth_device_flow\Repository\DeviceCodeRepository $deviceCodeRepository
+   * @param \Drupal\simple_oauth_device_flow\Repository\UserCodeLookupInterface $deviceCodeRepository
    *   The device code repository for uniqueness checks.
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $loggerFactory
    *   The logger channel factory.
    */
   public function __construct(
     ConfigFactoryInterface $configFactory,
-    DeviceCodeRepository $deviceCodeRepository,
+    UserCodeLookupInterface $deviceCodeRepository,
     LoggerChannelFactoryInterface $loggerFactory,
   ) {
     $this->configFactory = $configFactory;
@@ -74,10 +76,14 @@ class UserCodeGenerator {
    * @return string
    *   The generated user code in formatted form (e.g., 'ABCD-EFGH').
    *
+   * @throws \UnexpectedValueException
+   *   When effective settings violate the issuance safety policy.
    * @throws \RuntimeException
    *   When unable to generate a unique code after maximum attempts.
    */
   public function generateUserCode(): string {
+    // Enforce policy even when subclasses override raw generation.
+    DeviceFlowSettingsService::resolveGenerationSettings($this->getConfig()->get());
     $attempts = 0;
 
     while ($attempts < self::MAX_GENERATION_ATTEMPTS) {
@@ -89,6 +95,11 @@ class UserCodeGenerator {
 
         // Format the code.
         $formattedCode = $this->formatUserCode($rawCode);
+
+        // Keep formatter and raw-code extensions within the configured shape.
+        if (!$this->validateCodeFormat($formattedCode)) {
+          throw new \RuntimeException('Generated user code format is invalid.');
+        }
 
         // Check uniqueness.
         if ($this->isUserCodeUnique($formattedCode)) {
@@ -103,9 +114,9 @@ class UserCodeGenerator {
         ]);
       }
       catch (\Exception $e) {
-        $this->logger->error('Error generating user code on attempt @attempt: @message', [
+        $this->logger->error('Error generating user code on attempt @attempt: @exception_type', [
           '@attempt' => $attempts,
-          '@message' => $e->getMessage(),
+          '@exception_type' => get_class($e),
         ]);
       }
     }
@@ -163,6 +174,48 @@ class UserCodeGenerator {
   }
 
   /**
+   * Builds bounded exact lookup candidates independent of issuance settings.
+   *
+   * @param string $userCode
+   *   Raw user input, bounded before trimming or case normalization.
+   *
+   * @return string[]
+   *   At most four exact layouts: raw, middle dash, submitted and formatter
+   *   output. No candidates are returned for empty or oversized input.
+   */
+  public function getVerificationCandidates(string $userCode): array {
+    // Storage permits 32 characters, each occupying at most four UTF-8 bytes.
+    if (strlen($userCode) > 128 || mb_strlen($userCode, 'UTF-8') > 32) {
+      return [];
+    }
+    $code = strtoupper(trim($userCode));
+    // Preserve bounded separator normalization and public formatter extensions.
+    $raw = $this->normalizeUserCode($code);
+    if (!preg_match('/^[A-Z0-9]+$/D', $raw) || strlen($raw) > 32) {
+      return [];
+    }
+    $length = strlen($raw);
+    $candidates = [$raw];
+    if ($length >= 4 && $length % 2 === 0 && $length < 32) {
+      $half = intdiv($length, 2);
+      $candidates[] = substr($raw, 0, $half) . '-' . substr($raw, $half);
+    }
+    // Exact historical formatting remains usable after formatter replacement.
+    $candidates[] = $code;
+    try {
+      $formatted = $this->formatUserCode($raw);
+      if (strlen($formatted) <= 128 && mb_strlen($formatted, 'UTF-8') <= 32
+        && $this->normalizeUserCode($formatted) === $raw) {
+        $candidates[] = $formatted;
+      }
+    }
+    catch (\Throwable) {
+      // Optional formatter hints cannot disable lookup of stored pending codes.
+    }
+    return array_values(array_unique($candidates));
+  }
+
+  /**
    * Normalizes a user code by removing formatting characters.
    *
    * @param string $userCode
@@ -214,31 +267,29 @@ class UserCodeGenerator {
    *   The raw user code without formatting.
    *
    * @throws \RuntimeException
-   *   When unable to generate cryptographically secure random bytes.
+   *   When cryptographically secure sampling fails.
    */
   protected function generateRawUserCode(): string {
-    $config = $this->getConfig();
-    $length = $config->get('user_code_length') ?? 8;
+    $data = $this->getConfig()->get();
+    $settings = DeviceFlowSettingsService::resolveGenerationSettings($data);
+    // Preserve the protected charset extension point under the same policy.
     $charset = $this->getCharset();
+    if ($charset !== $settings['charset']) {
+      $data['user_code_charset'] = $charset;
+      $settings = DeviceFlowSettingsService::resolveGenerationSettings($data);
+    }
+    $length = $settings['length'];
+    $charset = $settings['charset'];
     $charsetLength = strlen($charset);
-
-    if ($charsetLength === 0) {
-      throw new \RuntimeException('Character set cannot be empty');
-    }
-
-    try {
-      // Generate cryptographically secure random bytes.
-      $randomBytes = random_bytes($length);
-    }
-    catch (\Exception $e) {
-      throw new \RuntimeException('Failed to generate cryptographically secure random bytes: ' . $e->getMessage(), 0, $e);
-    }
-
     $code = '';
-    for ($i = 0; $i < $length; $i++) {
-      // Convert byte to index in charset.
-      $index = ord($randomBytes[$i]) % $charsetLength;
-      $code .= $charset[$index];
+    try {
+      for ($i = 0; $i < $length; $i++) {
+        // random_int() samples uniformly, including non-power-of-two alphabets.
+        $code .= $charset[random_int(0, $charsetLength - 1)];
+      }
+    }
+    catch (\Exception $exception) {
+      throw new \RuntimeException('Failed to generate a cryptographically secure user code.', 0, $exception);
     }
 
     return $code;
@@ -259,8 +310,8 @@ class UserCodeGenerator {
       return $existingEntity === NULL;
     }
     catch (\Exception $e) {
-      $this->logger->error('Error checking user code uniqueness: @message', [
-        '@message' => $e->getMessage(),
+      $this->logger->error('Error checking user code uniqueness: @exception_type', [
+        '@exception_type' => get_class($e),
       ]);
       // Assume not unique on error for safety.
       return FALSE;

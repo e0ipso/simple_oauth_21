@@ -72,6 +72,12 @@
   },
   "overrides": [
     {
+      "files": ["release.config.cjs"],
+      "rules": {
+        "no-template-curly-in-string": "off"
+      }
+    },
+    {
       "files": ["tests/e2e/**/*.js"],
       "rules": {
         "no-await-in-loop": "off",

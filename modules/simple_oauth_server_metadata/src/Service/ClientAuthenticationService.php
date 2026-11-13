@@ -52,12 +52,24 @@ final class ClientAuthenticationService {
     // Extract credentials from request (Basic Auth takes precedence).
     $credentials = $this->extractCredentials($request);
 
-    if (!$credentials['client_id']) {
+    if (!is_string($credentials['client_id']) || $credentials['client_id'] === ''
+      || $credentials['client_id'] === '0'
+      || ($credentials['client_secret'] !== NULL && !is_string($credentials['client_secret']))) {
       return NULL;
     }
 
     // Lookup client entity.
     $client_entity = $this->clientRepository->getClientEntity($credentials['client_id']);
+    $secret = $credentials['client_secret'];
+    $decode_secret = $credentials['basic'];
+    if (!$client_entity instanceof ClientEntityInterface && $credentials['basic']) {
+      $decoded_id = urldecode($credentials['client_id']);
+      if ($decoded_id !== $credentials['client_id']) {
+        $client_entity = $this->clientRepository->getClientEntity($decoded_id);
+        $secret = urldecode($secret ?? '');
+        $decode_secret = FALSE;
+      }
+    }
     if (!$client_entity instanceof ClientEntityInterface) {
       // Client not found - use timing-safe comparison to prevent enumeration.
       $this->preventTimingAttack();
@@ -73,7 +85,14 @@ final class ClientAuthenticationService {
     }
 
     // Validate credentials based on client type.
-    if (!$this->validateClientCredentials($client_entity, $consumer, $credentials['client_secret'])) {
+    if ($this->validateClientCredentials($client_entity, $consumer, $secret)) {
+      return $consumer;
+    }
+
+    // Decode only within the selected identity. An exact legacy ID always wins,
+    // even if a different consumer would accept the decoded credentials.
+    if (!$decode_secret || $secret === NULL || urldecode($secret) === $secret
+      || !$this->validateClientCredentials($client_entity, $consumer, urldecode($secret))) {
       return NULL;
     }
 
@@ -90,22 +109,24 @@ final class ClientAuthenticationService {
    *   The HTTP request.
    *
    * @return array
-   *   Array with 'client_id' and 'client_secret' keys (may be null).
+   *   Client ID, secret (possibly NULL), and a Basic authentication flag.
    */
   private function extractCredentials(ServerRequestInterface $request): array {
     $credentials = [
       'client_id' => NULL,
       'client_secret' => NULL,
+      'basic' => FALSE,
     ];
 
     // Try Basic Auth first (per RFC 6749 Section 2.3.1).
     $auth_header = $request->getHeaderLine('Authorization');
-    if (str_starts_with($auth_header, 'Basic ')) {
+    if (strncasecmp($auth_header, 'Basic ', 6) === 0) {
       $encoded = substr($auth_header, 6);
       $decoded = base64_decode($encoded, TRUE);
 
       if ($decoded !== FALSE && str_contains($decoded, ':')) {
         [$client_id, $client_secret] = explode(':', $decoded, 2);
+        $credentials['basic'] = TRUE;
         $credentials['client_id'] = $client_id;
         $credentials['client_secret'] = $client_secret;
         return $credentials;

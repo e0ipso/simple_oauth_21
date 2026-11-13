@@ -7,7 +7,10 @@
  * Implements RFC 8252 native app support for OAuth 2.0 clients.
  */
 
+declare(strict_types=1);
+
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\consumers\Entity\Consumer;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Form\FormStateInterface;
@@ -202,6 +205,15 @@ function simple_oauth_native_apps_entity_base_field_info(EntityTypeInterface $en
 }
 
 /**
+ * Implements hook_entity_base_field_info_alter().
+ */
+function simple_oauth_native_apps_entity_base_field_info_alter(array &$fields, EntityTypeInterface $entity_type): void {
+  if ($entity_type->id() === 'consumer' && isset($fields['redirect'])) {
+    $fields['redirect']->addConstraint('NativeAppRedirectUri');
+  }
+}
+
+/**
  * Implements hook_entity_insert().
  */
 function simple_oauth_native_apps_entity_insert(EntityInterface $entity) {
@@ -209,6 +221,7 @@ function simple_oauth_native_apps_entity_insert(EntityInterface $entity) {
     // Clear native client detection cache when a consumer is inserted.
     $detector = \Drupal::service('simple_oauth_native_apps.native_client_detector');
     $detector->clearCache();
+    $detector->clearClientCache($entity);
   }
 }
 
@@ -228,6 +241,7 @@ function simple_oauth_native_apps_entity_update(EntityInterface $entity) {
  */
 function simple_oauth_native_apps_entity_delete(EntityInterface $entity) {
   if ($entity->getEntityTypeId() === 'consumer') {
+    \Drupal::service('simple_oauth_native_apps.consumer_policy_resolver')->delete($entity);
     // Clear cache for the specific client.
     $detector = \Drupal::service('simple_oauth_native_apps.native_client_detector');
     $detector->clearClientCache($entity);
@@ -242,6 +256,24 @@ function simple_oauth_native_apps_form_alter(array &$form, FormStateInterface $f
   if (in_array($form_id, ['consumer_add_form', 'consumer_edit_form', 'consumer_form'], TRUE)) {
     $form_alter_service = \Drupal::service('simple_oauth_native_apps.consumer_form_alter');
     $form_alter_service->alterForm($form, $form_state, $form_id);
+  }
+}
+
+/**
+ * Applies submitted policy to the consumer built for form validation.
+ *
+ * @param string $entity_type_id
+ *   The entity type ID.
+ * @param \Drupal\Core\Entity\EntityInterface $entity
+ *   The built entity.
+ * @param array $form
+ *   The entity form.
+ * @param \Drupal\Core\Form\FormStateInterface $form_state
+ *   The current form state.
+ */
+function simple_oauth_native_apps_build_consumer_policy(string $entity_type_id, EntityInterface $entity, array $form, FormStateInterface $form_state): void {
+  if ($entity instanceof Consumer) {
+    \Drupal::service('simple_oauth_native_apps.consumer_form_alter')->buildConsumerPolicy($entity, $form_state);
   }
 }
 

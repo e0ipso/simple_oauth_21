@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_pkce\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -23,10 +25,12 @@ class PkceSettingsService {
    * Get the PKCE enforcement level.
    *
    * @return string
-   *   The enforcement level ('mandatory', 'optional', or 'disabled').
+   *   The enforcement level ('mandatory', 'optional', or 'disabled'). Missing
+   *   or malformed settings use mandatory enforcement without changing storage.
    */
   public function getEnforcementLevel(): string {
-    return $this->configFactory->get('simple_oauth_pkce.settings')->get('enforcement') ?? 'mandatory';
+    $level = $this->configFactory->get('simple_oauth_pkce.settings')->get('enforcement');
+    return in_array($level, ['mandatory', 'optional', 'disabled'], TRUE) ? $level : 'mandatory';
   }
 
   /**

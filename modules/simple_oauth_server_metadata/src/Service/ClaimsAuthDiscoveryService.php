@@ -1,23 +1,43 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_server_metadata\Service;
 
+use Drupal\Core\Cache\CacheableDependencyInterface;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\simple_oauth_pkce\Service\PkceSettingsService;
+use Drupal\simple_oauth_server_metadata\Trait\MetadataCacheabilityTrait;
 
 /**
  * Service for discovering claims, authentication methods, and algorithms.
  */
-class ClaimsAuthDiscoveryService {
+class ClaimsAuthDiscoveryService implements CacheableDependencyInterface {
+
+  use MetadataCacheabilityTrait;
 
   /**
    * Constructs a ClaimsAuthDiscoveryService object.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The configuration factory.
+   * @param \Drupal\simple_oauth_pkce\Service\PkceSettingsService|null $pkceSettings
+   *   The optional global PKCE policy settings.
+   * @param \Drupal\simple_oauth_server_metadata\Service\GrantTypeDiscoveryService|null $grantTypeDiscovery
+   *   The optional capability discovery service. Legacy standalone callers
+   *   without it retain their historical authorization code capability result.
    */
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
-  ) {}
+    private readonly ?PkceSettingsService $pkceSettings = NULL,
+    private readonly ?GrantTypeDiscoveryService $grantTypeDiscovery = NULL,
+  ) {
+    $this->cacheTags = ['config:core.extension'];
+    if ($pkceSettings !== NULL) {
+      $this->cacheTags[] = 'config:simple_oauth_pkce.settings';
+    }
+  }
 
   /**
    * Gets supported claims.
@@ -103,7 +123,11 @@ class ClaimsAuthDiscoveryService {
    *   An array of supported code challenge methods.
    */
   public function getCodeChallengeMethodsSupported(): array {
-    // Simple OAuth supports PKCE with these methods.
+    $this->refreshConfigCacheability();
+    if ($this->pkceSettings !== NULL && !$this->pkceSettings->isDisabled()) {
+      return $this->pkceSettings->getSupportedMethods();
+    }
+    // Disabled global enforcement leaves upstream PKCE capabilities intact.
     return ['S256', 'plain'];
   }
 
@@ -175,9 +199,9 @@ class ClaimsAuthDiscoveryService {
    *   TRUE if authorization code flow is enabled, FALSE otherwise.
    */
   public function getAuthorizationCodeFlowEnabled(): bool {
-    // Authorization code flow is the core OAuth 2.0 flow and should always
-    // be enabled in Simple OAuth.
-    return TRUE;
+    $this->refreshConfigCacheability();
+    return $this->grantTypeDiscovery === NULL
+      || in_array('code', $this->grantTypeDiscovery->getResponseTypesSupported(), TRUE);
   }
 
   /**
@@ -187,10 +211,8 @@ class ClaimsAuthDiscoveryService {
    *   TRUE if implicit flow is enabled, FALSE otherwise.
    */
   public function getImplicitFlowEnabled(): bool {
-    // Implicit flow support can be determined by checking if 'token' and
-    // 'id_token' response types are supported.
-    // For OAuth 2.1 compliance, implicit flow should be discouraged.
-    return TRUE;
+    // Discovery does not advertise implicit or hybrid authorization flows.
+    return FALSE;
   }
 
   /**
@@ -212,8 +234,22 @@ class ClaimsAuthDiscoveryService {
    *   TRUE if OpenID Connect is enabled, FALSE otherwise.
    */
   protected function isOpenIdConnectEnabled(): bool {
+    $this->refreshConfigCacheability();
     $config = $this->configFactory->get('simple_oauth.settings');
     return !(bool) $config->get('disable_openid_connect');
+  }
+
+  /**
+   * Refreshes config dependencies without retaining earlier override metadata.
+   *
+   * Claims and PKCE methods can run in either order. Rebuild their combined
+   * dependencies each time, keeping subclass baseline cacheability separate.
+   */
+  private function refreshConfigCacheability(): void {
+    $this->generationCacheability = CacheableMetadata::createFromObject($this->configFactory->get('simple_oauth.settings'));
+    if ($this->pkceSettings !== NULL) {
+      $this->generationCacheability->addCacheableDependency($this->configFactory->get('simple_oauth_pkce.settings'));
+    }
   }
 
 }

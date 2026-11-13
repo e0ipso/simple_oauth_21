@@ -531,7 +531,7 @@ final class ComprehensiveOAuth21FunctionalTest extends BrowserTestBase {
 
     // Create a pre-existing consumer (simulating manually configured client).
     $consumer = Consumer::create([
-      'uuid' => 'existing-client-id',
+      'client_id' => 'existing-client-id',
       'label' => 'Existing OAuth Client',
       'description' => 'Pre-existing manually configured client',
       'grant_types' => ['authorization_code', 'refresh_token'],
@@ -560,7 +560,7 @@ final class ComprehensiveOAuth21FunctionalTest extends BrowserTestBase {
 
     // Test that both clients are accessible.
     $consumer_storage = $this->container->get('entity_type.manager')->getStorage('consumer');
-    $existing_client = $consumer_storage->loadByProperties(['uuid' => 'existing-client-id']);
+    $existing_client = $consumer_storage->loadByProperties(['client_id' => 'existing-client-id']);
     $this->assertNotEmpty($existing_client, 'Existing client should still be accessible');
     $new_client = $consumer_storage->loadByProperties(['client_id' => $new_client_data['client_id']]);
     $this->assertNotEmpty($new_client, 'New client should be accessible');

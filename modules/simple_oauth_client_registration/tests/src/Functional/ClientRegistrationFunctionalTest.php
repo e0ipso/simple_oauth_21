@@ -6,11 +6,13 @@ namespace Drupal\Tests\simple_oauth_client_registration\Functional;
 
 use Drupal\consumers\Entity\ConsumerInterface;
 use GuzzleHttp\ClientInterface;
+use GuzzleHttp\Cookie\CookieJar;
 use Drupal\Component\Serialization\Json;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Entity\EntityStorageException;
 use Drupal\simple_oauth\Entity\Oauth2Scope;
 use Drupal\simple_oauth\Oauth2ScopeInterface;
+use Drupal\simple_oauth\Plugin\Validation\Constraint\Oauth2PrivilegedConsumerField;
 use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
 use League\OAuth2\Server\Entities\ScopeEntityInterface;
 use Psr\Log\LoggerInterface;
@@ -943,6 +945,7 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
 
     $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
       RequestOptions::JSON => $client_metadata_explicit_grants,
+      RequestOptions::COOKIES => $this->registrationAdministratorCookies(),
       RequestOptions::HEADERS => [
         'Content-Type' => 'application/json',
         'Accept' => 'application/json',
@@ -1038,6 +1041,57 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
   }
 
   /**
+   * Tests anonymous registration respects upstream grant privilege checks.
+   *
+   * @throws \GuzzleHttp\Exception\GuzzleException
+   *   If an HTTP request fails.
+   */
+  public function testClientCredentialsRegistrationPrivilege(): void {
+    $metadata = [
+      'client_name' => 'Client credentials privilege boundary',
+      'redirect_uris' => ['https://example.com/callback'],
+      'grant_types' => ['client_credentials'],
+    ];
+    $protected = class_exists(Oauth2PrivilegedConsumerField::class);
+    $storage = $this->container->get('entity_type.manager')->getStorage('consumer');
+    $before = count($storage->loadMultiple());
+    $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
+      RequestOptions::JSON => $metadata,
+      RequestOptions::HTTP_ERRORS => FALSE,
+    ]);
+    // Older supported upstream versions have no privileged-field constraint.
+    $this->assertSame($protected ? 400 : 201, $response->getStatusCode());
+    if ($protected) {
+      $this->assertSame('invalid_client_metadata', Json::decode((string) $response->getBody())['error']);
+      $storage->resetCache();
+      $this->assertCount($before, $storage->loadMultiple());
+    }
+    $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
+      RequestOptions::JSON => $metadata,
+      RequestOptions::COOKIES => $this->registrationAdministratorCookies(),
+    ]);
+    $this->assertSame(201, $response->getStatusCode());
+    $this->assertSame(['client_credentials'], Json::decode((string) $response->getBody())['grant_types']);
+  }
+
+  /**
+   * Creates an actor permitted to assign privileged consumer fields.
+   *
+   * Use these cookies only for fixture creation, so registration management
+   * requests still run without administrative session authority.
+   *
+   * @return \GuzzleHttp\Cookie\CookieJar
+   *   Session cookies for the fixture administrator.
+   */
+  private function registrationAdministratorCookies(): CookieJar {
+    $definitions = $this->container->get('user.permissions')->getPermissions();
+    $permission = 'administer consumer access settings';
+    $actor = $this->drupalCreateUser(isset($definitions[$permission]) ? [$permission] : []);
+    $this->drupalLogin($actor);
+    return $this->getSessionCookies();
+  }
+
+  /**
    * Tests scope selection and deduplication across supported grant types.
    */
   public function testRequestedScopesRespectGrantTypes(): void {
@@ -1045,9 +1099,11 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
     $this->createRegistrationScope('test:machine', ['client_credentials']);
     $this->createRegistrationScope('test:shared', ['authorization_code', 'client_credentials']);
     $this->clearAllTestCaches();
+    $registration_cookies = $this->registrationAdministratorCookies();
 
     foreach ([['client_credentials'], ['authorization_code', 'client_credentials']] as $grant_types) {
       $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
+        RequestOptions::COOKIES => $registration_cookies,
         RequestOptions::JSON => [
           'redirect_uris' => ['https://example.com/callback'],
           'grant_types' => $grant_types,
@@ -1120,6 +1176,7 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
     $user = $this->drupalCreateUser();
     $this->clearAllTestCaches();
     $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
+      RequestOptions::COOKIES => $this->registrationAdministratorCookies(),
       RequestOptions::JSON => [
         'redirect_uris' => ['https://example.com/callback'],
         'grant_types' => ['client_credentials'],
@@ -1220,9 +1277,11 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
     $this->container->get('state')->set('simple_oauth_registration_test.legacy_scope_field', TRUE);
     $this->container->get('entity_field.manager')->clearCachedFieldDefinitions();
     $this->clearAllTestCaches();
+    $registration_cookies = $this->registrationAdministratorCookies();
 
     foreach (['authorization_code', 'client_credentials'] as $grant_type) {
       $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
+        RequestOptions::COOKIES => $grant_type === 'client_credentials' ? $registration_cookies : NULL,
         RequestOptions::JSON => [
           'redirect_uris' => ['https://example.com/callback'],
           'grant_types' => [$grant_type],

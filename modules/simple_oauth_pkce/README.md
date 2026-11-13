@@ -45,8 +45,8 @@ OAuth 2.1 mandates PKCE for all authorization code flows to prevent authorizatio
 
 ### Requirements
 
-- Drupal 10.2 or later in the 10.x series, or Drupal 11.x
-- Simple OAuth 2.1 umbrella module with Simple OAuth >=6.0.3,<7.0
+- Drupal 10.3 or later in the 10.x series, or Drupal 11.x
+- Simple OAuth 2.1 umbrella module with Simple OAuth >=6.1.4,<7.0
 - PHP 8.1+ with hash extension (for S256 method)
 
 Selected dependency releases may require a newer Drupal version. Use PHP and

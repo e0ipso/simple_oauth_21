@@ -19,17 +19,35 @@ services:
       - '@simple_oauth_client_registration.service.token'
       - '@file_url_generator'
       - '@simple_oauth.oauth2_scope.provider'
+      - '@simple_oauth_client_registration.metadata_mapper'
+
+  simple_oauth_client_registration.metadata_mapper:
+    class: Drupal\simple_oauth_client_registration\Service\ClientMetadataMapper
+    arguments:
+      - '@file_url_generator'
+      - '@simple_oauth_client_registration.auth_method_resolver'
+
+  simple_oauth_client_registration.auth_method_resolver:
+    class: Drupal\simple_oauth_client_registration\Service\TokenEndpointAuthMethodResolver
 
   simple_oauth_client_registration.service.token:
     class: Drupal\simple_oauth_client_registration\Service\RegistrationTokenService
     arguments:
       - '@database'
       - '@logger.channel.simple_oauth_client_registration'
+      - '@datetime.time'
+
+  simple_oauth_client_registration.response_subscriber:
+    class: Drupal\simple_oauth_client_registration\EventSubscriber\RegistrationResponseSubscriber
+    tags:
+      - { name: event_subscriber }
 
   simple_oauth_client_registration.normalizer:
     class: Drupal\simple_oauth_client_registration\Normalizer\ClientRegistrationNormalizer
     arguments:
       - '@simple_oauth_client_registration.service.token'
       - '@file_url_generator'
+      - '@plugin.manager.oauth2_grant.processor'
+      - '@simple_oauth_client_registration.metadata_mapper'
     tags:
       - { name: normalizer, priority: 10 }

@@ -13,88 +13,16 @@ declare(strict_types=1);
  */
 
 use Drupal\Core\Database\Database;
+use Drupal\Core\Entity\ContentEntityTypeInterface;
+use Drupal\simple_oauth_device_flow\Entity\DeviceCodeStorageSchema;
+use Drupal\Core\Utility\UpdateException;
 
 /**
  * Implements hook_schema().
  */
-function simple_oauth_device_flow_schema() {
-  $schema = [];
-
-  $schema['oauth2_device_code'] = [
-    'description' => 'Stores OAuth 2.0 device codes for RFC 8628 device flow',
-    'fields' => [
-      'device_code' => [
-        'type' => 'varchar',
-        'length' => 128,
-        'not null' => TRUE,
-        'description' => 'The device code identifier',
-      ],
-      'user_code' => [
-        'type' => 'varchar',
-        'length' => 32,
-        'not null' => TRUE,
-        'description' => 'Human-readable user code',
-      ],
-      'client_id' => [
-        'type' => 'varchar',
-        'length' => 128,
-        'not null' => TRUE,
-        'description' => 'OAuth client identifier',
-      ],
-      'user_id' => [
-        'type' => 'int',
-        'unsigned' => TRUE,
-        'description' => 'User ID once authorized',
-      ],
-      'authorized' => [
-        'type' => 'int',
-        'size' => 'tiny',
-        'default' => 0,
-        'description' => 'Authorization status',
-      ],
-      'authorized_at' => [
-        'type' => 'int',
-        'description' => 'Authorized timestamp',
-      ],
-      'created_at' => [
-        'type' => 'int',
-        'not null' => TRUE,
-        'description' => 'Creation timestamp',
-      ],
-      'expires_at' => [
-        'type' => 'int',
-        'not null' => TRUE,
-        'description' => 'Expiration timestamp',
-      ],
-      'last_polled_at' => [
-        'type' => 'int',
-        'description' => 'Last polling timestamp',
-      ],
-      'interval' => [
-        'type' => 'int',
-        'default' => 5,
-        'description' => 'Polling interval in seconds',
-      ],
-      'langcode' => [
-        'type' => 'varchar',
-        'length' => 12,
-        'not null' => TRUE,
-        'default' => 'en',
-        'description' => 'Language code',
-      ],
-    ],
-    'primary key' => ['device_code'],
-    'unique keys' => [
-      'user_code' => ['user_code'],
-    ],
-    'indexes' => [
-      'client_id' => ['client_id'],
-      'expires_at' => ['expires_at'],
-      'user_id' => ['user_id'],
-    ],
-  ];
-
-  return $schema;
+function simple_oauth_device_flow_schema(): array {
+  // Entity API owns the base table and the dedicated scope field table.
+  return [];
 }
 
 /**
@@ -102,16 +30,6 @@ function simple_oauth_device_flow_schema() {
  */
 function simple_oauth_device_flow_install($is_syncing) {
   if (!$is_syncing) {
-    // Set default configuration values.
-    $config = \Drupal::configFactory()->getEditable('simple_oauth_device_flow.settings');
-    $config->setData([
-      'device_code_lifetime' => 600,
-      'user_code_length' => 8,
-      'polling_interval' => 5,
-      'verification_uri_complete_enabled' => TRUE,
-    ]);
-    $config->save();
-
     // Log successful installation.
     \Drupal::service('logger.channel.simple_oauth_device_flow')->info('Simple OAuth Device Flow module installed successfully.');
   }
@@ -121,6 +39,7 @@ function simple_oauth_device_flow_install($is_syncing) {
  * Implements hook_uninstall().
  */
 function simple_oauth_device_flow_uninstall($is_syncing) {
+  \Drupal::state()->delete('simple_oauth_device_flow.cleanup_last_success');
   if (!$is_syncing) {
     // Remove configuration.
     \Drupal::configFactory()->getEditable('simple_oauth_device_flow.settings')->delete();
@@ -199,4 +118,31 @@ function simple_oauth_device_flow_requirements($phase) {
   }
 
   return $requirements;
+}
+
+/**
+ * Assign device table keys and schema tracking to the entity schema handler.
+ */
+function simple_oauth_device_flow_update_10001(): void {
+  $repository = \Drupal::service('entity.last_installed_schema.repository');
+  $definition = $repository->getLastInstalledDefinition('oauth2_device_code');
+  if (!$definition instanceof ContentEntityTypeInterface) {
+    throw new UpdateException('The installed device entity definition is missing. Restore schema tracking before retrying.');
+  }
+  // Use installed definitions, not a reinstall or automatic field updates.
+  $definition = clone $definition;
+  $definition->setHandlerClass('storage_schema', DeviceCodeStorageSchema::class);
+  $manager = \Drupal::entityTypeManager();
+  $schema = new DeviceCodeStorageSchema(
+    $manager, $definition, $manager->getStorage('oauth2_device_code'),
+    Database::getConnection(), \Drupal::service('entity_field.manager'),
+  );
+  try {
+    $schema->adoptInstalledTable($definition);
+  }
+  catch (\Exception $exception) {
+    throw new UpdateException('Device table ownership update stopped: ' . $exception->getMessage(), 0, $exception);
+  }
+  $repository->setLastInstalledDefinition($definition);
+  $manager->clearCachedDefinitions();
 }

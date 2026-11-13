@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_native_apps\Plugin\Validation\Constraint;
 
 use Symfony\Component\Validator\Constraint;
@@ -14,6 +16,13 @@ use Symfony\Component\Validator\Constraint;
  * )
  */
 class NativeAppRedirectUri extends Constraint {
+
+  /**
+   * The violation message for ambiguous native policy ownership.
+   *
+   * @var string
+   */
+  public string $policyConflictMessage = 'Native policy ownership requires reconciliation before this redirect URI can be validated.';
 
   /**
    * The default violation message for invalid URIs.

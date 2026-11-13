@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace Drupal\simple_oauth_server_metadata\Controller;
 
 use Drupal\Core\Cache\CacheableJsonResponse;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Http\Exception\CacheableNotFoundHttpException;
 use Drupal\simple_oauth_server_metadata\Service\OpenIdConfigurationService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
 
 /**
@@ -51,7 +52,7 @@ final class OpenIdConfigurationController extends ControllerBase {
    * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   The JSON response containing OpenID Connect Discovery metadata.
    *
-   * @throws \Symfony\Component\HttpKernel\Exception\NotFoundHttpException
+   * @throws \Drupal\Core\Http\Exception\CacheableNotFoundHttpException
    *   When OpenID Connect is disabled.
    */
   public function configuration(): CacheableJsonResponse {
@@ -65,7 +66,10 @@ final class OpenIdConfigurationController extends ControllerBase {
 
     if ($is_disabled) {
       $this->getLogger('simple_oauth_server_metadata')->debug('❌ OpenID Connect is disabled - throwing NotFoundHttpException');
-      throw new NotFoundHttpException('OpenID Connect is not enabled');
+      // Share site variation with the enabled JSON response on this route.
+      $cacheability = CacheableMetadata::createFromObject($simple_oauth_config)
+        ->addCacheContexts(['url.site']);
+      throw new CacheableNotFoundHttpException($cacheability, 'OpenID Connect is not enabled');
     }
 
     $this->getLogger('simple_oauth_server_metadata')->debug('✅ OpenID Connect is enabled - proceeding to get metadata');
@@ -82,6 +86,7 @@ final class OpenIdConfigurationController extends ControllerBase {
 
       // Add cache metadata from service.
       $response->addCacheableDependency($this->openIdConfigurationService);
+      $response->addCacheableDependency($simple_oauth_config);
 
       // Add CORS headers for cross-origin requests.
       $response->headers->set('Access-Control-Allow-Origin', '*');

@@ -7,7 +7,9 @@ namespace Drupal\simple_oauth_device_flow\Plugin\Oauth2Grant;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\simple_oauth\Plugin\Oauth2GrantBase;
+use Drupal\simple_oauth_21\Plugin\Oauth2GrantIdentifierInterface;
 use Drupal\simple_oauth_device_flow\Service\DeviceFlowSettingsService;
+use Drupal\simple_oauth_device_flow\DeviceGrantType;
 use League\OAuth2\Server\Grant\DeviceCodeGrant as LeagueDeviceCodeGrant;
 use League\OAuth2\Server\Grant\GrantTypeInterface;
 use League\OAuth2\Server\Repositories\DeviceCodeRepositoryInterface;
@@ -26,7 +28,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *   label = @Translation("Device Code"),
  * )
  */
-final class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryPluginInterface {
+final class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryPluginInterface, Oauth2GrantIdentifierInterface {
 
   /**
    * The device code repository.
@@ -96,6 +98,13 @@ final class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryP
   /**
    * {@inheritdoc}
    */
+  public function getGrantTypeIdentifier(): string {
+    return DeviceGrantType::CANONICAL;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function getGrantType(Consumer $client): GrantTypeInterface {
     $config = $this->settings->getConfig();
 
@@ -104,7 +113,7 @@ final class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryP
     $device_code_ttl = new \DateInterval(sprintf('PT%dS', $device_code_lifetime));
 
     // Get verification URI (default path).
-    $verification_uri = $config->get('verification_uri') ?? '/oauth/device/verify';
+    $verification_uri = $this->settings->getAbsoluteVerificationUri();
 
     // Get polling interval (default 5 seconds).
     $polling_interval = $config->get('polling_interval') ?? 5;
@@ -170,7 +179,7 @@ final class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryP
 
     return [
       'device_code_lifetime' => $this->settings->getDeviceCodeExpiration(),
-      'verification_uri' => $config->get('verification_uri') ?? '/oauth/device/verify',
+      'verification_uri' => $this->settings->getVerificationUri(),
       'polling_interval' => $config->get('polling_interval') ?? 5,
       'user_code_length' => $config->get('user_code_length') ?? 8,
       'user_code_format' => $config->get('user_code_format') ?? 'XXXX-XXXX',
@@ -187,14 +196,7 @@ final class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryP
    *   TRUE if the client can use device code grant.
    */
   public function isClientEligible(Consumer $client): bool {
-    // Check if device_code grant is enabled for this client.
-    foreach ($client->get('grant_types')->getValue() as $grant_type) {
-      if ($grant_type['value'] === 'device_code') {
-        return TRUE;
-      }
-    }
-
-    return FALSE;
+    return DeviceGrantType::select($client) !== NULL;
   }
 
   /**

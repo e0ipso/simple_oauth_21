@@ -2,7 +2,7 @@ name: 'Simple OAuth 2.1'
 type: module
 description: 'OAuth 2.1 compliance umbrella module with integrated dashboard and submodule coordination'
 package: Authentication
-core_version_requirement: ^10.2 || ^11
+core_version_requirement: ^10.3 || ^11
 dependencies:
-  - simple_oauth:simple_oauth (>=6.0.3, <7.0)
+  - simple_oauth:simple_oauth (>=6.1.4, <7.0)
 configure: simple_oauth_21.dashboard

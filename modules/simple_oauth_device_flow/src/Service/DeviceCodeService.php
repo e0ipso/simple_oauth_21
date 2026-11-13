@@ -6,9 +6,18 @@ namespace Drupal\simple_oauth_device_flow\Service;
 
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\Core\Lock\LockBackendInterface;
+use Drupal\Core\State\StateInterface;
+use Drupal\simple_oauth_device_flow\Repository\DeviceCodeMaintenanceInterface;
+use Drupal\simple_oauth_device_flow\Repository\DeviceCodeStorageMaintenance;
 use Drupal\simple_oauth_device_flow\Entity\DeviceCode;
-use Drupal\simple_oauth_device_flow\Repository\DeviceCodeRepository;
+use Drupal\simple_oauth\Oauth2ScopeAdapterInterface;
+use Drupal\simple_oauth_device_flow\Repository\DeviceCodeLifecycleRepositoryInterface;
+use Drupal\simple_oauth_device_flow\Repository\DeviceCodeLifecycleOperationsInterface;
 use Psr\Log\LoggerInterface;
+use League\OAuth2\Server\Entities\ScopeEntityInterface;
+use League\OAuth2\Server\Exception\OAuthServerException;
+use League\OAuth2\Server\Repositories\ScopeRepositoryInterface;
 
 /**
  * Service for managing Device Code lifecycle and cleanup operations.
@@ -29,9 +38,14 @@ final class DeviceCodeService {
   protected LoggerInterface $logger;
 
   /**
+   * Whether either operation in the current cleanup failed.
+   */
+  private bool $cleanupFailed = FALSE;
+
+  /**
    * Constructs a DeviceCodeService.
    *
-   * @param \Drupal\simple_oauth_device_flow\Repository\DeviceCodeRepository $deviceCodeRepository
+   * @param \Drupal\simple_oauth_device_flow\Repository\DeviceCodeLifecycleOperationsInterface $deviceCodeRepository
    *   The device code repository.
    * @param \Drupal\simple_oauth_device_flow\Service\UserCodeGenerator $userCodeGenerator
    *   The user code generator service.
@@ -41,13 +55,30 @@ final class DeviceCodeService {
    *   The time service.
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $loggerFactory
    *   The logger channel factory.
+   * @param \League\OAuth2\Server\Repositories\ScopeRepositoryInterface $scopeRepository
+   *   The scope repository.
+   * @param \Drupal\simple_oauth_device_flow\Repository\DeviceCodeMaintenanceInterface|null $maintenance
+   *   Maintenance operations, or NULL to use repository maintenance or legacy
+   *   storage. Without either, cleanup logs failure and returns zero, scheduled
+   *   cleanup remains due, and statistics include an error.
+   * @param \Drupal\Core\State\StateInterface $state
+   *   Scheduling state.
+   * @param \Drupal\Core\Lock\LockBackendInterface $lock
+   *   The scheduling lock.
+   * @param \Drupal\simple_oauth\Oauth2ScopeAdapterInterface|null $scopeProvider
+   *   The provider for issuance through replacement lifecycle repositories.
    */
   public function __construct(
-    protected DeviceCodeRepository $deviceCodeRepository,
+    protected DeviceCodeLifecycleOperationsInterface $deviceCodeRepository,
     protected UserCodeGenerator $userCodeGenerator,
     protected DeviceFlowSettingsService $settings,
     protected TimeInterface $time,
     LoggerChannelFactoryInterface $loggerFactory,
+    private readonly ScopeRepositoryInterface $scopeRepository,
+    private readonly ?DeviceCodeMaintenanceInterface $maintenance,
+    private readonly StateInterface $state,
+    private readonly LockBackendInterface $lock,
+    private readonly ?Oauth2ScopeAdapterInterface $scopeProvider = NULL,
   ) {
     $this->logger = $loggerFactory->get('simple_oauth_device_flow');
   }
@@ -66,22 +97,10 @@ final class DeviceCodeService {
       $batch_size = $this->getCleanupBatchSize();
       $current_time = $this->time->getCurrentTime();
 
-      $storage = $this->deviceCodeRepository->getStorage();
-      $query = $storage->getQuery()
-        ->accessCheck(FALSE)
-        ->condition('expires_at', $current_time, '<')
-        ->range(0, $batch_size);
-
-      $expired_ids = $query->execute();
-
-      if (empty($expired_ids)) {
+      $count = $this->getMaintenance()->deleteExpired($current_time, $batch_size);
+      if ($count === 0) {
         return 0;
       }
-
-      $expired_entities = $storage->loadMultiple($expired_ids);
-      $storage->delete($expired_entities);
-
-      $count = count($expired_entities);
 
       if ($this->isStatisticsLoggingEnabled()) {
         $this->logger->info('Cleaned up @count expired device codes (batch size: @batch_size)', [
@@ -93,6 +112,7 @@ final class DeviceCodeService {
       return $count;
     }
     catch (\Exception $e) {
+      $this->cleanupFailed = TRUE;
       $this->logger->error('Failed to cleanup expired device codes: @exception_type', [
         '@exception_type' => get_class($e),
       ]);
@@ -117,23 +137,10 @@ final class DeviceCodeService {
       $batch_size = $this->getCleanupBatchSize();
       $cutoff_time = $this->time->getCurrentTime() - ($retention_days * 86400);
 
-      $storage = $this->deviceCodeRepository->getStorage();
-      $query = $storage->getQuery()
-        ->accessCheck(FALSE)
-        ->condition('authorized', TRUE)
-        ->condition('created_at', $cutoff_time, '<')
-        ->range(0, $batch_size);
-
-      $old_ids = $query->execute();
-
-      if (empty($old_ids)) {
+      $count = $this->getMaintenance()->deleteOldAuthorized($cutoff_time, $batch_size);
+      if ($count === 0) {
         return 0;
       }
-
-      $old_entities = $storage->loadMultiple($old_ids);
-      $storage->delete($old_entities);
-
-      $count = count($old_entities);
 
       if ($this->isStatisticsLoggingEnabled()) {
         $this->logger->info('Cleaned up @count old authorized device codes (retention: @days days, batch size: @batch_size)', [
@@ -146,6 +153,7 @@ final class DeviceCodeService {
       return $count;
     }
     catch (\Exception $e) {
+      $this->cleanupFailed = TRUE;
       $this->logger->error('Failed to cleanup old authorized device codes: @exception_type', [
         '@exception_type' => get_class($e),
       ]);
@@ -160,31 +168,25 @@ final class DeviceCodeService {
    * the last polled timestamp. Returns appropriate response for slow_down
    * if polling too frequently.
    *
+   * This legacy entry point is deprecated. Use the League grant for routed
+   * token polling. It retains its existing interval response policy.
+   *
    * @param \Drupal\simple_oauth_device_flow\Entity\DeviceCode $deviceCode
    *   The device code entity to validate polling for.
    *
    * @return array
    *   Array with 'valid' boolean and optional 'error' and 'error_description'.
+   *
+   * @see \League\OAuth2\Server\Grant\DeviceCodeGrant::respondToAccessTokenRequest()
    */
   public function validatePollingInterval(DeviceCode $deviceCode): array {
     try {
       $current_time = $this->time->getCurrentTime();
       $polling_interval = $this->settings->getPollingInterval();
-      $last_polled = $deviceCode->get('last_polled_at')->value ?? 0;
-
-      // Calculate time since last poll.
-      $time_since_last_poll = $current_time - $last_polled;
-
-      // Check if polling too frequently.
-      if ($time_since_last_poll < $polling_interval) {
-        $remaining_time = $polling_interval - $time_since_last_poll;
-
-        $this->logger->debug('Client polling too frequently for device code entity @entity_id. Time since last poll: @time_since, Required interval: @interval', [
-          '@entity_id' => $deviceCode->id(),
-          '@time_since' => $time_since_last_poll,
-          '@interval' => $polling_interval,
-        ]);
-
+      $remaining_time = $this->deviceCodeRepository->recordPolling(
+        $deviceCode->getIdentifier(), $current_time, $polling_interval,
+      );
+      if ($remaining_time > 0) {
         return [
           'valid' => FALSE,
           'error' => 'slow_down',
@@ -195,15 +197,12 @@ final class DeviceCodeService {
         ];
       }
 
-      // Update last polled timestamp.
-      $deviceCode->set('last_polled_at', $current_time);
-      $deviceCode->save();
-
+      // Retain the public helper's timestamp update on the supplied instance.
+      $deviceCode->setLastPolledAt(new \DateTimeImmutable('@' . $current_time));
       return ['valid' => TRUE];
     }
     catch (\Exception $e) {
-      $this->logger->error('Failed to validate polling interval for device code entity @entity_id: @exception_type', [
-        '@entity_id' => $deviceCode->id(),
+      $this->logger->error('Failed to validate device polling interval: @exception_type', [
         '@exception_type' => get_class($e),
       ]);
 
@@ -227,37 +226,7 @@ final class DeviceCodeService {
   public function getStatistics(): array {
     try {
       $current_time = $this->time->getCurrentTime();
-      $storage = $this->deviceCodeRepository->getStorage();
-
-      // Count active device codes (not expired, not authorized).
-      $active_query = $storage->getQuery()
-        ->accessCheck(FALSE)
-        ->condition('authorized', FALSE)
-        ->condition('expires_at', $current_time, '>=');
-      $active_count = $active_query->count()->execute();
-
-      // Count authorized device codes.
-      $authorized_query = $storage->getQuery()
-        ->accessCheck(FALSE)
-        ->condition('authorized', TRUE);
-      $authorized_count = $authorized_query->count()->execute();
-
-      // Count expired device codes.
-      $expired_query = $storage->getQuery()
-        ->accessCheck(FALSE)
-        ->condition('expires_at', $current_time, '<');
-      $expired_count = $expired_query->count()->execute();
-
-      // Count total device codes.
-      $total_query = $storage->getQuery()
-        ->accessCheck(FALSE);
-      $total_count = $total_query->count()->execute();
-
-      $statistics = [
-        'active_codes' => (int) $active_count,
-        'authorized_codes' => (int) $authorized_count,
-        'expired_codes' => (int) $expired_count,
-        'total_codes' => (int) $total_count,
+      $statistics = $this->getMaintenance()->countDeviceCodes($current_time) + [
         'timestamp' => $current_time,
         'retention_days' => $this->getCleanupRetentionDays(),
         'cleanup_batch_size' => $this->getCleanupBatchSize(),
@@ -304,11 +273,24 @@ final class DeviceCodeService {
    * @return array
    *   Array containing device_code, user_code, expires_in, and interval.
    *
+   * @throws \League\OAuth2\Server\Exception\OAuthServerException
+   *   When a requested public scope name is unknown.
    * @throws \RuntimeException
    *   When device authorization generation fails.
    */
   public function generateDeviceAuthorization($client_entity, string $scope = ''): array {
     try {
+      // Validate independently of generator extensions before creating codes.
+      $generation = $this->settings->getGenerationSettings();
+      // Resolve all public names before issuing or persisting credentials.
+      $scopes = [];
+      foreach (array_filter(explode(' ', trim($scope)), static fn(string $name): bool => $name !== '') as $name) {
+        $resolved = $this->scopeRepository->getScopeEntityByIdentifier($name);
+        if (!$resolved instanceof ScopeEntityInterface) {
+          throw OAuthServerException::invalidScope($name);
+        }
+        $scopes[] = $resolved;
+      }
       // Generate a unique device code.
       $device_code = $this->generateUniqueDeviceCode();
 
@@ -316,13 +298,16 @@ final class DeviceCodeService {
       $user_code = $this->userCodeGenerator->generateUserCode();
 
       // Get configuration values.
-      $expires_in = $this->settings->getDeviceCodeExpiration();
+      $expires_in = $generation['lifetime'];
       $polling_interval = $this->settings->getPollingInterval();
       $current_time = $this->time->getCurrentTime();
       $expires_at = $current_time + $expires_in;
 
       // Create device code entity.
       $device_code_entity = $this->deviceCodeRepository->getNewDeviceCode();
+      if ($this->scopeProvider !== NULL) {
+        $device_code_entity->setScopeProvider($this->scopeProvider);
+      }
       $device_code_entity->setIdentifier($device_code);
       $device_code_entity->setUserCode($user_code);
       $device_code_entity->setClient($client_entity);
@@ -333,11 +318,10 @@ final class DeviceCodeService {
       $device_code_entity->set('expires_at', $expires_at);
       $device_code_entity->set('authorized', FALSE);
 
-      // Parse scope string and add each scope directly to the field.
-      $scope_array = !empty($scope) ? explode(' ', trim($scope)) : [];
-      foreach ($scope_array as $scope_id) {
-        $device_code_entity->get('scopes')->appendItem(['scope_id' => trim($scope_id)]);
+      foreach ($scopes as $resolved) {
+        $device_code_entity->addScope($resolved);
       }
+      $device_code_entity->setInterval($polling_interval);
 
       // Persist the device code with all fields set.
       $this->deviceCodeRepository->persistDeviceCode($device_code_entity);
@@ -352,6 +336,9 @@ final class DeviceCodeService {
         'expires_in' => $expires_in,
         'interval' => $polling_interval,
       ];
+    }
+    catch (OAuthServerException $e) {
+      throw $e;
     }
     catch (\Exception $e) {
       $this->logger->error('Failed to generate device authorization: @exception_type', [
@@ -371,6 +358,7 @@ final class DeviceCodeService {
    *   Array with cleanup results including counts for both operations.
    */
   public function performCleanup(): array {
+    $this->cleanupFailed = FALSE;
     $start_time = microtime(TRUE);
 
     $expired_count = $this->cleanupExpiredCodes();
@@ -398,6 +386,68 @@ final class DeviceCodeService {
   }
 
   /**
+   * Runs due scheduled maintenance, recording only fully successful runs.
+   *
+   * Manual cleanup methods do not consult or update scheduling state. Failed
+   * batches retain the last success time and retry on the next cron invocation.
+   * An empty successful cleanup advances the schedule normally.
+   *
+   * @return array|null
+   *   Existing cleanup result keys, or NULL when skipped or a batch failed.
+   */
+  public function runScheduledCleanup(): ?array {
+    if (!$this->settings->isCleanupEnabled()) {
+      return NULL;
+    }
+    $lock = $this->lock;
+    $lock_name = 'simple_oauth_device_flow.cleanup';
+    if (!$lock->acquire($lock_name)) {
+      return NULL;
+    }
+    try {
+      // Read fresh state under the lock, after any concurrent run finishes.
+      $state = $this->state;
+      $state->resetCache();
+      $last_success = $state->get('simple_oauth_device_flow.cleanup_last_success');
+      $now = $this->time->getCurrentTime();
+      if ($last_success !== NULL && $now < $last_success + $this->settings->getCleanupInterval()) {
+        return NULL;
+      }
+      $result = $this->performCleanup();
+      if ($this->cleanupFailed) {
+        return NULL;
+      }
+      $state->set('simple_oauth_device_flow.cleanup_last_success', $this->time->getCurrentTime());
+      return $result;
+    }
+    finally {
+      $lock->release($lock_name);
+    }
+  }
+
+  /**
+   * Gets focused operations, adapting only legacy storage-based replacements.
+   *
+   * @return \Drupal\simple_oauth_device_flow\Repository\DeviceCodeMaintenanceInterface
+   *   The supplied operations or bounded compatibility adapter.
+   *
+   * @throws \RuntimeException
+   *   If neither maintenance operations nor legacy storage are available.
+   */
+  private function getMaintenance(): DeviceCodeMaintenanceInterface {
+    if ($this->maintenance !== NULL) {
+      return $this->maintenance;
+    }
+    if ($this->deviceCodeRepository instanceof DeviceCodeMaintenanceInterface) {
+      return $this->deviceCodeRepository;
+    }
+    if ($this->deviceCodeRepository instanceof DeviceCodeLifecycleRepositoryInterface) {
+      return new DeviceCodeStorageMaintenance($this->deviceCodeRepository);
+    }
+    throw new \RuntimeException('Device code maintenance operations are not available.');
+  }
+
+  /**
    * Gets the cleanup retention period in days.
    *
    * @return int
@@ -414,7 +464,7 @@ final class DeviceCodeService {
    *   Maximum number of codes to delete per cleanup operation.
    */
   protected function getCleanupBatchSize(): int {
-    return $this->settings->getConfig()->get('max_cleanup_batch_size') ?? 1000;
+    return max(1, $this->settings->getConfig()->get('max_cleanup_batch_size') ?? 1000);
   }
 
   /**

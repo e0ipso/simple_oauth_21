@@ -56,6 +56,9 @@ final class ClientRegistration {
    *   Timestamp when client_id was issued (only in responses).
    * @param int|null $clientSecretExpiresAt
    *   Timestamp when client_secret expires (only in responses).
+   * @param bool $contactsProvided
+   *   Whether an input array explicitly supplied contacts, including an empty
+   *   list. Direct constructor calls retain their existing nonempty behavior.
    */
   public function __construct(
     public readonly ?string $clientName = NULL,
@@ -79,6 +82,7 @@ final class ClientRegistration {
     public readonly ?string $registrationClientUri = NULL,
     public readonly ?int $clientIdIssuedAt = NULL,
     public readonly ?int $clientSecretExpiresAt = NULL,
+    public readonly bool $contactsProvided = FALSE,
   ) {}
 
   /**
@@ -101,6 +105,7 @@ final class ClientRegistration {
       clientUri: $data['client_uri'] ?? NULL,
       logoUri: $data['logo_uri'] ?? NULL,
       contacts: $data['contacts'] ?? [],
+      contactsProvided: array_key_exists('contacts', $data),
       tosUri: $data['tos_uri'] ?? NULL,
       policyUri: $data['policy_uri'] ?? NULL,
       jwksUri: $data['jwks_uri'] ?? NULL,
@@ -217,11 +222,16 @@ final class ClientRegistration {
    */
   public function validateRedirectUris(): void {
     foreach ($this->redirectUris as $uri) {
-      if (!is_string($uri) || !filter_var($uri, FILTER_VALIDATE_URL) || str_contains($uri, '#')) {
+      if (!is_string($uri) || !preg_match('/^[a-z][a-z0-9+.-]*:\S+$/iD', $uri) ||
+        preg_match('/[\x00-\x20\x7f]/', $uri) || str_contains($uri, '#') ||
+        parse_url($uri) === FALSE) {
         throw new \InvalidArgumentException('Invalid redirect URI');
       }
 
       $scheme = strtolower((string) parse_url($uri, PHP_URL_SCHEME));
+      if (in_array($scheme, ['http', 'https'], TRUE) && !filter_var($uri, FILTER_VALIDATE_URL)) {
+        throw new \InvalidArgumentException('Invalid redirect URI');
+      }
       if ($scheme === 'https') {
         continue;
       }
@@ -289,6 +299,7 @@ final class ClientRegistration {
       $registrationClientUri,
       $clientIdIssuedAt,
       $clientSecretExpiresAt,
+      $this->contactsProvided,
     );
   }
 

@@ -88,7 +88,13 @@
     "VARCHAR",
     "microtime",
     "Azko",
-    "langcode"
+    "langcode",
+    "Fieldable",
+    "Introspector",
+    "Lcobucci",
+    "Refinable",
+    "multibyte",
+    "preimage"
   ],
   "ignorePaths": [
     "node_modules/**",

@@ -1,6 +1,8 @@
 simple_oauth_device_flow.settings:
   type: config_object
   label: 'Simple OAuth Device Flow settings'
+  constraints:
+    DeviceCodeGeneration: []
   mapping:
     device_code_lifetime:
       type: integer
@@ -48,3 +50,27 @@ simple_oauth_device_flow.settings:
     enable_statistics_logging:
       type: boolean
       label: 'Enable statistics logging'
+    max_authorization_attempts:
+      type: integer
+      label: 'Maximum failed verification attempts per user per hour'
+      constraints:
+        Range:
+          min: 1
+    user_code_format:
+      type: string
+      label: 'Legacy user code format pattern'
+    user_code_uppercase:
+      type: boolean
+      label: 'Use uppercase user codes'
+    user_code_excluded_chars:
+      type: string
+      label: 'Characters excluded from generated user codes'
+    cleanup_enabled:
+      type: boolean
+      label: 'Enable automatic cleanup'
+    cleanup_interval:
+      type: integer
+      label: 'Cleanup interval in seconds'
+      constraints:
+        Range:
+          min: 1
