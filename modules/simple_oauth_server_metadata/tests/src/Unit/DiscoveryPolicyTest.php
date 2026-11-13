@@ -156,7 +156,7 @@ final class DiscoveryPolicyTest extends UnitTestCase {
         }
       }
       $legacy = new ClaimsAuthDiscoveryService($factory);
-      $this->assertFalse($legacy->getAuthorizationCodeFlowEnabled());
+      $this->assertTrue($legacy->getAuthorizationCodeFlowEnabled());
       $this->assertFalse($legacy->getImplicitFlowEnabled());
     }
   }

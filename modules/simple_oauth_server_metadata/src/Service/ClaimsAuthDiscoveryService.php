@@ -26,7 +26,7 @@ class ClaimsAuthDiscoveryService implements CacheableDependencyInterface {
    *   The optional global PKCE policy settings.
    * @param \Drupal\simple_oauth_server_metadata\Service\GrantTypeDiscoveryService|null $grantTypeDiscovery
    *   The optional capability discovery service. Legacy standalone callers
-   *   without it conservatively report no authorization code capability.
+   *   without it retain their historical authorization code capability result.
    */
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
@@ -200,8 +200,8 @@ class ClaimsAuthDiscoveryService implements CacheableDependencyInterface {
    */
   public function getAuthorizationCodeFlowEnabled(): bool {
     $this->refreshConfigCacheability();
-    return $this->grantTypeDiscovery !== NULL
-      && in_array('code', $this->grantTypeDiscovery->getResponseTypesSupported(), TRUE);
+    return $this->grantTypeDiscovery === NULL
+      || in_array('code', $this->grantTypeDiscovery->getResponseTypesSupported(), TRUE);
   }
 
   /**
