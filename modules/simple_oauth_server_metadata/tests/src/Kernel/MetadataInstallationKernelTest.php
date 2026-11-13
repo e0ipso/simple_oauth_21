@@ -53,6 +53,8 @@ final class MetadataInstallationKernelTest extends KernelTestBase {
    *
    * @param bool $explicit_endpoints
    *   Whether imported settings contain explicit endpoint overrides.
+   *
+   * @dataProvider importedEndpointProvider
    */
   #[DataProvider('importedEndpointProvider')]
   public function testSynchronizedInstallation(bool $explicit_endpoints): void {

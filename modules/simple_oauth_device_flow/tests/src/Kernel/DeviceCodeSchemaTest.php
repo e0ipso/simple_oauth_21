@@ -88,6 +88,8 @@ final class DeviceCodeSchemaTest extends KernelTestBase {
    *
    * @param bool $hook_table
    *   Whether to reproduce the former hook-owned base table.
+   *
+   * @dataProvider legacyInstallProvider
    */
   #[DataProvider('legacyInstallProvider')]
   public function testUpgradePreservesRows(bool $hook_table): void {

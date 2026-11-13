@@ -4,15 +4,12 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\simple_oauth_server_metadata\Unit;
 
-use Drupal\Core\Cache\CacheableDependencyInterface;
 use Drupal\Core\Cache\Context\CacheContextsManager;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
-use Drupal\simple_oauth\Oauth2ScopeInterface;
 use Drupal\simple_oauth\Oauth2ScopeProviderInterface;
 use Drupal\simple_oauth\Plugin\Oauth2GrantInterface;
 use Drupal\simple_oauth\Plugin\Oauth2GrantManager;
-use Drupal\simple_oauth_21\Plugin\Oauth2GrantIdentifierInterface;
 use Drupal\simple_oauth_server_metadata\Service\ClientAuthenticationService;
 use Drupal\simple_oauth_server_metadata\Service\ClaimsAuthDiscoveryService;
 use Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService;
@@ -23,6 +20,9 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Drupal\Core\Path\PathValidatorInterface;
 use Drupal\simple_oauth_server_metadata\Service\ScopeDiscoveryService;
 use Drupal\simple_oauth_server_metadata\Service\GrantTypeDiscoveryService;
+use Drupal\Tests\simple_oauth_server_metadata\Unit\Fixture\CacheableScopeInterface;
+use Drupal\Tests\simple_oauth_server_metadata\Unit\Fixture\CacheableScopeProviderInterface;
+use Drupal\Tests\simple_oauth_server_metadata\Unit\Fixture\DiscoveryGrantInterface;
 use Drupal\Tests\UnitTestCase;
 use GuzzleHttp\Psr7\ServerRequest;
 use League\OAuth2\Server\Repositories\ClientRepositoryInterface;
@@ -48,10 +48,7 @@ final class DiscoveryPolicyTest extends UnitTestCase {
    * Tests extension mappings, legacy fallback, and unavailable plugins.
    */
   public function testGrantWireIdentifierDiscovery(): void {
-    $mapped = $this->createMockForIntersectionOfInterfaces([
-      Oauth2GrantInterface::class,
-      Oauth2GrantIdentifierInterface::class,
-    ]);
+    $mapped = $this->createMock(DiscoveryGrantInterface::class);
     $mapped->method('getGrantTypeIdentifier')->willReturn('authorization_code');
     $mapped->expects($this->never())->method('getGrantType');
     $extension = $this->createMock(Oauth2GrantInterface::class);
@@ -101,10 +98,7 @@ final class DiscoveryPolicyTest extends UnitTestCase {
       }
       foreach (['client_credentials', 'code', 'authorization_code', 'replacement'] as $id) {
         $plugin = $id === 'replacement'
-          ? $this->createMockForIntersectionOfInterfaces([
-            Oauth2GrantInterface::class,
-            Oauth2GrantIdentifierInterface::class,
-          ])
+          ? $this->createMock(DiscoveryGrantInterface::class)
           : $this->createMock(Oauth2GrantInterface::class);
         if ($id === 'replacement') {
           $plugin->method('getGrantTypeIdentifier')->willReturn('authorization_code');
@@ -251,10 +245,7 @@ final class DiscoveryPolicyTest extends UnitTestCase {
    * Tests unknown collections expire while item dependencies refresh each call.
    */
   public function testExternalCollectionCacheability(): void {
-    $scope = $this->createMockForIntersectionOfInterfaces([
-      Oauth2ScopeInterface::class,
-      CacheableDependencyInterface::class,
-    ]);
+    $scope = $this->createMock(CacheableScopeInterface::class);
     $scope->method('getName')->willReturn('openid');
     $scope->method('getCacheTags')->willReturn(['external:item']);
     $scope->method('getCacheContexts')->willReturn(['url.query_args']);
@@ -276,10 +267,7 @@ final class DiscoveryPolicyTest extends UnitTestCase {
    * Tests collection dependencies supplied by custom providers.
    */
   public function testCacheableCollectionProvider(): void {
-    $provider = $this->createMockForIntersectionOfInterfaces([
-      Oauth2ScopeProviderInterface::class,
-      CacheableDependencyInterface::class,
-    ]);
+    $provider = $this->createMock(CacheableScopeProviderInterface::class);
     $provider->method('loadMultiple')->willReturn([]);
     $provider->method('getCacheTags')->willReturn(['external:collection']);
     $provider->method('getCacheContexts')->willReturn(['url.site']);

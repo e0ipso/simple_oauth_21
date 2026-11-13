@@ -24,6 +24,8 @@ final class ClientRegistrationTest extends UnitTestCase {
    *   The explicitly supplied application type, or NULL for omission.
    * @param bool $valid
    *   Whether registration's URI policy permits the URI.
+   *
+   * @dataProvider redirectProvider
    */
   #[DataProvider('redirectProvider')]
   public function testRedirectUris(string $uri, ?string $application_type, bool $valid): void {

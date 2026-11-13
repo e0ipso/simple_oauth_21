@@ -106,6 +106,8 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
    *
    * @param string $config_name
    *   The configuration consumed by discovery.
+   *
+   * @dataProvider discoveryConfigProvider
    */
   #[DataProvider('discoveryConfigProvider')]
   public function testConfigOverrideCacheability(string $config_name): void {
@@ -513,6 +515,8 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
    *   The textarea field to submit.
    * @param string $value
    *   The invalid textarea contents.
+   *
+   * @dataProvider invalidTextareaProvider
    */
   #[DataProvider('invalidTextareaProvider')]
   public function testTextareaValidation(string $field, string $value): void {
