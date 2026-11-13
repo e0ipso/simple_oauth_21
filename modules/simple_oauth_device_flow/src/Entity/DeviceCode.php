@@ -298,7 +298,11 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
     $oauth2scopes = [];
     $provider = $this->getScopeProvider();
     foreach ($this->get('scopes')->getValue() as $scope) {
-      $id = (string) $scope['scope_id'];
+      $id = $scope['scope_id'] ?? NULL;
+      if ($id === NULL || $id === '') {
+        continue;
+      }
+      $id = (string) $id;
       // Read historical public names without rewriting their stored values.
       $scope_entity = $provider->load($id) ?? $provider->loadByName($id);
       if ($scope_entity !== NULL) {

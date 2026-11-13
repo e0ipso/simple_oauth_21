@@ -1801,6 +1801,23 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
   }
 
   /**
+   * Tests scope reads skip empty field items without provider lookups.
+   */
+  public function testEmptyScopeItemsDoNotResolve(): void {
+    $this->installDeviceFixtures();
+    $repository = $this->container->get('simple_oauth_device_flow.device_code_repository');
+    $entity = $repository->getNewDeviceCode();
+    $provider = $this->createMock(Oauth2ScopeProviderInterface::class);
+    $provider->expects($this->never())->method('load');
+    $provider->expects($this->never())->method('loadByName');
+    $entity->setScopeProvider($provider);
+    foreach ([[], [['scope_id' => NULL]], [['scope_id' => '']], [[]]] as $values) {
+      $entity->set('scopes', $values);
+      $this->assertSame([], $entity->getScopes());
+    }
+  }
+
+  /**
    * Creates real users used by existing authorization and stale-write tests.
    */
   private function createDecisionUsers(): void {
