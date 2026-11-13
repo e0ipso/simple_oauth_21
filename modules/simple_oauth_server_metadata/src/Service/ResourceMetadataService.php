@@ -81,6 +81,16 @@ class ResourceMetadataService implements CacheableDependencyInterface {
     // Remove empty optional fields per RFC 9728.
     $metadata = $this->filterEmptyFields($metadata);
 
+    // Project known collections as JSON arrays without changing their sources.
+    foreach ([
+      'authorization_servers',
+      'bearer_methods_supported',
+    ] as $field) {
+      if (isset($metadata[$field]) && is_array($metadata[$field])) {
+        $metadata[$field] = array_values($metadata[$field]);
+      }
+    }
+
     return $metadata;
   }
 
@@ -175,8 +185,8 @@ class ResourceMetadataService implements CacheableDependencyInterface {
       if (in_array($key, $required_fields)) {
         return TRUE;
       }
-      // Filter out empty optional fields.
-      return !empty($value);
+      // Keep meaningful scalar extension values, including FALSE and zero.
+      return $value !== NULL && $value !== '' && $value !== [];
     }, ARRAY_FILTER_USE_BOTH);
   }
 

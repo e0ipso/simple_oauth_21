@@ -290,9 +290,15 @@ final class ServerMetadataSettingsForm extends ConfigFormBase {
     // Convert textarea arrays to proper arrays and validate.
     $array_fields = ['ui_locales_supported', 'additional_claims_supported', 'additional_signing_algorithms'];
     foreach ($array_fields as $field) {
+      if (!array_key_exists($field, $form_state->getValues())) {
+        continue;
+      }
       $value = $form_state->getValue($field);
-      if (!empty($value)) {
-        $array_value = array_filter(array_map('trim', explode("\n", $value)));
+      if ($value !== NULL && $value !== '') {
+        $array_value = array_values(array_filter(
+          array_map('trim', explode("\n", $value)),
+          static fn(string $line): bool => $line !== '',
+        ));
         $form_state->setValue($field, $array_value);
       }
       else {
