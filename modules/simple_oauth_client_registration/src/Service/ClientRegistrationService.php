@@ -226,7 +226,7 @@ final class ClientRegistrationService implements ClientRegistrationOperationsInt
    *   Client metadata and the replacement secret, for this response only.
    *
    * @throws \Symfony\Component\HttpKernel\Exception\BadRequestHttpException
-   *   If the client does not use a secret.
+   *   If the client does not use a secret or completed entity validation fails.
    * @throws \Drupal\Core\Entity\EntityStorageException
    *   If saving the replacement fails.
    */
@@ -241,6 +241,7 @@ final class ClientRegistrationService implements ClientRegistrationOperationsInt
     $response = $this->getClientMetadataArray($consumer);
     $secret = $this->generateClientSecret();
     $consumer->set('secret', $secret);
+    $this->validateConsumer($consumer);
     try {
       $consumer->save();
     }

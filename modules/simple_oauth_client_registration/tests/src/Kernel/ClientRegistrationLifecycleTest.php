@@ -27,6 +27,7 @@ use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Form\FormState;
 use Drupal\Core\Form\ConfigTarget;
+use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Routing\UrlGeneratorInterface;
 use Drupal\Core\Routing\UrlGenerator;
 use Drupal\Core\Session\UserSession;
@@ -789,6 +790,48 @@ final class ClientRegistrationLifecycleTest extends KernelTestBase {
       $this->assertSame('original', $cached->get('software_id')->value);
       $this->assertSame('original', $service->getClientMetadata($data['client_id'])['software_id']);
     }
+  }
+
+  /**
+   * Tests rotation validates the replacement without changing rejected secrets.
+   */
+  public function testSecretRotationValidation(): void {
+    $service = $this->registration();
+    $data = $service->registerClient(new ClientRegistration(redirectUris: ['https://example.org/callback']));
+    $cached = $this->consumer($data['client_id']);
+    $hash = $cached->get('secret')->value;
+    $metadata = $service->getClientMetadata($data['client_id']);
+    $definition = $cached->getFieldDefinition('secret');
+    $this->assertInstanceOf(BaseFieldDefinition::class, $definition);
+    $constraints = $definition->getItemDefinition()->getConstraints();
+    // Model an installed field constraint that rejects a new plaintext value.
+    $definition->addPropertyConstraints('value', ['Regex' => ['pattern' => '/^\$/']]);
+    $this->assertCount(0, $cached->validate());
+    try {
+      $service->rotateClientSecret($data['client_id']);
+      $this->fail('An installed field constraint must reject the replacement.');
+    }
+    catch (BadRequestHttpException $exception) {
+      $this->assertSame('Invalid client metadata', $exception->getMessage());
+    }
+    finally {
+      $definition->getItemDefinition()->setConstraints($constraints);
+    }
+    $this->assertSame($hash, $cached->get('secret')->value);
+    $this->container->get('entity_type.manager')->getStorage('consumer')->resetCache();
+    $this->assertSame($hash, $this->consumer($data['client_id'])->get('secret')->value);
+    $this->assertSame($metadata, $service->getClientMetadata($data['client_id']));
+    $this->assertTrue($service->validateRegistrationToken($data['client_id'], $data['registration_access_token']));
+
+    $rotated = $service->rotateClientSecret($data['client_id']);
+    $stored = $this->consumer($data['client_id'])->get('secret')->value;
+    $password = $this->container->get('password');
+    $this->assertTrue($password->check($rotated['client_secret'], $stored));
+    $this->assertFalse($password->check($data['client_secret'], $stored));
+    $this->assertSame($hash, $cached->get('secret')->value);
+    $this->assertSame($metadata, $service->getClientMetadata($data['client_id']));
+    $this->assertArrayNotHasKey('client_secret', $service->getClientMetadata($data['client_id']));
+    $this->assertTrue($service->validateRegistrationToken($data['client_id'], $data['registration_access_token']));
   }
 
   /**
