@@ -31,6 +31,8 @@ use Drupal\simple_oauth_server_metadata\Controller\OpenIdConfigurationController
 use Drupal\simple_oauth_server_metadata\Controller\ResourceMetadataController;
 use Drupal\simple_oauth_server_metadata\Controller\ServerMetadataController;
 use Drupal\simple_oauth_server_metadata\Controller\TokenIntrospectionController;
+use Drupal\simple_oauth_server_metadata\Controller\TokenRevocationController;
+use Drupal\system\Controller\CsrfTokenController;
 use Drupal\simple_oauth_server_metadata\Event\ResourceMetadataEvent;
 use Drupal\simple_oauth_server_metadata\Event\ResourceMetadataEvents;
 use Drupal\simple_oauth_server_metadata\Form\ServerMetadataSettingsForm;
@@ -1233,6 +1235,124 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
       }
       $this->assertContains('config:simple_oauth.settings', $claims->getCacheTags());
       $this->assertContains('config:core.extension', $claims->getCacheTags());
+    }
+  }
+
+  /**
+   * Tests revocation privacy, session header checks and legacy constructors.
+   */
+  public function testRevocationAuthorityAndPrivacy(): void {
+    foreach (['user', 'consumer', 'oauth2_token'] as $entity_type) {
+      $this->installEntitySchema($entity_type);
+    }
+    User::create(['name' => 'reserved'])->save();
+    $role = Role::create(['id' => 'revoker', 'label' => 'Revoker']);
+    $role->grantPermission('bypass token revocation restrictions')->save();
+    $user = User::create(['name' => 'revoker', 'status' => 1, 'roles' => [$role->id()]]);
+    $user->save();
+    $this->assertNotSame('1', (string) $user->id());
+    $this->assertTrue($user->hasPermission('bypass token revocation restrictions'));
+    $this->container->get('current_user')->setAccount($user);
+    $owner = Consumer::create(['label' => 'Owner', 'client_id' => 'owner', 'confidential' => FALSE]);
+    $owner->save();
+    $foreign = Consumer::create(['label' => 'Foreign', 'client_id' => 'foreign', 'confidential' => FALSE]);
+    $foreign->save();
+    $controller = TokenRevocationController::create($this->container);
+    $legacy = new TokenRevocationController(
+      $this->container->get('simple_oauth_server_metadata.client_authentication'),
+      $this->container->get('simple_oauth_server_metadata.token_revocation'),
+      $this->container->get('psr7.http_message_factory'),
+      $this->container->get('logger.channel.simple_oauth'),
+    );
+    $csrf = CsrfTokenController::create($this->container)->csrfToken()->getContent();
+    $key = openssl_pkey_new(['private_key_bits' => 2048]);
+    openssl_pkey_export($key, $private_key);
+    $public_path = $this->siteDirectory . '/revocation-public.key';
+    file_put_contents($public_path, openssl_pkey_get_details($key)['key']);
+    $this->config('simple_oauth.settings')->set('public_key', $public_path)->save();
+    $jwt_config = Configuration::forSymmetricSigner(new Sha256(), InMemory::plainText($private_key));
+    $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_token');
+    foreach (['access_token', 'refresh_token'] as $type) {
+      $token = Oauth2Token::create([
+        'bundle' => $type,
+        'auth_user_id' => $user->id(),
+        'client' => $owner->id(),
+        'value' => bin2hex(random_bytes(20)),
+        'expire' => time() + 3600,
+      ]);
+      $token->save();
+      $value = $type === 'access_token'
+        ? $jwt_config->builder()->issuedBy('https://issuer.example')
+          ->permittedFor($owner->getClientId())->identifiedBy($token->get('value')->value)
+          ->relatedTo((string) $user->id())->issuedAt(new \DateTimeImmutable('-1 minute'))
+          ->expiresAt(new \DateTimeImmutable('+1 hour'))
+          ->getToken($jwt_config->signer(), $jwt_config->signingKey())->toString()
+        : Crypto::encryptWithPassword(json_encode([
+          'refresh_token_id' => $token->get('value')->value,
+          'client_id' => $owner->getClientId(),
+          'expire_time' => time() + 3600,
+          'scopes' => [],
+        ]), Core::ourSubstr(Settings::getHashSalt(), 0, 32));
+      $this->assertNotNull($this->container->get('simple_oauth_server_metadata.token_lookup')->resolveToken($value));
+      $request = Request::create('https://issuer.example/oauth/revoke', 'POST', [
+        'token' => $value,
+        'client_id' => $foreign->getClientId(),
+      ]);
+      $cookie_name = $this->container->get('session_configuration')->getOptions($request)['name'];
+      $request->cookies->set($cookie_name, 'session-fixture');
+      foreach ([$controller, $legacy] as $entry) {
+        foreach ([NULL, 'invalid', $csrf] as $header) {
+          if ($header === NULL) {
+            $request->headers->remove('X-CSRF-Token');
+          }
+          else {
+            $request->headers->set('X-CSRF-Token', $header);
+          }
+          // The legacy constructor always enforces ownership, even with CSRF.
+          if ($entry === $controller && $header === $csrf) {
+            continue;
+          }
+          $response = $entry->revoke($request);
+          $this->assertSame(200, $response->getStatusCode());
+          $this->assertSame('', $response->getContent());
+          $storage->resetCache([$token->id()]);
+          $this->assertFalse($storage->load($token->id())->isRevoked());
+        }
+        $request->request->set('client_id', $owner->getClientId());
+        $request->headers->remove('X-CSRF-Token');
+        $this->assertSame(200, $entry->revoke($request)->getStatusCode());
+        $storage->resetCache([$token->id()]);
+        $record = $storage->load($token->id());
+        $this->assertTrue($record->isRevoked());
+        $record->set('status', TRUE)->save();
+        $request->request->set('client_id', $foreign->getClientId());
+      }
+      // Expired, raw, forged and already revoked values stay privacy successes.
+      $parts = explode('.', $value);
+      $parts[count($parts) - 1] = 'forged';
+      foreach (['invalid', $token->get('value')->value, implode('.', $parts)] as $invalid) {
+        $request->request->set('token', $invalid);
+        $request->headers->set('X-CSRF-Token', $csrf);
+        $this->assertSame(200, $controller->revoke($request)->getStatusCode());
+        $storage->resetCache([$token->id()]);
+        $this->assertFalse($storage->load($token->id())->isRevoked());
+      }
+      $request->request->set('token', $value);
+      $record = $storage->load($token->id());
+      $record->set('expire', time() - 60)->save();
+      $this->assertSame(200, $controller->revoke($request)->getStatusCode());
+      $storage->resetCache([$token->id()]);
+      $this->assertFalse($storage->load($token->id())->isRevoked());
+      $record = $storage->load($token->id());
+      $record->set('expire', time() + 3600)->save();
+      $this->assertSame(200, $controller->revoke($request)->getStatusCode());
+      $storage->resetCache([$token->id()]);
+      $this->assertTrue($storage->load($token->id())->isRevoked());
+      $this->assertSame(200, $controller->revoke($request)->getStatusCode());
+      $request->request->remove('token');
+      $this->assertSame(400, $controller->revoke($request)->getStatusCode());
+      $request->request->remove('client_id');
+      $this->assertSame(401, $controller->revoke($request)->getStatusCode());
     }
   }
 
