@@ -33,9 +33,9 @@ jobs:
       matrix:
         include:
           - drupal-core: '10'
-            core-requirement: '^10'
+            core-requirement: '^10.3'
             php-version: '8.3'
-            simple-oauth: '^6'
+            simple-oauth: '^6.1.4'
             phpstan: '^1.12'
             phpstan-drupal: '^1.2.12'
             deprecation-rules: '^1.2'
@@ -44,7 +44,7 @@ jobs:
           - drupal-core: '11-dev'
             core-requirement: '11.x-dev'
             php-version: '8.3'
-            simple-oauth: '^6'
+            simple-oauth: '^6.1.4'
             phpstan: '^2.1'
             phpstan-drupal: '^2.0'
             deprecation-rules: '^2.0'
@@ -53,13 +53,13 @@ jobs:
           - drupal-core: '11'
             core-requirement: '^11'
             php-version: '8.3'
-            simple-oauth: '^6'
+            simple-oauth: '^6.1.4'
             phpstan: '^2.1'
             phpstan-drupal: '^2.0'
             deprecation-rules: '^2.0'
             drush: '^13'
             db-version: '10.9'
-          # The 10.2/6.0.3 floor is currently blocked by security advisories.
+          # Pin the upstream minimum on a maintained Drupal 10 release.
           - drupal-core: '10.6.21'
             core-requirement: '10.6.21'
             php-version: '8.1'

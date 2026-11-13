@@ -186,9 +186,9 @@ The Simple OAuth 2.1 ecosystem consists of 1 umbrella module and 5 specialized s
 
 ### Prerequisites
 
-- **Drupal:** 10.2+ or 11.x
+- **Drupal:** 10.3+ or 11.x
 - **PHP:** 8.1+ (recommended 8.3+)
-- **Required Modules:** `simple_oauth` (will be installed automatically)
+- **Required Modules:** `simple_oauth` >=6.1.4,<7.0 (will be installed automatically)
 - **Optional Modules:** `consumers` (for device flow and client registration), `serialization` (for client registration API)
 
 ### Installation via Composer
