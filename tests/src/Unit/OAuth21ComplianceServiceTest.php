@@ -105,6 +105,40 @@ final class OAuth21ComplianceServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests native compliance follows the effective master switch.
+   */
+  public function testNativeComplianceMasterSwitch(): void {
+    foreach ([TRUE, FALSE, NULL] as $enabled) {
+      $modules = $this->createMock(ModuleHandlerInterface::class);
+      $modules->method('moduleExists')->willReturnCallback(
+        static fn(string $name): bool => $name === 'simple_oauth_native_apps'
+      );
+      $config = $this->createMock(Config::class);
+      $config->method('isNew')->willReturn(FALSE);
+      $config->method('getCacheContexts')->willReturn([]);
+      $config->method('getCacheTags')->willReturn(['config:simple_oauth_native_apps.settings']);
+      $config->method('getCacheMaxAge')->willReturn(-1);
+      $config->method('get')->willReturnMap([
+        ['enforce_native_security', $enabled],
+        ['allow.custom_uri_schemes', 'auto-detect'],
+        ['allow.loopback_redirects', 'native'],
+      ]);
+      $factory = $this->createMock(ConfigFactoryInterface::class);
+      $factory->method('get')->willReturn($config);
+      $routes = $this->createMock(RouteProviderInterface::class);
+      $routes->method('getRouteByName')->willThrowException(new RouteNotFoundException());
+      $service = new OAuth21ComplianceService($modules, $factory, $routes);
+      self::assertSame([
+        'status' => $enabled === TRUE ? 'configured' : 'needs_attention',
+        'module' => 'simple_oauth_native_apps',
+        'enabled' => TRUE,
+        'recommendation' => 'Native app security features are enabled',
+      ], $service->getRfcComplianceStatus()['rfc_8252']);
+      self::assertContains('config:simple_oauth_native_apps.settings', $service->getCacheTags());
+    }
+  }
+
+  /**
    * Tests fallback config dependencies and per-generation metadata state.
    */
   public function testCacheabilityAndPublicContract(): void {

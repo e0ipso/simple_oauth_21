@@ -86,8 +86,8 @@ final class PkceValidationSubscriber implements EventSubscriberInterface {
    */
   public static function getSubscribedEvents(): array {
     $events = [];
-    // Priority 50 to run after route resolution but before OAuth processing.
-    $events[KernelEvents::REQUEST][] = ['onOauthRequest', 50];
+    // Run after routing, before global PKCE and OAuth controller processing.
+    $events[KernelEvents::REQUEST][] = ['onOauthRequest', 30];
     return $events;
   }
 
@@ -102,6 +102,17 @@ final class PkceValidationSubscriber implements EventSubscriberInterface {
 
     // Only process OAuth authorization and token requests.
     if (!$this->isOauthFlowRequest($request)) {
+      return;
+    }
+
+    $parameters = $request->attributes->get('_route') === 'oauth2_token.authorize'
+      ? $request->query->all()
+      : $request->request->all();
+    if (isset($parameters['client_id']) && !is_string($parameters['client_id'])) {
+      $event->setResponse(new JsonResponse([
+        'error' => 'invalid_request',
+        'error_description' => 'The client_id parameter must be a string.',
+      ], 400, ['Cache-Control' => 'no-store', 'Pragma' => 'no-cache']));
       return;
     }
 
@@ -122,11 +133,11 @@ final class PkceValidationSubscriber implements EventSubscriberInterface {
     }
 
     // Determine request type and validate accordingly.
-    $path = $request->getPathInfo();
-    if (strpos($path, '/oauth/authorize') !== FALSE) {
+    $route = $request->attributes->get('_route');
+    if ($route === 'oauth2_token.authorize') {
       $this->validateAuthorizationRequest($event, $client);
     }
-    elseif (strpos($path, '/oauth/token') !== FALSE) {
+    elseif ($route === 'oauth2_token.token') {
       $this->validateTokenRequest($event, $client);
     }
   }
@@ -186,7 +197,15 @@ final class PkceValidationSubscriber implements EventSubscriberInterface {
     $request = $event->getRequest();
 
     // Only validate authorization code grants that include code_verifier.
-    $grant_type = $request->request->get('grant_type');
+    $grant_type = $request->request->all()['grant_type'] ?? NULL;
+    if ($grant_type !== NULL && !is_string($grant_type)) {
+      $this->handleValidationFailure($event, [
+        'valid' => FALSE,
+        'errors' => ['The grant_type parameter must be a string.'],
+        'enhanced_applied' => TRUE,
+      ], 'token', $client, 'invalid_request');
+      return;
+    }
     if ($grant_type !== 'authorization_code') {
       return;
     }
@@ -305,14 +324,10 @@ final class PkceValidationSubscriber implements EventSubscriberInterface {
    *   TRUE if this is an OAuth authorization or token request.
    */
   protected function isOauthFlowRequest($request): bool {
-    $path = $request->getPathInfo();
-
-    // Check OAuth endpoints.
-    if (strpos($path, '/oauth/authorize') !== FALSE || strpos($path, '/oauth/token') !== FALSE) {
-      return TRUE;
-    }
-
-    return FALSE;
+    return in_array($request->attributes->get('_route'), [
+      'oauth2_token.authorize',
+      'oauth2_token.token',
+    ], TRUE);
   }
 
   /**
@@ -326,14 +341,22 @@ final class PkceValidationSubscriber implements EventSubscriberInterface {
    */
   protected function extractClientId(Request $request): ?string {
     // Authorization processing consumes query parameters.
-    if (strpos($request->getPathInfo(), '/oauth/authorize') !== FALSE) {
-      $client_id = trim($request->query->getString('client_id'));
+    if ($request->attributes->get('_route') === 'oauth2_token.authorize') {
+      $client_id = $request->query->all()['client_id'] ?? '';
+      if (!is_string($client_id)) {
+        return NULL;
+      }
+      $client_id = trim($client_id);
       return $client_id !== '' ? $client_id : NULL;
     }
 
     // League uses a nonempty body client_id before the Basic username. Query
     // parameters must never select the client for enhanced token validation.
-    $client_id = trim($request->request->getString('client_id'));
+    $client_id = $request->request->all()['client_id'] ?? '';
+    if (!is_string($client_id)) {
+      return NULL;
+    }
+    $client_id = trim($client_id);
     if ($client_id !== '') {
       return $client_id;
     }
