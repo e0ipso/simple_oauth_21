@@ -4,12 +4,20 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\simple_oauth_native_apps\Kernel;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ConfigImporter;
+use Drupal\Core\Config\ConfigImporterException;
+use Drupal\Core\Config\ConfigEvents;
+use Drupal\Core\Config\MemoryStorage;
+use Drupal\Core\Config\StorageComparer;
 use Drupal\Core\Entity\EntityFormInterface;
 use Drupal\Core\Form\FormState;
 use Drupal\Core\StringTranslation\TranslationManager;
 use Drupal\Core\StringTranslation\Translator\TranslatorInterface;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\simple_oauth_native_apps\Form\ConsumerNativeAppsFormAlter;
+use Drupal\simple_oauth_native_apps\Service\ConsumerPolicyResolver;
 use Drupal\simple_oauth_native_apps\Service\ConfigurationValidator;
 use Drupal\simple_oauth_native_apps\Service\MetadataProvider;
 use Drupal\simple_oauth_native_apps\Service\NativeClientDetector;
@@ -19,6 +27,7 @@ use Drupal\simple_oauth_native_apps\Service\UserAgentAnalyzer;
 use PHPUnit\Framework\Attributes\Group;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Validator\Exception\UnexpectedValueException as ValidationUnexpectedValueException;
 use Drupal\simple_oauth_native_apps\Plugin\Validation\Constraint\NativeAppRedirectUri;
 
 /**
@@ -784,6 +793,661 @@ final class ServiceIntegrationTest extends KernelTestBase {
     $metadata = $metadata_provider->getMetadata();
     $this->assertTrue($metadata['native_apps_supported']);
     $this->assertTrue($metadata['pkce_required']);
+  }
+
+  /**
+   * Creates the explicit UUID collision used to verify policy portability.
+   *
+   * @return array
+   *   Intended owner, unrelated local consumer, config name and whole record.
+   */
+  private function createBoundPolicyCollision(): array {
+    $this->config('simple_oauth_native_apps.settings')
+      ->set('enforce_native_security', TRUE)
+      ->set('native.enhanced_pkce', 'enhanced')
+      ->set('allow.custom_uri_schemes', 'native')
+      ->set('allow.loopback_redirects', 'native')
+      ->set('webview.detection', 'block')->save();
+    $unrelated = Consumer::create([
+      'label' => 'Unrelated local consumer',
+      'uuid' => '8d9a15eb-d594-45af-b550-cc49768d16ad',
+      'client_id' => 'unrelated-local-client',
+    ]);
+    $unrelated->save();
+    $owner = Consumer::create([
+      'label' => 'Portable policy consumer',
+      'uuid' => 'd1d85c86-b3e8-4fca-aa39-bc38f9a7569c',
+      'client_id' => 'stable-original-client',
+    ]);
+    $owner->save();
+    $this->assertNotSame($owner->id(), $unrelated->id());
+    $this->assertNotSame($owner->uuid(), $unrelated->uuid());
+    $data = [
+      'consumer_uuid' => $owner->uuid(),
+      'webview_detection_override' => 'off',
+      'allow_custom_schemes_override' => 'web',
+      'allow_loopback_override' => 'web',
+      'enhanced_pkce_override' => 'not-enhanced',
+    ];
+    $name = 'simple_oauth_native_apps.consumer.' . $unrelated->id();
+    $this->config($name)->setData($data)->save();
+    return [$owner, $unrelated, $name, $data];
+  }
+
+  /**
+   * Tests all four controls follow the UUID, never a foreign numeric slot.
+   */
+  public function testBoundPolicyFollowsUuid(): void {
+    [$owner, $unrelated, $name, $data] = $this->createBoundPolicyCollision();
+    $detector = $this->container->get('simple_oauth_native_apps.native_client_detector');
+    $this->assertSame([
+      'enabled' => TRUE,
+      'enhanced_pkce' => FALSE,
+      'custom_schemes' => FALSE,
+      'loopback' => FALSE,
+      'webview' => 'off',
+    ], $detector->getEffectivePolicy($owner));
+    $this->assertSame([
+      'enabled' => TRUE,
+      'enhanced_pkce' => TRUE,
+      'custom_schemes' => TRUE,
+      'loopback' => TRUE,
+      'webview' => 'block',
+    ], $detector->getEffectivePolicy($unrelated));
+    $handler = $this->container->get('simple_oauth_native_apps.consumer_form_alter');
+    foreach ([$owner, $unrelated] as $consumer) {
+      $state = $this->policyFormState($consumer, []);
+      $form = [];
+      $handler->alterForm($form, $state, 'consumer_edit_form');
+      foreach (array_diff_key($data, ['consumer_uuid' => TRUE]) as $key => $value) {
+        $this->assertSame($consumer === $owner ? $value : '', $form['native_apps'][$key]['#default_value']);
+      }
+      $this->assertArrayNotHasKey('confirm_policy_owner', $form['native_apps']);
+    }
+    $this->assertSame($data, $this->config($name)->get());
+  }
+
+  /**
+   * Tests unrelated deletion preserves policy and owner deletion follows UUID.
+   */
+  public function testBoundForeignDeletionAndOwnerCleanup(): void {
+    [$owner, $unrelated, $name, $data] = $this->createBoundPolicyCollision();
+    $this->installEntitySchema('oauth2_token');
+    $unrelated->delete();
+    $this->assertSame($data, $this->config($name)->get());
+    $owner->delete();
+    $this->assertTrue($this->container->get('config.factory')->get($name)->isNew());
+  }
+
+  /**
+   * Tests orphan records never transfer to a recreated numeric consumer.
+   */
+  public function testBoundOrphanAndRecreatedConsumers(): void {
+    [$owner, $unrelated, $name, $data] = $this->createBoundPolicyCollision();
+    $this->installEntitySchema('oauth2_token');
+    $id = $owner->id();
+    $owner->delete();
+    // Model an orphan arriving outside the supported config import boundary.
+    $name = 'simple_oauth_native_apps.consumer.' . $id;
+    $this->config($name)->setData($data)->save();
+    $replacement = Consumer::create([
+      'id' => $id,
+      'uuid' => 'ecb78c78-8b91-45e0-98d0-0d79168ff167',
+      'label' => 'Recreated numeric client',
+      'client_id' => 'replacement-client',
+    ]);
+    $replacement->save();
+    $detector = $this->container->get('simple_oauth_native_apps.native_client_detector');
+    $this->assertTrue($detector->requiresEnhancedPkce($replacement));
+    $replacement->delete();
+    $this->assertSame($data, $this->config($name)->get());
+    $restored = Consumer::create([
+      'uuid' => $data['consumer_uuid'],
+      'label' => 'Restored UUID client',
+      'client_id' => 'restored-client',
+    ]);
+    $restored->save();
+    $this->assertNotSame($id, $restored->id());
+    $this->assertFalse($detector->requiresEnhancedPkce($restored));
+    $this->assertTrue($detector->requiresEnhancedPkce($unrelated));
+  }
+
+  /**
+   * Tests bound explicit-empty values and submitted whole-record precedence.
+   */
+  public function testBoundExplicitEmptyPolicyPrecedence(): void {
+    [$owner, , $name, $data] = $this->createBoundPolicyCollision();
+    $this->installEntitySchema('oauth2_token');
+    $owner->set('native_app_enhanced_pkce', 'native')->save();
+    $detector = $this->container->get('simple_oauth_native_apps.native_client_detector');
+    $this->assertFalse($detector->requiresEnhancedPkce($owner));
+    foreach (array_diff(array_keys($data), ['consumer_uuid']) as $key) {
+      $data[$key] = '';
+    }
+    $this->config($name)->setData($data)->save();
+    $expected = [
+      'enabled' => TRUE,
+      'enhanced_pkce' => TRUE,
+      'custom_schemes' => TRUE,
+      'loopback' => TRUE,
+      'webview' => 'block',
+    ];
+    $this->assertSame($expected, $detector->getEffectivePolicy($owner));
+    $data['enhanced_pkce_override'] = 'not-enhanced';
+    $data['webview_detection_override'] = 'off';
+    $data['allow_custom_schemes_override'] = 'web';
+    $this->config($name)->setData($data)->save();
+    $detector->setSubmittedOverrides($owner, ['enhanced_pkce_override' => '']);
+    $this->assertSame($expected, $detector->getEffectivePolicy($owner));
+    $this->assertSame($data, $this->config($name)->get());
+  }
+
+  /**
+   * Tests duplicates and competing legacy records require reconciliation.
+   */
+  public function testPolicyConflictsNeverSelectOrMerge(): void {
+    [$owner, , $name, $data] = $this->createBoundPolicyCollision();
+    $other_name = 'simple_oauth_native_apps.consumer.' . $owner->id();
+    $resolver = $this->container->get('simple_oauth_native_apps.consumer_policy_resolver');
+    $detector = $this->container->get('simple_oauth_native_apps.native_client_detector');
+    $handler = $this->container->get('simple_oauth_native_apps.consumer_form_alter');
+    foreach ([$data, ['enhanced_pkce_override' => 'enhanced']] as $competing) {
+      $this->config($other_name)->setData($competing)->save();
+      try {
+        $detector->getEffectivePolicy($owner);
+        $this->fail('Ambiguous policy must not resolve.');
+      }
+      catch (\UnexpectedValueException $exception) {
+        $this->assertStringContainsString('reconciliation', $exception->getMessage());
+      }
+      $state = $this->policyFormState($owner, ['enhanced_pkce_override' => 'not-enhanced', 'confirm_policy_owner' => 1]);
+      $handler->validateConsumerNativeAppsSettings([], $state);
+      $this->assertTrue($state->hasAnyErrors());
+      $state->clearErrors();
+      foreach (['save', 'delete'] as $operation) {
+        try {
+          $operation === 'save' ? $resolver->save($owner, ['enhanced_pkce_override' => 'not-enhanced']) : $resolver->delete($owner);
+          $this->fail('Ambiguous records must not be written or deleted.');
+        }
+        catch (\UnexpectedValueException) {
+          $this->assertSame($data, $this->config($name)->get());
+          $this->assertSame($competing, $this->config($other_name)->get());
+        }
+      }
+    }
+  }
+
+  /**
+   * Tests foreign slots fail before entity save, including forged confirmation.
+   */
+  public function testCollisionFormRefusesForeignOwner(): void {
+    [$owner, $unrelated, $name, $data] = $this->createBoundPolicyCollision();
+    $handler = $this->container->get('simple_oauth_native_apps.consumer_form_alter');
+    $state = $this->policyFormState($unrelated, [
+      'enhanced_pkce_override' => 'not-enhanced',
+      'confirm_policy_owner' => 1,
+    ]);
+    $handler->validateConsumerNativeAppsSettings([], $state);
+    $this->assertTrue($state->hasAnyErrors());
+    $state->clearErrors();
+    $label = $unrelated->label();
+    $unrelated->set('label', 'Must not be saved');
+    $form = [
+      'actions' => [
+        'submit' => [
+          '#submit' => [
+            static function () use ($unrelated): void {
+              $unrelated->save();
+            },
+          ],
+        ],
+      ],
+    ];
+    $handler->alterForm($form, $state, 'consumer_edit_form');
+    try {
+      foreach ($form['actions']['submit']['#submit'] as $callback) {
+        $callback($form, $state);
+      }
+      $this->fail('Foreign ownership must stop callbacks before entity save.');
+    }
+    catch (\UnexpectedValueException) {
+      $storage = $this->container->get('entity_type.manager')->getStorage('consumer');
+      $storage->resetCache([$unrelated->id()]);
+      $this->assertSame($label, $storage->load($unrelated->id())->label());
+      $this->assertSame($owner->uuid(), $storage->load($owner->id())->uuid());
+      $this->assertSame($data, $this->config($name)->get());
+    }
+    try {
+      $handler->submitConsumerNativeAppsSettings([], $state);
+      $this->fail('Direct persistence must recheck foreign ownership.');
+    }
+    catch (\UnexpectedValueException) {
+      $this->assertSame($data, $this->config($name)->get());
+    }
+  }
+
+  /**
+   * Tests explicit binding validation rejects malformed or foreign identity.
+   */
+  public function testPolicyFormRejectsInvalidBinding(): void {
+    [$owner, $unrelated, $name, $data] = $this->createBoundPolicyCollision();
+    $handler = $this->container->get('simple_oauth_native_apps.consumer_form_alter');
+    foreach ([$unrelated->uuid(), 'invalid', '', NULL, []] as $binding) {
+      $state = $this->policyFormState($owner, [
+        'enhanced_pkce_override' => 'enhanced',
+        'consumer_uuid' => $binding,
+      ]);
+      $handler->validateConsumerNativeAppsSettings([], $state);
+      $this->assertTrue($state->hasAnyErrors());
+      $state->clearErrors();
+      try {
+        $handler->submitConsumerNativeAppsSettings([], $state);
+        $this->fail('An invalid or foreign explicit binding must not persist.');
+      }
+      catch (\UnexpectedValueException) {
+        $this->assertSame($data, $this->config($name)->get());
+      }
+    }
+  }
+
+  /**
+   * Tests an assigned-ID collision rolls back the new consumer and policy.
+   */
+  public function testCollisionOnAssignedIdRollsBackConsumer(): void {
+    [$owner, $unrelated, , $data] = $this->createBoundPolicyCollision();
+    // This fixture controls its next numeric ID. Production never predicts IDs.
+    $next_id = (int) $owner->id() + 1;
+    $name = 'simple_oauth_native_apps.consumer.' . $next_id;
+    $this->config($name)->setData($data)->save();
+    $consumer = Consumer::create(['label' => 'Late collision', 'client_id' => 'late-collision']);
+    $uuid = $consumer->uuid();
+    $state = $this->policyFormState($consumer, ['enhanced_pkce_override' => 'not-enhanced']);
+    $handler = $this->container->get('simple_oauth_native_apps.consumer_form_alter');
+    $form = [
+      'actions' => [
+        'submit' => [
+          '#submit' => [
+            static function () use ($consumer): void {
+              $consumer->save();
+            },
+          ],
+        ],
+      ],
+    ];
+    $handler->alterForm($form, $state, 'consumer_add_form');
+    $handler->validateConsumerNativeAppsSettings($form, $state);
+    $this->assertFalse($state->hasAnyErrors());
+    try {
+      foreach ($form['actions']['submit']['#submit'] as $callback) {
+        $callback($form, $state);
+      }
+      $this->fail('Late numeric collision must not leave a new consumer saved.');
+    }
+    catch (\UnexpectedValueException) {
+      $this->assertSame($next_id, (int) $consumer->id());
+      $storage = $this->container->get('entity_type.manager')->getStorage('consumer');
+      $this->assertSame([], $storage->loadByProperties(['uuid' => $uuid]));
+      $this->assertNull($storage->load($next_id));
+      $this->assertSame($owner->uuid(), $storage->load($owner->id())->uuid());
+      $this->assertSame($unrelated->uuid(), $storage->load($unrelated->id())->uuid());
+      $this->assertSame($data, $this->config($name)->get());
+    }
+  }
+
+  /**
+   * Tests new policies bind, keep imported names and clear only owned records.
+   */
+  public function testPolicyFormBindingAndStableWrites(): void {
+    $consumer = Consumer::create(['label' => 'New policy', 'client_id' => 'new-policy']);
+    $handler = $this->container->get('simple_oauth_native_apps.consumer_form_alter');
+    $state = $this->policyFormState($consumer, ['enhanced_pkce_override' => 'enhanced']);
+    $form = [
+      'actions' => [
+        'submit' => [
+          '#submit' => [
+            static function () use ($consumer): void {
+              $consumer->save();
+            },
+          ],
+        ],
+      ],
+    ];
+    $handler->alterForm($form, $state, 'consumer_add_form');
+    $handler->validateConsumerNativeAppsSettings($form, $state);
+    $this->assertFalse($state->hasAnyErrors());
+    foreach ($form['actions']['submit']['#submit'] as $callback) {
+      $callback($form, $state);
+    }
+    $this->assertSame($consumer->uuid(), $this->container->get('entity_type.manager')->getStorage('consumer')->load($consumer->id())->uuid());
+    $name = 'simple_oauth_native_apps.consumer.' . $consumer->id();
+    $this->assertSame($consumer->uuid(), $this->config($name)->get('consumer_uuid'));
+    $this->config($name)->delete();
+    [$owner, , $imported_name] = $this->createBoundPolicyCollision();
+    $state = $this->policyFormState($owner, ['enhanced_pkce_override' => 'enhanced']);
+    $handler->submitConsumerNativeAppsSettings([], $state);
+    $this->assertSame($owner->uuid(), $this->config($imported_name)->get('consumer_uuid'));
+    $this->assertSame('enhanced', $this->config($imported_name)->get('enhanced_pkce_override'));
+    $this->assertTrue($this->container->get('config.factory')->get('simple_oauth_native_apps.consumer.' . $owner->id())->isNew());
+    $state->setValue('native_apps', ['enhanced_pkce_override' => '']);
+    $handler->submitConsumerNativeAppsSettings([], $state);
+    $this->assertTrue($this->container->get('config.factory')->get($imported_name)->isNew());
+  }
+
+  /**
+   * Tests legacy reads and saves never bind without explicit operator choice.
+   */
+  public function testLegacyOwnershipConfirmationPreservesValues(): void {
+    $this->installEntitySchema('oauth2_token');
+    [$owner, $unrelated, $name, $data] = $this->createBoundPolicyCollision();
+    unset($data['consumer_uuid']);
+    $data['allow_loopback_override'] = '';
+    $data['client_detection'] = [];
+    $this->config($name)->setData($data)->save();
+    $data = $this->config($name)->get();
+    $handler = $this->container->get('simple_oauth_native_apps.consumer_form_alter');
+    $detector = $this->container->get('simple_oauth_native_apps.native_client_detector');
+    $this->assertFalse($detector->requiresEnhancedPkce($unrelated));
+    $this->assertTrue($detector->requiresEnhancedPkce($owner));
+    $unrelated->save();
+    $state = $this->policyFormState($unrelated, $data);
+    $form = [];
+    $handler->alterForm($form, $state, 'consumer_edit_form');
+    $this->assertFalse($form['native_apps']['confirm_policy_owner']['#default_value']);
+    $this->assertStringContainsString('historical owner', (string) $form['native_apps']['confirm_policy_owner']['#description']);
+    $handler->validateConsumerNativeAppsSettings($form, $state);
+    $this->assertFalse($state->hasAnyErrors());
+    $handler->submitConsumerNativeAppsSettings($form, $state);
+    $this->assertSame($data, $this->config($name)->get());
+    $state->setValue(['native_apps', 'confirm_policy_owner'], 1);
+    $handler->submitConsumerNativeAppsSettings($form, $state);
+    $bound = $this->config($name)->get();
+    $this->assertSame($unrelated->uuid(), $bound['consumer_uuid']);
+    unset($bound['consumer_uuid']);
+    $this->assertSame($data, $bound);
+    $this->assertTrue($detector->getEffectivePolicy($unrelated)['loopback']);
+  }
+
+  /**
+   * Tests fresh decisions after config saves, deletes and consumer updates.
+   */
+  public function testPolicyMutationFreshnessAndStaleWriteGuard(): void {
+    $this->installEntitySchema('oauth2_token');
+    [$owner, $unrelated, $name, $data] = $this->createBoundPolicyCollision();
+    $detector = $this->container->get('simple_oauth_native_apps.native_client_detector');
+    $handler = $this->container->get('simple_oauth_native_apps.consumer_form_alter');
+    $this->assertFalse($detector->requiresEnhancedPkce($owner));
+    $this->config($name)->set('consumer_uuid', $unrelated->uuid())->set('enhanced_pkce_override', 'enhanced')->save();
+    $this->assertTrue($detector->requiresEnhancedPkce($owner));
+    $this->assertTrue($detector->requiresEnhancedPkce($unrelated));
+    $this->config($name)->set('enhanced_pkce_override', 'not-enhanced')->save();
+    $this->assertFalse($detector->requiresEnhancedPkce($unrelated));
+    $this->config($name)->delete();
+    $this->assertTrue($detector->requiresEnhancedPkce($unrelated));
+    $state = $this->policyFormState($unrelated, ['enhanced_pkce_override' => 'enhanced']);
+    $handler->validateConsumerNativeAppsSettings([], $state);
+    $this->assertFalse($state->hasAnyErrors());
+    $this->config($name)->setData($data)->save();
+    try {
+      $handler->submitConsumerNativeAppsSettings([], $state);
+      $this->fail('A destination taken after validation must not be overwritten.');
+    }
+    catch (\UnexpectedValueException) {
+      $this->assertSame($data, $this->config($name)->get());
+    }
+    $owner->set('native_app_enhanced_pkce', 'native')->save();
+    $this->assertFalse($detector->requiresEnhancedPkce($owner));
+    $this->config($name)->delete();
+    $this->assertTrue($detector->requiresEnhancedPkce($owner));
+    $built = clone $owner;
+    $detector->setSubmittedOverrides($built, ['enhanced_pkce_override' => 'not-enhanced']);
+    $this->assertFalse($detector->requiresEnhancedPkce($built));
+    $built->save();
+    $this->assertTrue($detector->requiresEnhancedPkce($built));
+    $new = Consumer::create(['label' => 'New pending policy', 'client_id' => 'new-pending-policy']);
+    $detector->setSubmittedOverrides($new, ['enhanced_pkce_override' => 'not-enhanced']);
+    $this->assertFalse($detector->requiresEnhancedPkce($new));
+    $new->save();
+    $this->assertTrue($detector->requiresEnhancedPkce($new));
+  }
+
+  /**
+   * Tests original constructors, programmatic saves and service serialization.
+   */
+  public function testOriginalPolicyConstructorsAndSerialization(): void {
+    [$owner, $unrelated, $name] = $this->createBoundPolicyCollision();
+    $factory = $this->container->get('config.factory');
+    $detector = new NativeClientDetector($factory, $this->container->get('logger.factory'));
+    $this->assertFalse($detector->requiresEnhancedPkce($owner));
+    $handler = new ConsumerNativeAppsFormAlter($factory, $this->container->get('entity_type.manager'), $this->container->get('simple_oauth_native_apps.configuration_validator'), $detector);
+    $this->config($name)->delete();
+    $state = $this->policyFormState($unrelated, ['enhanced_pkce_override' => 'enhanced']);
+    $manual_form = [];
+    $handler->alterForm($manual_form, $state, 'consumer_edit_form');
+    $handler->submitConsumerNativeAppsSettings($manual_form, $state);
+    $this->assertSame(['enhanced_pkce_override' => 'enhanced'], $this->config($name)->get());
+    $handler->submitConsumerNativeAppsSettings([], $state);
+    $this->assertSame(['enhanced_pkce_override' => 'enhanced'], $this->config($name)->get());
+    $state->setValue(['native_apps', 'consumer_uuid'], $unrelated->uuid());
+    $handler->submitConsumerNativeAppsSettings([], $state);
+    $this->assertSame($unrelated->uuid(), $this->config($name)->get('consumer_uuid'));
+    $service = unserialize(serialize($this->container->get('simple_oauth_native_apps.consumer_form_alter')), ['allowed_classes' => [ConsumerNativeAppsFormAlter::class]]);
+    $form = [];
+    $service->alterForm($form, $state, 'consumer_edit_form');
+    $this->assertSame('enhanced', $form['native_apps']['enhanced_pkce_override']['#default_value']);
+    $this->assertSame($unrelated->uuid(), $this->config($name)->get('consumer_uuid'));
+  }
+
+  /**
+   * Tests one lookup supplies the entire effective policy.
+   */
+  public function testPolicyLookupCost(): void {
+    [$owner] = $this->createBoundPolicyCollision();
+    $real_factory = $this->container->get('config.factory');
+    $factory = $this->createMock(ConfigFactoryInterface::class);
+    $factory->expects($this->once())->method('listAll')->willReturnCallback($real_factory->listAll(...));
+    $factory->expects($this->once())->method('loadMultiple')->willReturnCallback($real_factory->loadMultiple(...));
+    $factory->method('get')->willReturnCallback($real_factory->get(...));
+    $detector = new NativeClientDetector($factory, $this->container->get('logger.factory'), new ConsumerPolicyResolver($factory));
+    $this->assertFalse($detector->getEffectivePolicy($owner)['enhanced_pkce']);
+  }
+
+  /**
+   * Tests Drupal UUID schema validation while binding remains optional.
+   */
+  public function testPolicyUuidSchemaValidation(): void {
+    [, , $name, $data] = $this->createBoundPolicyCollision();
+    $manager = $this->container->get('config.typed');
+    $typed = $manager->createFromNameAndData($name, $data);
+    $this->assertSame('uuid', $typed->get('consumer_uuid')->getDataDefinition()->getDataType());
+    $this->assertCount(0, $typed->validate());
+    foreach (['', 'invalid', NULL] as $invalid) {
+      $data['consumer_uuid'] = $invalid;
+      $this->assertGreaterThan(0, count($manager->createFromNameAndData($name, $data)->validate()));
+    }
+    $data['consumer_uuid'] = [];
+    try {
+      $manager->createFromNameAndData($name, $data)->validate();
+      $this->fail('Core UUID validation must reject non-string bindings.');
+    }
+    catch (ValidationUnexpectedValueException) {
+      $this->assertIsArray($data['consumer_uuid']);
+    }
+    unset($data['consumer_uuid']);
+    $this->assertCount(0, $manager->createFromNameAndData($name, $data)->validate());
+  }
+
+  /**
+   * Tests actual importer validation and activation preserve portable identity.
+   */
+  public function testImportBoundPolicyAndMutationFreshness(): void {
+    [$owner, $unrelated, $name, $data] = $this->createBoundPolicyCollision();
+    $detector = $this->container->get('simple_oauth_native_apps.native_client_detector');
+    $this->assertFalse($detector->requiresEnhancedPkce($owner));
+    $source = $this->policyImportSource();
+    $changed = $data;
+    $changed['enhanced_pkce_override'] = 'enhanced';
+    $source->write($name, $changed);
+    $importer = $this->policyImporter($source);
+    $importer->validate();
+    $this->assertSame([], $importer->getErrors());
+    $importer->import();
+    $this->assertSame($changed, $this->config($name)->get());
+    $this->assertTrue($detector->requiresEnhancedPkce($owner));
+    $this->assertTrue($detector->requiresEnhancedPkce($unrelated));
+    $source->delete($name);
+    $this->policyImporter($source)->import();
+    $this->assertTrue($this->container->get('config.factory')->get($name)->isNew());
+    $this->assertTrue($detector->requiresEnhancedPkce($owner));
+    $source->write($name, $data);
+    $this->policyImporter($source)->import();
+    $this->assertSame($data, $this->config($name)->get());
+    $this->assertFalse($detector->requiresEnhancedPkce($owner));
+  }
+
+  /**
+   * Tests unchanged legacy survives imports but changed or new unbound cannot.
+   */
+  public function testImportLegacyRejectionAndUnchangedPreservation(): void {
+    [, , $name, $data] = $this->createBoundPolicyCollision();
+    unset($data['consumer_uuid']);
+    $this->config($name)->setData($data)->save();
+    $source = $this->policyImportSource();
+    $settings = $source->read('simple_oauth_native_apps.settings');
+    $settings['webview']['detection'] = 'warn';
+    $source->write('simple_oauth_native_apps.settings', $settings);
+    $this->policyImporter($source)->import();
+    $this->assertSame($data, $this->config($name)->get());
+    $changed = $data;
+    $changed['webview_detection_override'] = 'warn';
+    $source->write($name, $changed);
+    $this->assertPolicyImportRejected($source, 'Assign this legacy policy');
+    $this->assertSame($data, $this->config($name)->get());
+    $source->write($name, $data);
+    $source->write('simple_oauth_native_apps.consumer.987654', $data);
+    $this->assertPolicyImportRejected($source, 'Assign this legacy policy');
+    $this->assertTrue($this->container->get('config.factory')->get('simple_oauth_native_apps.consumer.987654')->isNew());
+  }
+
+  /**
+   * Tests malformed, orphan, duplicate and bound/unbound incoming conflicts.
+   */
+  public function testImportRejectsInvalidOwnership(): void {
+    [$owner, , $name, $data] = $this->createBoundPolicyCollision();
+    foreach (['invalid', '', NULL, [], 'ecb78c78-8b91-45e0-98d0-0d79168ff167'] as $uuid) {
+      $source = $this->policyImportSource();
+      $changed = $data;
+      $changed['consumer_uuid'] = $uuid;
+      $source->write($name, $changed);
+      $this->assertPolicyImportRejected($source, is_string($uuid) && strlen($uuid) === 36 ? 'existing consumer' : 'valid consumer UUID');
+      $this->assertSame($data, $this->config($name)->get());
+    }
+    foreach ([$data, ['enhanced_pkce_override' => 'enhanced']] as $competing) {
+      $source = $this->policyImportSource();
+      $source->write('simple_oauth_native_apps.consumer.' . $owner->id(), $competing);
+      $changed = $data;
+      $changed['webview_detection_override'] = 'warn';
+      $source->write($name, $changed);
+      $this->assertPolicyImportRejected($source, 'conflicts with another incoming policy');
+    }
+    $source = $this->policyImportSource();
+    $source->delete($name);
+    $source->write('simple_oauth_native_apps.consumer.invalid', $data);
+    $this->assertPolicyImportRejected($source, 'valid consumer UUID');
+    foreach (['invalid', []] as $invalid) {
+      $source = $this->policyImportSource();
+      $changed = $data;
+      $changed['webview_detection_override'] = $invalid;
+      $source->write($name, $changed);
+      $this->assertPolicyImportRejected($source, 'contains invalid settings');
+    }
+    // The native subscriber must leave core validation enabled.
+    $source = $this->policyImportSource();
+    $source->delete('core.extension');
+    $this->assertPolicyImportRejected($source, 'core.extension');
+  }
+
+  /**
+   * Creates form state with a real consumer and a form boundary double.
+   *
+   * @param \Drupal\consumers\Entity\Consumer $consumer
+   *   The real persisted or new consumer.
+   * @param array $settings
+   *   Submitted native settings.
+   *
+   * @return \Drupal\Core\Form\FormState
+   *   The form state.
+   */
+  private function policyFormState(Consumer $consumer, array $settings): FormState {
+    $form_object = $this->createMock(EntityFormInterface::class);
+    $form_object->method('getEntity')->willReturn($consumer);
+    return (new FormState())->setFormObject($form_object)->setValue('native_apps', $settings);
+  }
+
+  /**
+   * Copies active config into an incoming snapshot with core validators.
+   *
+   * @return \Drupal\Core\Config\MemoryStorage
+   *   The incoming configuration storage.
+   */
+  private function policyImportSource(): MemoryStorage {
+    $this->config('system.site')->set('uuid', 'a18d7807-e012-47a8-9517-72763a457666')->save();
+    $this->config('core.extension')->set('module', array_fill_keys(array_keys($this->container->get('module_handler')->getModuleList()), 0))->set('theme', [])->save();
+    $source = new MemoryStorage();
+    $active = $this->container->get('config.storage');
+    foreach ($active->readMultiple($active->listAll()) as $name => $data) {
+      $source->write($name, $data);
+    }
+    return $source;
+  }
+
+  /**
+   * Constructs a real importer with the container's event dispatcher.
+   *
+   * @param \Drupal\Core\Config\MemoryStorage $source
+   *   The incoming storage.
+   *
+   * @return \Drupal\Core\Config\ConfigImporter
+   *   The core importer with a calculated changelist.
+   */
+  private function policyImporter(MemoryStorage $source): ConfigImporter {
+    $subscriber = $this->container->get('simple_oauth_native_apps.policy_import_subscriber');
+    $this->assertContains([$subscriber, 'validateImport'], $this->container->get('event_dispatcher')->getListeners(ConfigEvents::IMPORT_VALIDATE));
+    $comparer = new StorageComparer($source, $this->container->get('config.storage'));
+    return new ConfigImporter(
+      $comparer->createChangelist(),
+      $this->container->get('event_dispatcher'),
+      $this->container->get('config.manager'),
+      $this->container->get('lock.persistent'),
+      $this->container->get('config.typed'),
+      $this->container->get('module_handler'),
+      $this->container->get('module_installer'),
+      $this->container->get('theme_handler'),
+      $this->container->get('string_translation'),
+      $this->container->get('extension.list.module'),
+      $this->container->get('extension.list.theme'),
+    );
+  }
+
+  /**
+   * Asserts core rejects a snapshot without activating any of its policies.
+   *
+   * @param \Drupal\Core\Config\MemoryStorage $source
+   *   The incoming storage.
+   * @param string $message
+   *   An actionable fragment expected in validation errors.
+   */
+  private function assertPolicyImportRejected(MemoryStorage $source, string $message): void {
+    $importer = $this->policyImporter($source);
+    $before = $this->container->get('config.storage')->readMultiple($this->container->get('config.storage')->listAll('simple_oauth_native_apps.consumer.'));
+    try {
+      $importer->import();
+      $this->fail('Unsafe policy import must be rejected before activation.');
+    }
+    catch (ConfigImporterException $exception) {
+      $this->assertStringContainsString($message, $exception->getMessage());
+      $this->assertNotEmpty($importer->getErrors());
+      $this->assertSame($before, $this->container->get('config.storage')->readMultiple($this->container->get('config.storage')->listAll('simple_oauth_native_apps.consumer.')));
+    }
   }
 
 }

@@ -111,6 +111,12 @@ simple_oauth_native_apps.consumer.*:
   type: config_object
   label: 'Consumer-specific Native Apps Settings'
   mapping:
+    consumer_uuid:
+      type: uuid
+      label: 'Policy owner consumer UUID'
+      description: 'Optional stable owner chosen when creating or explicitly confirming a policy'
+      constraints:
+        NotBlank: ~
     client_detection:
       type: mapping
       label: 'Client detection results'

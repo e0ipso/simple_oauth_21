@@ -23,6 +23,21 @@ services:
       - '@logger.factory'
       - '@string_translation'
 
+  simple_oauth_native_apps.consumer_policy_resolver:
+    class: Drupal\simple_oauth_native_apps\Service\ConsumerPolicyResolver
+    arguments:
+      - '@config.factory'
+
+  simple_oauth_native_apps.policy_import_subscriber:
+    class: Drupal\simple_oauth_native_apps\EventSubscriber\ConsumerPolicyImportSubscriber
+    arguments:
+      - '@simple_oauth_native_apps.consumer_policy_resolver'
+      - '@entity_type.manager'
+      - '@config.typed'
+      - '@string_translation'
+    tags:
+      - { name: event_subscriber }
+
   simple_oauth_native_apps.consumer_form_alter:
     class: Drupal\simple_oauth_native_apps\Form\ConsumerNativeAppsFormAlter
     arguments:
@@ -30,12 +45,15 @@ services:
       - '@entity_type.manager'
       - '@simple_oauth_native_apps.configuration_validator'
       - '@simple_oauth_native_apps.native_client_detector'
+      - '@simple_oauth_native_apps.consumer_policy_resolver'
+      - '@database'
 
   simple_oauth_native_apps.native_client_detector:
     class: Drupal\simple_oauth_native_apps\Service\NativeClientDetector
     arguments:
       - '@config.factory'
       - '@logger.factory'
+      - '@simple_oauth_native_apps.consumer_policy_resolver'
 
   simple_oauth_native_apps.pkce_enhancement:
     class: Drupal\simple_oauth_native_apps\Service\PKCEEnhancementService
