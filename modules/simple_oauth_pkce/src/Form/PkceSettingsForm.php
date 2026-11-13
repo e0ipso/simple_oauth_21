@@ -95,6 +95,10 @@ final class PkceSettingsForm extends ConfigFormBase {
     $plain_enabled = $form_state->getValue('plain_enabled');
     $enforcement = $form_state->getValue('enforcement');
 
+    if (!in_array($enforcement, ['mandatory', 'optional', 'disabled'], TRUE)) {
+      $form_state->setErrorByName('enforcement', $this->t('Select a valid PKCE enforcement level.'));
+    }
+
     // At least one method must be enabled when enforcement is not disabled.
     if ($enforcement !== 'disabled' && !$s256_enabled && !$plain_enabled) {
       $form_state->setError($form['pkce']['methods'],
