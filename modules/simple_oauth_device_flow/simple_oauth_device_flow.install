@@ -102,16 +102,6 @@ function simple_oauth_device_flow_schema() {
  */
 function simple_oauth_device_flow_install($is_syncing) {
   if (!$is_syncing) {
-    // Set default configuration values.
-    $config = \Drupal::configFactory()->getEditable('simple_oauth_device_flow.settings');
-    $config->setData([
-      'device_code_lifetime' => 600,
-      'user_code_length' => 8,
-      'polling_interval' => 5,
-      'verification_uri_complete_enabled' => TRUE,
-    ]);
-    $config->save();
-
     // Log successful installation.
     \Drupal::service('logger.channel.simple_oauth_device_flow')->info('Simple OAuth Device Flow module installed successfully.');
   }

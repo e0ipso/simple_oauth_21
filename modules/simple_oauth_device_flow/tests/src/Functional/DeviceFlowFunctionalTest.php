@@ -192,6 +192,21 @@ final class DeviceFlowFunctionalTest extends BrowserTestBase {
   }
 
   /**
+   * Reviews client identity and requested access before authorizing a device.
+   *
+   * @param array $edit
+   *   The code-entry form values, or an empty array for a prefilled code.
+   */
+  private function reviewAndAuthorize(array $edit): void {
+    $this->submitForm($edit, 'Review request');
+    $this->assertSession()->pageTextContains('Application');
+    $this->assertSession()->pageTextContains('Test Device Client');
+    $this->assertSession()->pageTextContains('Requested access');
+    $this->submitForm([], 'Authorize Device');
+    $this->assertSession()->pageTextContains('Device authorized successfully');
+  }
+
+  /**
    * Helper method to request device authorization.
    *
    * @return array
@@ -304,9 +319,7 @@ final class DeviceFlowFunctionalTest extends BrowserTestBase {
     $this->drupalGet($verification_url);
 
     // Submit the verification form with the user code.
-    $this->submitForm([
-      'user_code' => $device_data['user_code'],
-    ], 'Authorize Device');
+    $this->reviewAndAuthorize(['user_code' => $device_data['user_code']]);
 
     // Should redirect to confirmation or success page.
     $this->assertSession()->statusCodeEquals(200);
@@ -325,7 +338,7 @@ final class DeviceFlowFunctionalTest extends BrowserTestBase {
 
     $this->submitForm([
       'user_code' => 'INVALID_CODE',
-    ], 'Authorize Device');
+    ], 'Review request');
 
     // Should show error message.
     $this->assertSession()->pageTextContains('Invalid user code');
@@ -363,9 +376,7 @@ final class DeviceFlowFunctionalTest extends BrowserTestBase {
     $this->drupalLogin($this->testUser);
     $verification_url = $this->buildUrl('/oauth/device');
     $this->drupalGet($verification_url);
-    $this->submitForm([
-      'user_code' => $device_data['user_code'],
-    ], 'Authorize Device');
+    $this->reviewAndAuthorize(['user_code' => $device_data['user_code']]);
 
     // Poll again after authorization (should succeed)
     $response = $this->httpClient->post($token_url, [
@@ -606,9 +617,7 @@ final class DeviceFlowFunctionalTest extends BrowserTestBase {
     $this->drupalLogin($this->testUser);
     $verification_url = $this->buildUrl('/oauth/device');
     $this->drupalGet($verification_url);
-    $this->submitForm([
-      'user_code' => $device_data['user_code'],
-    ], 'Authorize Device');
+    $this->reviewAndAuthorize(['user_code' => $device_data['user_code']]);
 
     $token_url = $this->buildUrl('/oauth/token');
 
@@ -669,7 +678,10 @@ final class DeviceFlowFunctionalTest extends BrowserTestBase {
     $this->assertSame('authorization_pending', Json::decode((string) $pending->getBody())['error']);
     $this->drupalLogin($this->testUser);
     $this->drupalGet('/oauth/device');
-    $this->submitForm(['user_code' => $data['user_code']], 'Deny Access');
+    $this->submitForm(['user_code' => $data['user_code']], 'Review request');
+    $this->assertSession()->pageTextContains('Test Device Client');
+    $this->assertSession()->pageTextContains('Requested access');
+    $this->submitForm([], 'Deny Access');
     $this->assertSession()->pageTextContains('Device authorization was denied');
     $storage->resetCache([$device->id()]);
     $denied = $storage->load($device->id());
@@ -682,7 +694,7 @@ final class DeviceFlowFunctionalTest extends BrowserTestBase {
     ]);
     $this->assertSame('access_denied', Json::decode((string) $poll->getBody())['error']);
     $this->drupalGet('/oauth/device');
-    $this->submitForm(['user_code' => $data['user_code']], 'Authorize Device');
+    $this->submitForm(['user_code' => $data['user_code']], 'Review request');
     $this->assertSession()->pageTextContains('This device authorization is no longer available');
     $storage->resetCache([$device->id()]);
     $reloaded = $storage->load($device->id());
@@ -722,12 +734,12 @@ final class DeviceFlowFunctionalTest extends BrowserTestBase {
 
     $this->drupalLogin($this->testUser);
     $this->drupalGet('/oauth/device');
-    $this->submitForm(['user_code' => $data['user_code']], 'Authorize Device');
+    $this->submitForm(['user_code' => $data['user_code']], 'Review request');
     $this->assertSession()->pageTextContains('This device authorization is no longer available');
 
     $data = $this->requestDeviceAuthorization();
     $this->drupalGet('/oauth/device');
-    $this->submitForm(['user_code' => $data['user_code']], 'Authorize Device');
+    $this->reviewAndAuthorize(['user_code' => $data['user_code']]);
     $this->assertSession()->pageTextContains('Device authorized successfully');
     $parameters = [
       'grant_type' => 'urn:ietf:params:oauth:grant-type:device_code',
@@ -743,7 +755,7 @@ final class DeviceFlowFunctionalTest extends BrowserTestBase {
     $tokens = $this->container->get('entity_type.manager')->getStorage('oauth2_token');
     $token_count = $tokens->getQuery()->accessCheck(FALSE)->count()->execute();
     $this->drupalGet('/oauth/device');
-    $this->submitForm(['user_code' => $data['user_code']], 'Authorize Device');
+    $this->submitForm(['user_code' => $data['user_code']], 'Review request');
     $this->assertSession()->pageTextContains('This device authorization is no longer available');
     $response = $this->httpClient->post($this->buildUrl('/oauth/token'), [
       RequestOptions::FORM_PARAMS => $parameters,
@@ -845,7 +857,7 @@ final class DeviceFlowFunctionalTest extends BrowserTestBase {
     $this->drupalGet($data['verification_uri']);
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->fieldExists('user_code');
-    $this->submitForm(['user_code' => $data['user_code']], 'Authorize Device');
+    $this->reviewAndAuthorize(['user_code' => $data['user_code']]);
     $this->assertSession()->pageTextContains('Device authorized successfully');
     $this->drupalGet($path);
     $this->submitForm(['verification_uri_complete' => TRUE], 'Save configuration');
@@ -883,7 +895,7 @@ final class DeviceFlowFunctionalTest extends BrowserTestBase {
         $this->drupalGet($complete);
         $this->assertSession()->statusCodeEquals(200);
         $this->assertSession()->fieldValueEquals('user_code', $data['user_code']);
-        $this->submitForm([], 'Authorize Device');
+        $this->reviewAndAuthorize([]);
         $this->assertSession()->pageTextContains('Device authorized successfully');
       }
       else {

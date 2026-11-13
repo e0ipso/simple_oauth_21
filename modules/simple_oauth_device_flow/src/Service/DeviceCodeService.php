@@ -9,6 +9,9 @@ use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\simple_oauth_device_flow\Entity\DeviceCode;
 use Drupal\simple_oauth_device_flow\Repository\DeviceCodeRepository;
 use Psr\Log\LoggerInterface;
+use League\OAuth2\Server\Entities\ScopeEntityInterface;
+use League\OAuth2\Server\Exception\OAuthServerException;
+use League\OAuth2\Server\Repositories\ScopeRepositoryInterface;
 
 /**
  * Service for managing Device Code lifecycle and cleanup operations.
@@ -41,6 +44,8 @@ final class DeviceCodeService {
    *   The time service.
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $loggerFactory
    *   The logger channel factory.
+   * @param \League\OAuth2\Server\Repositories\ScopeRepositoryInterface|null $scopeRepository
+   *   The scope repository, or NULL to use the container.
    */
   public function __construct(
     protected DeviceCodeRepository $deviceCodeRepository,
@@ -48,6 +53,7 @@ final class DeviceCodeService {
     protected DeviceFlowSettingsService $settings,
     protected TimeInterface $time,
     LoggerChannelFactoryInterface $loggerFactory,
+    private readonly ?ScopeRepositoryInterface $scopeRepository = NULL,
   ) {
     $this->logger = $loggerFactory->get('simple_oauth_device_flow');
   }
@@ -160,31 +166,25 @@ final class DeviceCodeService {
    * the last polled timestamp. Returns appropriate response for slow_down
    * if polling too frequently.
    *
+   * This legacy entry point is deprecated. Use the League grant for routed
+   * token polling. It retains its existing interval response policy.
+   *
    * @param \Drupal\simple_oauth_device_flow\Entity\DeviceCode $deviceCode
    *   The device code entity to validate polling for.
    *
    * @return array
    *   Array with 'valid' boolean and optional 'error' and 'error_description'.
+   *
+   * @see \League\OAuth2\Server\Grant\DeviceCodeGrant::respondToAccessTokenRequest()
    */
   public function validatePollingInterval(DeviceCode $deviceCode): array {
     try {
       $current_time = $this->time->getCurrentTime();
       $polling_interval = $this->settings->getPollingInterval();
-      $last_polled = $deviceCode->get('last_polled_at')->value ?? 0;
-
-      // Calculate time since last poll.
-      $time_since_last_poll = $current_time - $last_polled;
-
-      // Check if polling too frequently.
-      if ($time_since_last_poll < $polling_interval) {
-        $remaining_time = $polling_interval - $time_since_last_poll;
-
-        $this->logger->debug('Client polling too frequently for device code entity @entity_id. Time since last poll: @time_since, Required interval: @interval', [
-          '@entity_id' => $deviceCode->id(),
-          '@time_since' => $time_since_last_poll,
-          '@interval' => $polling_interval,
-        ]);
-
+      $remaining_time = $this->deviceCodeRepository->recordPolling(
+        $deviceCode->getIdentifier(), $current_time, $polling_interval,
+      );
+      if ($remaining_time > 0) {
         return [
           'valid' => FALSE,
           'error' => 'slow_down',
@@ -195,15 +195,12 @@ final class DeviceCodeService {
         ];
       }
 
-      // Update last polled timestamp.
-      $deviceCode->set('last_polled_at', $current_time);
-      $deviceCode->save();
-
+      // Retain the public helper's timestamp update on the supplied instance.
+      $deviceCode->setLastPolledAt(new \DateTimeImmutable('@' . $current_time));
       return ['valid' => TRUE];
     }
     catch (\Exception $e) {
-      $this->logger->error('Failed to validate polling interval for device code entity @entity_id: @exception_type', [
-        '@entity_id' => $deviceCode->id(),
+      $this->logger->error('Failed to validate device polling interval: @exception_type', [
         '@exception_type' => get_class($e),
       ]);
 
@@ -304,11 +301,23 @@ final class DeviceCodeService {
    * @return array
    *   Array containing device_code, user_code, expires_in, and interval.
    *
+   * @throws \League\OAuth2\Server\Exception\OAuthServerException
+   *   When a requested public scope name is unknown.
    * @throws \RuntimeException
    *   When device authorization generation fails.
    */
   public function generateDeviceAuthorization($client_entity, string $scope = ''): array {
     try {
+      // Resolve all public names before issuing or persisting credentials.
+      $scopes = [];
+      foreach (array_filter(explode(' ', trim($scope)), static fn(string $name): bool => $name !== '') as $name) {
+        // phpcs:ignore DrupalPractice.Objects.GlobalDrupal.GlobalDrupal -- Preserve the original constructor for external callers.
+        $resolved = ($this->scopeRepository ?? \Drupal::service('simple_oauth.repositories.scope'))->getScopeEntityByIdentifier($name);
+        if (!$resolved instanceof ScopeEntityInterface) {
+          throw OAuthServerException::invalidScope($name);
+        }
+        $scopes[] = $resolved;
+      }
       // Generate a unique device code.
       $device_code = $this->generateUniqueDeviceCode();
 
@@ -333,11 +342,10 @@ final class DeviceCodeService {
       $device_code_entity->set('expires_at', $expires_at);
       $device_code_entity->set('authorized', FALSE);
 
-      // Parse scope string and add each scope directly to the field.
-      $scope_array = !empty($scope) ? explode(' ', trim($scope)) : [];
-      foreach ($scope_array as $scope_id) {
-        $device_code_entity->get('scopes')->appendItem(['scope_id' => trim($scope_id)]);
+      foreach ($scopes as $resolved) {
+        $device_code_entity->addScope($resolved);
       }
+      $device_code_entity->setInterval($polling_interval);
 
       // Persist the device code with all fields set.
       $this->deviceCodeRepository->persistDeviceCode($device_code_entity);
@@ -352,6 +360,9 @@ final class DeviceCodeService {
         'expires_in' => $expires_in,
         'interval' => $polling_interval,
       ];
+    }
+    catch (OAuthServerException $e) {
+      throw $e;
     }
     catch (\Exception $e) {
       $this->logger->error('Failed to generate device authorization: @exception_type', [

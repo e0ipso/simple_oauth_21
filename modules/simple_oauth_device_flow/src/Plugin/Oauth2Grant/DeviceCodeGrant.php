@@ -104,7 +104,7 @@ final class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryP
     $device_code_ttl = new \DateInterval(sprintf('PT%dS', $device_code_lifetime));
 
     // Get verification URI (default path).
-    $verification_uri = $config->get('verification_uri') ?? '/oauth/device/verify';
+    $verification_uri = $this->settings->getAbsoluteVerificationUri();
 
     // Get polling interval (default 5 seconds).
     $polling_interval = $config->get('polling_interval') ?? 5;
@@ -170,7 +170,7 @@ final class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryP
 
     return [
       'device_code_lifetime' => $this->settings->getDeviceCodeExpiration(),
-      'verification_uri' => $config->get('verification_uri') ?? '/oauth/device/verify',
+      'verification_uri' => $this->settings->getVerificationUri(),
       'polling_interval' => $config->get('polling_interval') ?? 5,
       'user_code_length' => $config->get('user_code_length') ?? 8,
       'user_code_format' => $config->get('user_code_format') ?? 'XXXX-XXXX',
