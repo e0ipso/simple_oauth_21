@@ -65,6 +65,14 @@ final class ClientMetadataMapper {
       'grant_types' => [],
     ];
 
+    // Report only explicit classifications retained by the installed control.
+    if ($consumer->hasField('native_app_override')) {
+      $application_type = $consumer->get('native_app_override')->value;
+      if (in_array($application_type, ['native', 'web'], TRUE)) {
+        $metadata['application_type'] = $application_type;
+      }
+    }
+
     // Get redirect URIs.
     if (!$consumer->get('redirect')->isEmpty()) {
       foreach ($consumer->get('redirect') as $redirect) {

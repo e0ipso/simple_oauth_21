@@ -108,25 +108,21 @@ class NativeAppRedirectUriValidator extends ConstraintValidator implements Conta
    *   The constraint.
    */
   protected function validateSingleUri(string $uri, NativeAppRedirectUri $constraint): void {
-    // Basic URI format validation.
-    if (!filter_var($uri, FILTER_VALIDATE_URL)) {
+    $scheme = parse_url($uri, PHP_URL_SCHEME);
+    if (!is_string($scheme)) {
       $this->context->addViolation($constraint->invalidUriMessage, ['%uri' => $uri]);
       return;
     }
-
-    $parsed = parse_url($uri);
-    if (!$parsed || !isset($parsed['scheme'])) {
-      $this->context->addViolation($constraint->invalidUriMessage, ['%uri' => $uri]);
-      return;
+    // Retain the protected scheme handlers for existing validator extensions.
+    if (strtolower($scheme) === 'http') {
+      $this->validateLoopbackUri($uri, $constraint);
     }
-
-    $scheme = strtolower($parsed['scheme']);
-
-    // Handle different URI types.
-    match ($scheme) {
-      'http', 'https' => $this->validateLoopbackUri($uri, $constraint),
-      default => $this->validateCustomSchemeUri($uri, $constraint),
-    };
+    elseif (strtolower($scheme) !== 'https') {
+      $this->validateCustomSchemeUri($uri, $constraint);
+    }
+    elseif (!$this->redirectUriValidator->validateRedirectUri($uri)) {
+      $this->context->addViolation($constraint->invalidUriMessage, ['%uri' => $uri]);
+    }
   }
 
   /**

@@ -27,6 +27,10 @@ services:
     class: Drupal\simple_oauth_native_apps\Service\ConsumerPolicyResolver
     arguments:
       - '@config.factory'
+      - '@cache.default'
+      - '@cache_tags.invalidator.checksum'
+    tags:
+      - { name: event_subscriber }
 
   simple_oauth_native_apps.policy_import_subscriber:
     class: Drupal\simple_oauth_native_apps\EventSubscriber\ConsumerPolicyImportSubscriber
