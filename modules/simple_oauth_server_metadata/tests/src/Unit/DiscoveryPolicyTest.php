@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Drupal\Tests\simple_oauth_server_metadata\Unit;
 
 use Drupal\Core\Cache\CacheableDependencyInterface;
+use Drupal\Core\Cache\Context\CacheContextsManager;
+use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\simple_oauth\Oauth2ScopeInterface;
 use Drupal\simple_oauth\Oauth2ScopeProviderInterface;
@@ -20,6 +22,16 @@ use PHPUnit\Framework\Attributes\Group;
  */
 #[Group('simple_oauth_server_metadata')]
 final class DiscoveryPolicyTest extends UnitTestCase {
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $container = new ContainerBuilder();
+    $container->set('cache_contexts_manager', new CacheContextsManager($container, ['url.query_args', 'url.site']));
+    \Drupal::setContainer($container);
+  }
 
   /**
    * Tests unknown collections expire while item dependencies refresh each call.
