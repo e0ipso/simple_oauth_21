@@ -5,6 +5,10 @@ simple_oauth_pkce.settings:
     enforcement:
       type: string
       label: 'PKCE Enforcement Level'
+      constraints:
+        Choice:
+          choices: ['mandatory', 'optional', 'disabled']
+        NotBlank: ~
     s256_enabled:
       type: boolean
       label: 'Enable S256 Challenge Method'

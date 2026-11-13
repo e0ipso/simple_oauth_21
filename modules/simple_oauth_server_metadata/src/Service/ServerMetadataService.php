@@ -5,16 +5,18 @@ declare(strict_types=1);
 namespace Drupal\simple_oauth_server_metadata\Service;
 
 use Drupal\Core\Cache\CacheableDependencyInterface;
-use Drupal\Core\Cache\CacheableDependencyTrait;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Url;
+use Drupal\simple_oauth_server_metadata\Trait\MetadataCacheabilityTrait;
+use Drupal\simple_oauth_server_metadata\Trait\MetadataUrlTrait;
 
 /**
  * Main service for generating RFC 8414 server metadata.
  */
 class ServerMetadataService implements CacheableDependencyInterface {
 
-  use CacheableDependencyTrait;
+  use MetadataCacheabilityTrait;
+  use MetadataUrlTrait;
 
   /**
    * Constructs a ServerMetadataService object.
@@ -50,6 +52,7 @@ class ServerMetadataService implements CacheableDependencyInterface {
 
     $this->cacheContexts = [
       'url.path',
+      'url.site',
       'user.permissions',
     ];
   }
@@ -64,6 +67,7 @@ class ServerMetadataService implements CacheableDependencyInterface {
    *   The server metadata array compliant with RFC 8414.
    */
   public function getServerMetadata(array $config_override = []): array {
+    $this->generationCacheability = NULL;
     $metadata = [];
 
     // Add required fields per RFC 8414.
@@ -109,6 +113,31 @@ class ServerMetadataService implements CacheableDependencyInterface {
     // Remove empty optional fields per RFC 8414.
     $metadata = $this->filterEmptyFields($metadata);
 
+    // Project known collections as JSON arrays without changing their sources.
+    foreach ([
+      'response_types_supported',
+      'response_modes_supported',
+      'grant_types_supported',
+      'scopes_supported',
+      'token_endpoint_auth_methods_supported',
+      'token_endpoint_auth_signing_alg_values_supported',
+      'code_challenge_methods_supported',
+      'claims_supported',
+      'subject_types_supported',
+      'id_token_signing_alg_values_supported',
+      'ui_locales_supported',
+      'additional_claims_supported',
+      'additional_signing_algorithms',
+    ] as $field) {
+      if (isset($metadata[$field]) && is_array($metadata[$field])) {
+        $metadata[$field] = array_values($metadata[$field]);
+      }
+    }
+
+    $this->generationCacheability = CacheableMetadata::createFromObject($config)
+      ->addCacheableDependency($this->scopeDiscovery)
+      ->addCacheableDependency($this->claimsAuthDiscovery);
+
     return $metadata;
   }
 
@@ -125,6 +154,9 @@ class ServerMetadataService implements CacheableDependencyInterface {
   protected function addConfigurableFields(array &$metadata, $config, array $config_override = []): void {
     $configurable_fields = [
       'registration_endpoint',
+      'revocation_endpoint',
+      'introspection_endpoint',
+      'device_authorization_endpoint',
       'service_documentation',
       'op_policy_uri',
       'op_tos_uri',
@@ -136,6 +168,9 @@ class ServerMetadataService implements CacheableDependencyInterface {
     // Fields that should be converted to absolute URLs if they are relative.
     $url_fields = [
       'registration_endpoint',
+      'revocation_endpoint',
+      'introspection_endpoint',
+      'device_authorization_endpoint',
       'service_documentation',
       'op_policy_uri',
       'op_tos_uri',
@@ -163,36 +198,6 @@ class ServerMetadataService implements CacheableDependencyInterface {
         $metadata[$field] = $value;
       }
     }
-  }
-
-  /**
-   * Ensures a URL is absolute.
-   *
-   * @param string $url
-   *   The URL to check.
-   *
-   * @return string
-   *   The absolute URL.
-   */
-  protected function ensureAbsoluteUrl(string $url): string {
-    // If URL already contains scheme, it's absolute.
-    if (preg_match('/^https?:\/\//', $url)) {
-      return $url;
-    }
-
-    // If URL starts with /, it's a relative path - convert to absolute.
-    if (strpos($url, '/') === 0) {
-      try {
-        return Url::fromUserInput($url)->setAbsolute()->toString();
-      }
-      catch (\Exception $e) {
-        // If URL conversion fails, return as-is.
-        return $url;
-      }
-    }
-
-    // Return as-is for other cases.
-    return $url;
   }
 
   /**

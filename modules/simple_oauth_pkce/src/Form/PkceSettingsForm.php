@@ -95,6 +95,10 @@ final class PkceSettingsForm extends ConfigFormBase {
     $plain_enabled = $form_state->getValue('plain_enabled');
     $enforcement = $form_state->getValue('enforcement');
 
+    if (!in_array($enforcement, ['mandatory', 'optional', 'disabled'], TRUE)) {
+      $form_state->setErrorByName('enforcement', $this->t('Select a valid PKCE enforcement level.'));
+    }
+
     // At least one method must be enabled when enforcement is not disabled.
     if ($enforcement !== 'disabled' && !$s256_enabled && !$plain_enabled) {
       $form_state->setError($form['pkce']['methods'],
@@ -131,11 +135,8 @@ final class PkceSettingsForm extends ConfigFormBase {
 
     parent::submitForm($form, $form_state);
 
-    // Clear caches to ensure new settings take effect.
-    drupal_flush_all_caches();
-
     $this->messenger()->addStatus(
-      $this->t('PKCE configuration has been saved. Cache cleared to apply changes.')
+      $this->t('PKCE configuration has been saved. Changes apply immediately.')
     );
   }
 

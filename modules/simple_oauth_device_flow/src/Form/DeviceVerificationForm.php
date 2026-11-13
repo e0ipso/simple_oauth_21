@@ -9,7 +9,9 @@ use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Url;
-use Drupal\simple_oauth_device_flow\Repository\DeviceCodeRepository;
+use Drupal\simple_oauth_device_flow\Repository\DeviceVerificationOperationsInterface;
+use Drupal\simple_oauth_device_flow\Entity\DeviceCode;
+use Drupal\simple_oauth\Entities\ScopeEntity;
 use League\OAuth2\Server\Repositories\DeviceCodeRepositoryInterface;
 use Drupal\simple_oauth_device_flow\Service\DeviceCodeService;
 use Drupal\simple_oauth_device_flow\Service\DeviceFlowSettingsService;
@@ -38,7 +40,7 @@ final class DeviceVerificationForm extends FormBase {
   /**
    * The device code repository.
    */
-  protected DeviceCodeRepository $deviceCodeRepository;
+  protected ?DeviceVerificationOperationsInterface $deviceCodeRepository;
 
   /**
    * The device code service.
@@ -73,7 +75,7 @@ final class DeviceVerificationForm extends FormBase {
   /**
    * Constructs a DeviceVerificationForm object.
    *
-   * @param \Drupal\simple_oauth_device_flow\Repository\DeviceCodeRepository $device_code_repository
+   * @param \League\OAuth2\Server\Repositories\DeviceCodeRepositoryInterface|\Drupal\simple_oauth_device_flow\Repository\DeviceVerificationOperationsInterface $device_code_repository
    *   The device code repository.
    * @param \Drupal\simple_oauth_device_flow\Service\DeviceCodeService $device_code_service
    *   The device code service.
@@ -89,7 +91,7 @@ final class DeviceVerificationForm extends FormBase {
    *   The device flow settings service.
    */
   public function __construct(
-    DeviceCodeRepositoryInterface $device_code_repository,
+    DeviceCodeRepositoryInterface|DeviceVerificationOperationsInterface $device_code_repository,
     DeviceCodeService $device_code_service,
     UserCodeGenerator $user_code_generator,
     AccountInterface $current_user,
@@ -97,7 +99,9 @@ final class DeviceVerificationForm extends FormBase {
     FloodInterface $flood,
     DeviceFlowSettingsService $settings,
   ) {
-    $this->deviceCodeRepository = $device_code_repository;
+    // Retain bare League callers until a breaking release can require local
+    // operations. They continue to fail closed as verification unavailable.
+    $this->deviceCodeRepository = $device_code_repository instanceof DeviceVerificationOperationsInterface ? $device_code_repository : NULL;
     $this->deviceCodeService = $device_code_service;
     $this->userCodeGenerator = $user_code_generator;
     $this->currentUser = $current_user;
@@ -110,8 +114,13 @@ final class DeviceVerificationForm extends FormBase {
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): static {
+    // Retain independently constructed legacy containers until a breaking
+    // release can require the focused service alias.
+    $repository_id = $container->has('simple_oauth_device_flow.verification_repository')
+      ? 'simple_oauth_device_flow.verification_repository'
+      : 'simple_oauth_device_flow.device_code_repository';
     return new static(
-      $container->get('simple_oauth_device_flow.device_code_repository'),
+      $container->get($repository_id),
       $container->get('simple_oauth_device_flow.device_code_service'),
       $container->get('simple_oauth_device_flow.user_code_generator'),
       $container->get('current_user'),
@@ -165,6 +174,8 @@ final class DeviceVerificationForm extends FormBase {
     }
 
     $form['#attributes']['class'][] = 'device-authorization-form';
+    $form['#cache']['max-age'] = 0;
+    $confirmation = $form_state->get('confirmation');
 
     // Instructions for the user.
     $form['instructions'] = [
@@ -175,13 +186,18 @@ final class DeviceVerificationForm extends FormBase {
       '</div>',
     ];
 
+    // Bound prefilled input before passing it to the text element.
+    $prefilled = $this->getRequest()->query->all()['user_code'] ?? '';
+    $prefilled = is_string($prefilled) && strlen($prefilled) <= 128
+      && mb_strlen($prefilled, 'UTF-8') <= 32 ? $prefilled : '';
+
     // User code input field.
     $form['user_code'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Device Code'),
       '#description' => $this->t('Enter the code shown on your device (e.g., ABCD-EFGH).'),
       '#required' => TRUE,
-      '#maxlength' => 16,
+      '#maxlength' => 32,
       '#size' => 16,
       '#placeholder' => 'XXXX-XXXX',
       '#attributes' => [
@@ -190,7 +206,7 @@ final class DeviceVerificationForm extends FormBase {
         'autocapitalize' => 'characters',
         'spellcheck' => 'false',
       ],
-      '#default_value' => $this->getRequest()->query->get('user_code', ''),
+      '#default_value' => $prefilled,
     ];
 
     // Action buttons.
@@ -200,7 +216,7 @@ final class DeviceVerificationForm extends FormBase {
 
     $form['actions']['authorize'] = [
       '#type' => 'submit',
-      '#value' => $this->t('Authorize Device'),
+      '#value' => is_array($confirmation) ? $this->t('Authorize Device') : $this->t('Review request'),
       '#button_type' => 'primary',
       '#attributes' => [
         'class' => ['button--authorize'],
@@ -215,7 +231,37 @@ final class DeviceVerificationForm extends FormBase {
         'class' => ['button--deny'],
       ],
       '#submit' => ['::submitDeny'],
+      '#access' => (bool) $confirmation,
     ];
+
+    if (is_array($confirmation)) {
+      // Values are bound in server-side form state, never trusted hidden input.
+      $form['user_code'] = [
+        '#type' => 'value',
+        '#value' => $confirmation['user_code'],
+      ];
+      $device = $this->deviceCodeRepository?->getDeviceCodeEntityByDeviceCode($confirmation['identifier']);
+      if ($device instanceof DeviceCode) {
+        $client = $device->getClient();
+        $form['instructions']['#markup'] = $this->t('Review this request before allowing access to your account.');
+        $form['client'] = [
+          '#type' => 'item',
+          '#title' => $this->t('Application'),
+          '#plain_text' => $client->getName() . ' (' . $client->getIdentifier() . ')',
+        ];
+        $items = [];
+        foreach ($device->getScopes() as $scope) {
+          $description = $scope instanceof ScopeEntity ? $scope->getDescription('urn:ietf:params:oauth:grant-type:device_code') : '';
+          $items[] = ['#plain_text' => $scope->getIdentifier() . ($description !== '' ? ': ' . $description : '')];
+        }
+        $form['scopes'] = [
+          '#theme' => 'item_list',
+          '#title' => $this->t('Requested access'),
+          '#items' => $items,
+          '#empty' => $this->t('No specific permissions were requested.'),
+        ];
+      }
+    }
 
     // Security notice.
     $form['security_notice'] = [
@@ -240,29 +286,32 @@ final class DeviceVerificationForm extends FormBase {
       return;
     }
 
-    $user_code = trim((string) $form_state->getValue('user_code'));
-
-    if (empty($user_code)) {
-      $this->registerFailedVerification();
-      $form_state->setErrorByName('user_code', $this->t('Device code is required.'));
+    if ($this->currentUser->isAnonymous() || $this->deviceCodeRepository === NULL) {
+      $form_state->setErrorByName('user_code', $this->t('Device verification is unavailable.'));
       return;
     }
+    $confirmation = $form_state->get('confirmation');
+    $user_code = $confirmation['user_code'] ?? $form_state->getValue('user_code');
 
-    // Validate user code format.
-    if (!$this->userCodeGenerator->validateCodeFormat($user_code)) {
-      $this->registerFailedVerification();
-      $form_state->setErrorByName('user_code', $this->t('Invalid user code. Please check the code and try again.'));
-      return;
+    // Reject oversized raw input before any normalization or storage lookup.
+    $candidates = is_string($user_code) ? $this->userCodeGenerator->getVerificationCandidates($user_code) : [];
+    $device_code_entity = NULL;
+    try {
+      foreach ($candidates as $candidate) {
+        $found = $this->deviceCodeRepository->getDeviceCodeEntityByUserCode($candidate);
+        if ($found !== NULL) {
+          if ($device_code_entity !== NULL && $device_code_entity->getIdentifier() !== $found->getIdentifier()) {
+            throw new \UnexpectedValueException('Ambiguous device user code.');
+          }
+          $device_code_entity = $found;
+        }
+      }
+    }
+    catch (\Exception) {
+      $device_code_entity = NULL;
     }
 
-    // Normalize the user code for lookup.
-    $normalized_code = $this->userCodeGenerator->normalizeUserCode($user_code);
-    $formatted_code = $this->userCodeGenerator->formatUserCode($normalized_code);
-
-    // Find device code by user code.
-    $device_code_entity = $this->deviceCodeRepository->getDeviceCodeEntityByUserCode($formatted_code);
-
-    if (empty($device_code_entity)) {
+    if (empty($device_code_entity) || (is_array($confirmation) && $device_code_entity->getIdentifier() !== $confirmation['identifier'])) {
       $this->registerFailedVerification();
       $form_state->setErrorByName('user_code', $this->t('Invalid user code. Please check the code and try again.'));
       $this->logger->notice('Device verification failed: user code not found');
@@ -335,11 +384,20 @@ final class DeviceVerificationForm extends FormBase {
     }
 
     try {
-      // Associate device with current user.
-      $device_code_entity->set('user_id', $this->currentUser->id());
-      $device_code_entity->set('authorized', TRUE);
-      $device_code_entity->set('authorized_at', time());
-      $device_code_entity->save();
+      if (!is_array($form_state->get('confirmation'))) {
+        $form_state->set('confirmation', [
+          'identifier' => $device_code_entity->getIdentifier(),
+          'user_code' => $device_code_entity->getUserCode(),
+        ]);
+        $form_state->setRebuild();
+        return;
+      }
+      if ($this->deviceCodeRepository === NULL) {
+        throw new \RuntimeException('Device verification is unavailable.');
+      }
+      $this->deviceCodeRepository->decide(
+        $form_state->get('confirmation')['identifier'], (string) $this->currentUser->id(), TRUE,
+      );
 
       $this->logger->info('Device authorized successfully for user @user_id', [
         '@user_id' => $this->currentUser->id(),
@@ -376,11 +434,12 @@ final class DeviceVerificationForm extends FormBase {
     }
 
     try {
-      // A user with an unapproved decision makes token polling return denial.
-      $device_code_entity->set('user_id', $this->currentUser->id());
-      $device_code_entity->set('authorized', FALSE);
-      $device_code_entity->set('authorized_at', time());
-      $device_code_entity->save();
+      if (!is_array($form_state->get('confirmation')) || $this->deviceCodeRepository === NULL) {
+        throw new \RuntimeException('Device request has not been reviewed.');
+      }
+      $this->deviceCodeRepository->decide(
+        $form_state->get('confirmation')['identifier'], (string) $this->currentUser->id(), FALSE,
+      );
 
       $this->logger->info('Device authorization denied by user @user_id', [
         '@user_id' => $this->currentUser->id(),

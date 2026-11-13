@@ -5,10 +5,16 @@ declare(strict_types=1);
 namespace Drupal\simple_oauth_native_apps\EventSubscriber;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\consumers\Entity\Consumer;
+use Drupal\simple_oauth_native_apps\Service\NativeClientDetector;
+use Drupal\simple_oauth_native_apps\Service\RedirectUriValidator;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\simple_oauth_native_apps\Service\UserAgentAnalyzer;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
+use Symfony\Component\HttpKernel\Event\ResponseEvent;
+use Drupal\Core\Cache\CacheableResponseInterface;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\HttpFoundation\JsonResponse;
 
@@ -51,8 +57,21 @@ final class AuthorizationRequestSubscriber implements EventSubscriberInterface {
    *   The configuration factory.
    * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
    *   The module handler service.
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface|null $entityTypeManager
+   *   Consumer storage access, optional for existing callers.
+   * @param \Drupal\simple_oauth_native_apps\Service\NativeClientDetector|null $nativeClientDetector
+   *   The policy resolver, optional for existing callers.
+   * @param \Drupal\simple_oauth_native_apps\Service\RedirectUriValidator|null $redirectUriValidator
+   *   The redirect validator, optional for existing callers.
    */
-  public function __construct(UserAgentAnalyzer $user_agent_analyzer, ConfigFactoryInterface $config_factory, ModuleHandlerInterface $module_handler) {
+  public function __construct(
+    UserAgentAnalyzer $user_agent_analyzer,
+    ConfigFactoryInterface $config_factory,
+    ModuleHandlerInterface $module_handler,
+    private readonly ?EntityTypeManagerInterface $entityTypeManager = NULL,
+    private readonly ?NativeClientDetector $nativeClientDetector = NULL,
+    private readonly ?RedirectUriValidator $redirectUriValidator = NULL,
+  ) {
     $this->userAgentAnalyzer = $user_agent_analyzer;
     $this->configFactory = $config_factory;
     $this->moduleHandler = $module_handler;
@@ -65,6 +84,7 @@ final class AuthorizationRequestSubscriber implements EventSubscriberInterface {
     $events = [];
     // Run after routing, before OAuth policy and controller processing.
     $events[KernelEvents::REQUEST][] = ['onAuthorizationRequest', 29];
+    $events[KernelEvents::RESPONSE][] = ['onResponse', -1000];
     return $events;
   }
 
@@ -82,8 +102,35 @@ final class AuthorizationRequestSubscriber implements EventSubscriberInterface {
       return;
     }
 
-    // Skip if webview detection is disabled.
-    if (!$this->userAgentAnalyzer->isDetectionEnabled()) {
+    if (!$event->isMainRequest()) {
+      return;
+    }
+    $client = NULL;
+    $client_id = $request->query->all()['client_id'] ?? NULL;
+    if (is_string($client_id) && $this->entityTypeManager !== NULL) {
+      $clients = $this->entityTypeManager->getStorage('consumer')->loadByProperties(['client_id' => $client_id]);
+      $loaded = $clients !== [] ? reset($clients) : NULL;
+      $client = $loaded instanceof Consumer ? $loaded : NULL;
+    }
+    if ($client !== NULL && $this->redirectUriValidator !== NULL) {
+      $redirects = $request->query->all()['redirect_uri'] ?? NULL;
+      // League selects the sole registered URI when the request omits one.
+      if ($redirects === NULL) {
+        $registered = $client->get('redirect')->getValue();
+        $redirects = count($registered) === 1 ? $registered[0]['value'] : NULL;
+      }
+      if (is_string($redirects) && !$this->redirectUriValidator->validateConsumerRedirectUri($redirects, $client)) {
+        $event->setResponse(new JsonResponse([
+          'error' => 'invalid_request',
+          'error_description' => 'The redirect URI is not permitted by native application policy.',
+        ], 400, ['Cache-Control' => 'no-store', 'Pragma' => 'no-cache']));
+        return;
+      }
+    }
+    $mode = $this->nativeClientDetector !== NULL
+      ? $this->nativeClientDetector->getEffectivePolicy($client)['webview']
+      : $this->userAgentAnalyzer->getDetectionMode();
+    if ($mode === 'off') {
       return;
     }
 
@@ -94,8 +141,29 @@ final class AuthorizationRequestSubscriber implements EventSubscriberInterface {
 
     // Check for embedded webview.
     if ($this->userAgentAnalyzer->isEmbeddedWebview($userAgent)) {
-      $this->handleWebviewDetection($event, $userAgent);
+      $this->handleWebviewDetection($event, $userAgent, $mode);
     }
+  }
+
+  /**
+   * Applies request-specific warnings after Drupal's response subscribers.
+   *
+   * @param \Symfony\Component\HttpKernel\Event\ResponseEvent $event
+   *   The response event.
+   */
+  public function onResponse(ResponseEvent $event): void {
+    if (!$event->isMainRequest() || $event->getRequest()->attributes->get('oauth_webview_warning') !== TRUE) {
+      return;
+    }
+    $response = $event->getResponse();
+    foreach ($event->getRequest()->attributes->get('oauth_security_headers', []) as $name => $value) {
+      $response->headers->set($name, $value);
+    }
+    $response->headers->set('Cache-Control', 'private, no-store');
+    if ($response instanceof CacheableResponseInterface) {
+      $response->getCacheableMetadata()->setCacheMaxAge(0);
+    }
+    // The authorization route also declares no_cache for Drupal's page caches.
   }
 
   /**
@@ -105,10 +173,10 @@ final class AuthorizationRequestSubscriber implements EventSubscriberInterface {
    *   The request event.
    * @param string $userAgent
    *   The user agent string.
+   * @param string $webviewDetection
+   *   The effective consumer detection mode.
    */
-  private function handleWebviewDetection(RequestEvent $event, string $userAgent): void {
-    $webviewDetection = $this->userAgentAnalyzer->getDetectionMode();
-
+  private function handleWebviewDetection(RequestEvent $event, string $userAgent, string $webviewDetection): void {
     $webviewInfo = $this->userAgentAnalyzer->getWebviewType($userAgent);
     $webviewType = $webviewInfo['category'] ?? 'generic';
 

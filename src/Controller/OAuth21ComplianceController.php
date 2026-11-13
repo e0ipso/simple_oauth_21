@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\simple_oauth_21\Controller;
 
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Render\ElementInfoManagerInterface;
 use Drupal\simple_oauth_21\Service\OAuth21ComplianceService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -12,9 +14,14 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * OAuth 2.1 compliance dashboard controller.
  *
  * Provides a simplified read-only dashboard that displays OAuth 2.1
- * RFC implementation status using Single Directory Components.
+ * RFC implementation status using the available Drupal render elements.
  */
 final class OAuth21ComplianceController extends ControllerBase {
+
+  /**
+   * Render element discovery supplied by the controller factory.
+   */
+  private ?ElementInfoManagerInterface $elementInfo = NULL;
 
   /**
    * Constructs an OAuth21ComplianceController object.
@@ -30,9 +37,11 @@ final class OAuth21ComplianceController extends ControllerBase {
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): static {
-    return new static(
+    $controller = new static(
       $container->get('simple_oauth_21.compliance_service')
     );
+    $controller->elementInfo = $container->get('plugin.manager.element_info');
+    return $controller;
   }
 
   /**
@@ -46,26 +55,78 @@ final class OAuth21ComplianceController extends ControllerBase {
       $rfc_data = $this->complianceService->getRfcComplianceStatus();
     }
     catch (\Exception $e) {
+      $message = $this->t('Unable to load compliance status. Please check your configuration.');
+      if ($this->hasComponentRenderer()) {
+        return [
+          '#type' => 'component',
+          '#component' => 'simple_oauth_21:compliance-tip',
+          '#props' => ['message' => $message, 'type' => 'warning'],
+          '#cache' => ['max-age' => 0],
+        ];
+      }
       return [
-        '#type' => 'component',
-        '#component' => 'simple_oauth_21:compliance-tip',
-        '#props' => [
-          'message' => $this->t('Unable to load compliance status. Please check your configuration.'),
-          'type' => 'warning',
-        ],
+        '#type' => 'container',
+        'message' => ['#markup' => $message],
+        '#cache' => ['max-age' => 0],
       ];
     }
 
-    $rfc_array = $this->prepareRfcDataForComponent($rfc_data);
+    $rfcs = $this->prepareRfcDataForComponent($rfc_data);
+    $title = $this->t('OAuth 2.1 RFC Implementation Status');
+    if ($this->hasComponentRenderer()) {
+      $build = [
+        '#type' => 'component',
+        '#component' => 'simple_oauth_21:rfc-matrix',
+        '#props' => ['rfcs' => $rfcs, 'title' => $title],
+      ];
+    }
+    else {
+      $rows = [];
+      foreach ($rfcs as $rfc) {
+        $status = match ($rfc['service_status']) {
+          'configured' => $this->t('Configured'),
+          'needs_attention' => $this->t('Needs attention'),
+          'not_available' => $this->t('Not available'),
+          default => $rfc['service_status'],
+        };
+        $rows[] = [
+          ['data' => ['#plain_text' => (string) $rfc['title']]],
+          ['data' => ['#plain_text' => (string) $rfc['description']]],
+          ['data' => ['#plain_text' => (string) $status]],
+          ['data' => ['#plain_text' => $rfc['module']]],
+          ['data' => ['#plain_text' => $rfc['recommendation']]],
+        ];
+      }
+      $build = [
+        '#type' => 'container',
+        'title' => ['#type' => 'html_tag', '#tag' => 'h2', '#value' => $title],
+        'matrix' => [
+          '#type' => 'table',
+          '#header' => [
+            $this->t('RFC'), $this->t('Description'), $this->t('Status'),
+            $this->t('Module'), $this->t('Recommendation'),
+          ],
+          '#rows' => $rows,
+        ],
+      ];
+    }
+    CacheableMetadata::createFromObject($this->complianceService)->applyTo($build);
+    return $build;
+  }
 
-    return [
-      '#type' => 'component',
-      '#component' => 'simple_oauth_21:rfc-matrix',
-      '#props' => [
-        'rfcs' => $rfc_array,
-        'title' => $this->t('OAuth 2.1 RFC Implementation Status'),
-      ],
-    ];
+  /**
+   * Checks the render element capability on the active installation.
+   *
+   * @return bool
+   *   Whether Drupal can render single directory components.
+   */
+  private function hasComponentRenderer(): bool {
+    if ($this->elementInfo === NULL) {
+      // Legacy callers supply only the compliance service to the constructor.
+      // phpcs:ignore DrupalPractice.Objects.GlobalDrupal.GlobalDrupal
+      $this->elementInfo = \Drupal::service('plugin.manager.element_info');
+    }
+    return $this->elementInfo->hasDefinition('component');
   }
 
   /**
@@ -81,21 +142,21 @@ final class OAuth21ComplianceController extends ControllerBase {
     $prepared = [];
 
     $rfc_titles = [
-      'rfc_7636' => 'PKCE (Proof Key for Code Exchange)',
-      'rfc_8414' => 'OAuth Server Metadata',
-      'rfc_8252' => 'OAuth for Native Apps',
-      'rfc_8628' => 'Device Authorization Grant',
-      'rfc_7591' => 'Dynamic Client Registration',
-      'rfc_7662' => 'OAuth 2.0 Token Introspection',
+      'rfc_7636' => $this->t('PKCE (Proof Key for Code Exchange)'),
+      'rfc_8414' => $this->t('OAuth Server Metadata'),
+      'rfc_8252' => $this->t('OAuth for Native Apps'),
+      'rfc_8628' => $this->t('Device Authorization Grant'),
+      'rfc_7591' => $this->t('Dynamic Client Registration'),
+      'rfc_7662' => $this->t('OAuth 2.0 Token Introspection'),
     ];
 
     $rfc_descriptions = [
-      'rfc_7636' => 'S256 challenge method, mandatory enforcement',
-      'rfc_8414' => 'Well-known discovery endpoint',
-      'rfc_8252' => 'Custom URI schemes, loopback redirects, WebView detection',
-      'rfc_8628' => 'Device flow for input-constrained devices',
-      'rfc_7591' => 'Full CRUD operations, metadata support',
-      'rfc_7662' => 'Token metadata introspection for resource servers',
+      'rfc_7636' => $this->t('S256 challenge method, mandatory enforcement'),
+      'rfc_8414' => $this->t('Well-known discovery endpoint'),
+      'rfc_8252' => $this->t('Custom URI schemes, loopback redirects, WebView detection'),
+      'rfc_8628' => $this->t('Device flow for input-constrained devices'),
+      'rfc_7591' => $this->t('Full CRUD operations, metadata support'),
+      'rfc_7662' => $this->t('Token metadata introspection for resource servers'),
     ];
 
     $rfc_urls = [
@@ -128,11 +189,53 @@ final class OAuth21ComplianceController extends ControllerBase {
         'rfc_url' => $rfc_urls[$rfc_key] ?? '',
         'config_route' => $config_routes[$module_name] ?? '',
         'service_status' => $data['status'] ?? 'not_available',
-        'recommendation' => $data['recommendation'] ?? '',
+        'recommendation' => $this->translateRecommendation($data['recommendation'] ?? ''),
       ];
     }
 
     return $prepared;
+  }
+
+  /**
+   * Translates known recommendations while preserving future service messages.
+   *
+   * @param string $recommendation
+   *   The public service recommendation.
+   *
+   * @return string
+   *   The translated presentation text.
+   */
+  private function translateRecommendation(string $recommendation): string {
+    $known = [
+      'PKCE is enabled for OAuth 2.1 compliance' => $this->t('PKCE is enabled for OAuth 2.1 compliance'),
+      'Enable PKCE module for OAuth 2.1 compliance' => $this->t('Enable PKCE module for OAuth 2.1 compliance'),
+      'Enable server metadata module for better client integration' => $this->t('Enable server metadata module for better client integration'),
+      'Server metadata is available for discovery' => $this->t('Server metadata is available for discovery'),
+      'Native app security features are enabled' => $this->t('Native app security features are enabled'),
+      'Enable native apps module for mobile app security' => $this->t('Enable native apps module for mobile app security'),
+      'Device flow is available for constrained devices' => $this->t('Device flow is available for constrained devices'),
+      'Enable device flow module for IoT and TV apps' => $this->t('Enable device flow module for IoT and TV apps'),
+      'Dynamic client registration is available' => $this->t('Dynamic client registration is available'),
+      'Enable client registration module for automated client setup' => $this->t('Enable client registration module for automated client setup'),
+      'Token introspection endpoint is available for resource servers' => $this->t('Token introspection endpoint is available for resource servers'),
+      'Token introspection endpoint is not implemented' => $this->t('Token introspection endpoint is not implemented'),
+      'Server metadata discovery is unavailable; check the metadata module service registration' => $this->t('Server metadata discovery is unavailable; check the metadata module service registration'),
+      'Unable to generate server metadata; check OAuth endpoint discovery' => $this->t('Unable to generate server metadata; check OAuth endpoint discovery'),
+    ];
+    // A known diagnostic contains a semicolon, so match whole messages first.
+    if (isset($known[$recommendation])) {
+      return (string) $known[$recommendation];
+    }
+    $parts = explode('; ', $recommendation);
+    foreach ($parts as &$part) {
+      if (preg_match('/^Discover a valid HTTPS URL for ([a-z_]+) in server metadata$/D', $part, $matches)) {
+        $part = (string) $this->t('Discover a valid HTTPS URL for @field in server metadata', ['@field' => $matches[1]]);
+      }
+      elseif (isset($known[$part])) {
+        $part = (string) $known[$part];
+      }
+    }
+    return implode('; ', $parts);
   }
 
   /**

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\simple_oauth_21\Service;
 
+use Drupal\Core\Cache\CacheableDependencyInterface;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\Config;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
@@ -19,7 +21,17 @@ use Symfony\Component\Routing\Exception\RouteNotFoundException;
  *
  * @package Drupal\simple_oauth_21\Service
  */
-final class OAuth21ComplianceService {
+final class OAuth21ComplianceService implements CacheableDependencyInterface {
+
+  /**
+   * Cache dependencies of the latest compliance generation.
+   */
+  private CacheableMetadata $cacheability;
+
+  /**
+   * Whether the latest generation completed without an uncaught exception.
+   */
+  private bool $generationComplete = FALSE;
 
   /**
    * Mapping of submodule names to their potential installation paths.
@@ -64,7 +76,9 @@ final class OAuth21ComplianceService {
     private readonly ConfigFactoryInterface $configFactory,
     private readonly RouteProviderInterface $routeProvider,
     private readonly ?ServerMetadataService $serverMetadata = NULL,
-  ) {}
+  ) {
+    $this->cacheability = new CacheableMetadata();
+  }
 
   /**
    * Gets simplified RFC compliance status.
@@ -73,6 +87,9 @@ final class OAuth21ComplianceService {
    *   Array of RFC compliance status with simple 3-state system.
    */
   public function getRfcComplianceStatus(): array {
+    $this->generationComplete = FALSE;
+    $this->cacheability = (new CacheableMetadata())
+      ->setCacheTags(['config:core.extension', 'routes']);
     $rfcs = [];
 
     // RFC 7636 - PKCE.
@@ -142,6 +159,7 @@ final class OAuth21ComplianceService {
         : 'Token introspection endpoint is not implemented',
     ];
 
+    $this->generationComplete = TRUE;
     return $rfcs;
   }
 
@@ -196,6 +214,7 @@ final class OAuth21ComplianceService {
    */
   private function getServerMetadataIssues(): array {
     if ($this->serverMetadata === NULL) {
+      $this->cacheability->setCacheMaxAge(0);
       return ['Server metadata discovery is unavailable; check the metadata module service registration'];
     }
 
@@ -203,9 +222,11 @@ final class OAuth21ComplianceService {
       $metadata = $this->serverMetadata->getServerMetadata();
     }
     catch (\Exception $e) {
+      $this->cacheability->setCacheMaxAge(0);
       return ['Unable to generate server metadata; check OAuth endpoint discovery'];
     }
 
+    $this->cacheability->addCacheableDependency($this->serverMetadata);
     $issues = [];
     foreach (['issuer', 'authorization_endpoint', 'token_endpoint'] as $field) {
       $value = $metadata[$field] ?? NULL;
@@ -229,10 +250,10 @@ final class OAuth21ComplianceService {
   private function checkNativeAppsStatus(Config $config): string {
     $custom_schemes_setting = $config->get('allow.custom_uri_schemes');
     $loopback_setting = $config->get('allow.loopback_redirects');
-    $allow_custom_schemes = in_array($custom_schemes_setting, ['native', 'auto-detect'], TRUE);
-    $allow_loopback = in_array($loopback_setting, ['native', 'auto-detect'], TRUE);
+    $allow_custom_schemes = in_array($custom_schemes_setting, ['native', 'auto-detect', '1'], TRUE);
+    $allow_loopback = in_array($loopback_setting, ['native', 'auto-detect', '1'], TRUE);
 
-    return ($allow_custom_schemes && $allow_loopback) ? 'configured' : 'needs_attention';
+    return ((bool) $config->get('enforce_native_security') && $allow_custom_schemes && $allow_loopback) ? 'configured' : 'needs_attention';
   }
 
   /**
@@ -322,11 +343,34 @@ final class OAuth21ComplianceService {
   private function getModuleConfig(string $config_name): ?Config {
     try {
       $config = $this->configFactory->get($config_name);
+      $this->cacheability->addCacheableDependency($config);
       return $config->isNew() ? NULL : $config;
     }
     catch (\Exception $e) {
+      $this->cacheability->setCacheMaxAge(0);
       return NULL;
     }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getCacheTags(): array {
+    return $this->cacheability->getCacheTags();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getCacheContexts(): array {
+    return $this->cacheability->getCacheContexts();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getCacheMaxAge(): int {
+    return $this->generationComplete ? $this->cacheability->getCacheMaxAge() : 0;
   }
 
 }

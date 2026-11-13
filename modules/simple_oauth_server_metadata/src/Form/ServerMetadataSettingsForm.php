@@ -9,6 +9,8 @@ use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Language\Language;
+use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Routing\RouteProviderInterface;
 use Drupal\Core\Url;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -72,7 +74,7 @@ final class ServerMetadataSettingsForm extends ConfigFormBase {
     $config = $this->config('simple_oauth_server_metadata.settings');
 
     $form['description'] = [
-      '#markup' => '<p>' . $this->t('Configure additional RFC 8414 Authorization Server Metadata fields. Fields left empty will not be included in the metadata response.') . '</p>',
+      '#markup' => '<p>' . $this->t('Configure additional RFC 8414 Authorization Server Metadata fields. Leave endpoint overrides blank to use automatic discovery. Other empty fields will not be included in the metadata response.') . '</p>',
     ];
 
     $form['info_link'] = [
@@ -93,81 +95,68 @@ final class ServerMetadataSettingsForm extends ConfigFormBase {
     // Auto-detect available endpoints.
     $auto_detected_endpoints = $this->getAutoDetectedEndpoints();
 
-    $registration_endpoint_value = $config->get('registration_endpoint') ?: ($auto_detected_endpoints['registration'] ?? '');
     $form['endpoints']['registration_endpoint'] = [
       '#type' => 'url',
       '#title' => $this->t('Client Registration Endpoint'),
       '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> RFC 8414 Authorization Server Metadata recommends including client registration endpoint information for OAuth 2.1 compliance. @auto_detected (<a href="https://datatracker.ietf.org/doc/html/rfc7591#section-3" target="_blank">RFC 7591 Section 3</a>)', [
         '@auto_detected' => isset($auto_detected_endpoints['registration']) ? $this->t('Auto-detected from Dynamic Client Registration module.') : $this->t('Module not detected. Enter manually if available.'),
       ]),
-      '#default_value' => $registration_endpoint_value,
+      '#default_value' => $config->get('registration_endpoint') ?? '',
       '#placeholder' => $auto_detected_endpoints['registration'] ?? '',
     ];
 
-    $revocation_endpoint_value = $config->get('revocation_endpoint') ?: ($auto_detected_endpoints['revocation'] ?? '');
     $form['endpoints']['revocation_endpoint'] = [
       '#type' => 'url',
       '#title' => $this->t('Token Revocation Endpoint'),
       '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Token revocation endpoint allows clients to invalidate tokens when no longer needed. This enhances security by preventing token misuse after app uninstall or logout. @auto_detected (<a href="https://datatracker.ietf.org/doc/html/rfc7009#section-2" target="_blank">RFC 7009 Section 2</a>)', [
-        '@auto_detected' => isset($auto_detected_endpoints['revocation']) ? $this->t('Auto-detected from Simple OAuth module.') : $this->t('Enter manually if available.'),
+        '@auto_detected' => isset($auto_detected_endpoints['revocation']) ? $this->t('Auto-detected from Server Metadata module.') : $this->t('Enter manually if available.'),
       ]),
-      '#default_value' => $revocation_endpoint_value,
+      '#default_value' => $config->get('revocation_endpoint') ?? '',
       '#placeholder' => $auto_detected_endpoints['revocation'] ?? '',
     ];
 
-    $introspection_endpoint_value = $config->get('introspection_endpoint') ?: ($auto_detected_endpoints['introspection'] ?? '');
     $form['endpoints']['introspection_endpoint'] = [
       '#type' => 'url',
       '#title' => $this->t('Token Introspection Endpoint'),
       '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Token introspection endpoint enables resource servers to validate tokens and check their status. This supports OAuth 2.1 security best practices for token validation. @auto_detected (<a href="https://datatracker.ietf.org/doc/html/rfc7662#section-2" target="_blank">RFC 7662 Section 2</a>)', [
-        '@auto_detected' => isset($auto_detected_endpoints['introspection']) ? $this->t('Auto-detected from Simple OAuth module.') : $this->t('Enter manually if available.'),
+        '@auto_detected' => isset($auto_detected_endpoints['introspection']) ? $this->t('Auto-detected from Server Metadata module.') : $this->t('Enter manually if available.'),
       ]),
-      '#default_value' => $introspection_endpoint_value,
+      '#default_value' => $config->get('introspection_endpoint') ?? '',
       '#placeholder' => $auto_detected_endpoints['introspection'] ?? '',
     ];
 
     // Device Authorization endpoint (RFC 8628).
     if (isset($auto_detected_endpoints['device_authorization'])) {
-      $device_authorization_value = $config->get('device_authorization_endpoint') ?: $auto_detected_endpoints['device_authorization'];
       $form['endpoints']['device_authorization_endpoint'] = [
         '#type' => 'url',
         '#title' => $this->t('Device Authorization Endpoint'),
         '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Device authorization endpoint enables OAuth flows for devices with limited input capabilities like smart TVs and IoT devices. Auto-detected from Device Flow module. (<a href="https://datatracker.ietf.org/doc/html/rfc8628#section-3.1" target="_blank">RFC 8628 Section 3.1</a>)'),
-        '#default_value' => $device_authorization_value,
+        '#default_value' => $config->get('device_authorization_endpoint') ?? '',
         '#placeholder' => $auto_detected_endpoints['device_authorization'],
       ];
+    }
+
+    foreach (['registration', 'revocation', 'introspection', 'device_authorization'] as $endpoint) {
+      $field = $endpoint . '_endpoint';
+      if (isset($form['endpoints'][$field])) {
+        $form['endpoints'][$field]['#description'] .= ' ' . (isset($auto_detected_endpoints[$endpoint])
+          ? $this->t('Leave blank to use automatic discovery. Current endpoint: @url', ['@url' => $auto_detected_endpoints[$endpoint]])
+          : $this->t('Leave blank to use automatic discovery when the endpoint becomes available.'));
+      }
     }
 
     // OpenID Connect Discovery section.
     $form['openid_discovery'] = [
       '#type' => 'details',
       '#title' => $this->t('OpenID Connect Discovery'),
-      '#description' => $this->t('Configuration for the OpenID Connect Discovery endpoint at /.well-known/openid-configuration. This endpoint is always available when the module is enabled.'),
+      '#description' => $this->t('Capabilities of the OpenID Connect Discovery endpoint at /.well-known/openid-configuration. This endpoint is available when OpenID Connect is enabled in Simple OAuth.'),
       '#open' => TRUE,
     ];
 
-    $form['openid_discovery']['response_types_supported'] = [
-      '#type' => 'checkboxes',
-      '#title' => $this->t('Supported Response Types'),
-      '#description' => $this->t('🔒 <strong>OAuth 2.1 Required:</strong> Select the OAuth 2.0 response types that are supported by this authorization server. These values will be included in the OpenID Connect Discovery metadata. (<a href="https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata" target="_blank">OpenID Connect Discovery 1.0 Section 3</a>)'),
-      '#options' => [
-        'code' => $this->t('code'),
-        'token' => $this->t('token'),
-        'id_token' => $this->t('id_token'),
-        'code id_token' => $this->t('code id_token'),
-      ],
-      '#default_value' => $config->get('response_types_supported') ?: ['code', 'id_token', 'code id_token'],
-    ];
-
-    $form['openid_discovery']['response_modes_supported'] = [
-      '#type' => 'checkboxes',
-      '#title' => $this->t('Supported Response Modes'),
-      '#description' => $this->t('🔒 <strong>OAuth 2.1 Recommended:</strong> Select the OAuth 2.0 response modes that are supported by this authorization server. These values will be included in the OpenID Connect Discovery metadata. (<a href="https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata" target="_blank">OpenID Connect Discovery 1.0 Section 3</a>)'),
-      '#options' => [
-        'query' => $this->t('query'),
-        'fragment' => $this->t('fragment'),
-      ],
-      '#default_value' => $config->get('response_modes_supported') ?: ['query', 'fragment'],
+    $form['openid_discovery']['response_capabilities'] = [
+      '#type' => 'item',
+      '#title' => $this->t('Response capabilities'),
+      '#markup' => $this->t('Response types are discovered from available grant plugins. OpenID Connect adds ID tokens at the token endpoint for code flow; it does not enable implicit or hybrid authorization responses. Discovery retains the advertised query, fragment, and form_post modes for compatibility. Advertising a mode does not enable it at the authorization endpoint. Stored response type and mode settings are retained for configuration compatibility and do not control discovery.'),
     ];
 
     // Policy URLs section.
@@ -280,12 +269,36 @@ final class ServerMetadataSettingsForm extends ConfigFormBase {
    * {@inheritdoc}
    */
   public function validateForm(array &$form, FormStateInterface $form_state) {
+    // FormBuilder discards values without input elements. Accept explicit
+    // legacy submissions while retaining the former checkbox value choices.
+    $legacy_choices = [
+      'response_types_supported' => ['code', 'token', 'id_token', 'code id_token'],
+      'response_modes_supported' => ['query', 'fragment'],
+    ];
+    foreach ($legacy_choices as $field => $choices) {
+      $input = $form_state->getValue($field, $form_state->getUserInput()[$field] ?? NULL);
+      if ($input === NULL) {
+        continue;
+      }
+      if (!is_array($input) || array_filter($input, static fn($value): bool => (bool) $value && !in_array($value, $choices, TRUE)) !== []) {
+        $form_state->setErrorByName($field, $this->t('Invalid response capability selection.'));
+        $input = [];
+      }
+      $form_state->setValue($field, $input);
+    }
+
     // Convert textarea arrays to proper arrays and validate.
     $array_fields = ['ui_locales_supported', 'additional_claims_supported', 'additional_signing_algorithms'];
     foreach ($array_fields as $field) {
+      if (!array_key_exists($field, $form_state->getValues())) {
+        continue;
+      }
       $value = $form_state->getValue($field);
-      if (!empty($value)) {
-        $array_value = array_filter(array_map('trim', explode("\n", $value)));
+      if ($value !== NULL && $value !== '') {
+        $array_value = array_values(array_filter(
+          array_map('trim', explode("\n", $value)),
+          static fn(string $line): bool => $line !== '',
+        ));
         $form_state->setValue($field, $array_value);
       }
       else {
@@ -326,7 +339,7 @@ final class ServerMetadataSettingsForm extends ConfigFormBase {
     // Validate OpenID Connect Discovery fields.
     // Validate at least one response type is selected.
     $response_types = array_filter($form_state->getValue('response_types_supported') ?: []);
-    if (empty($response_types)) {
+    if ($form_state->hasValue('response_types_supported') && empty($response_types)) {
       $form_state->setErrorByName('response_types_supported', $this->t('At least one response type must be selected for OpenID Connect Discovery.'));
     }
 
@@ -358,10 +371,19 @@ final class ServerMetadataSettingsForm extends ConfigFormBase {
     ];
 
     foreach ($fields as $field) {
+      // Absent controls and partial external submissions retain stored values.
+      // Present empty controls still clear an explicit override.
+      if (!array_key_exists($field, $form_state->getValues())) {
+        continue;
+      }
       $value = $form_state->getValue($field);
 
       // Handle checkbox arrays (response types and modes).
       if (in_array($field, ['response_types_supported', 'response_modes_supported'])) {
+        // Retain the legacy behavior for explicit NULL capability values.
+        if ($value === NULL) {
+          continue;
+        }
         // Filter out unchecked values (FALSE) and get only the checked ones.
         $value = array_values(array_filter($value));
       }
@@ -387,11 +409,13 @@ final class ServerMetadataSettingsForm extends ConfigFormBase {
    */
   protected function getAutoDetectedEndpoints(): array {
     $endpoints = [];
+    // Match the language-neutral URLs advertised by runtime discovery.
+    $options = ['language' => new Language(['id' => LanguageInterface::LANGCODE_NOT_APPLICABLE])];
 
     // Check for Dynamic Client Registration module.
     if ($this->moduleHandler->moduleExists('simple_oauth_client_registration')) {
       try {
-        $url = Url::fromRoute('simple_oauth_client_registration.register');
+        $url = Url::fromRoute('simple_oauth_client_registration.register', [], $options);
         $endpoints['registration'] = $url->setAbsolute()->toString();
       }
       catch (\Exception $e) {
@@ -402,7 +426,7 @@ final class ServerMetadataSettingsForm extends ConfigFormBase {
     // Check for Device Flow module.
     if ($this->moduleHandler->moduleExists('simple_oauth_device_flow')) {
       try {
-        $url = Url::fromRoute('simple_oauth_device_flow.device_authorization');
+        $url = Url::fromRoute('simple_oauth_device_flow.device_authorization', [], $options);
         $endpoints['device_authorization'] = $url->setAbsolute()->toString();
       }
       catch (\Exception $e) {
@@ -410,27 +434,21 @@ final class ServerMetadataSettingsForm extends ConfigFormBase {
       }
     }
 
-    // Check for core Simple OAuth revocation endpoint.
+    // Check for this module's token management endpoints.
     if ($this->moduleHandler->moduleExists('simple_oauth')) {
       try {
-        // Check if revocation route exists.
-        $routes = $this->routeProvider->getRoutesByPattern('/oauth/revoke');
-        if (count($routes) > 0) {
-          $url = Url::fromUri('internal:/oauth/revoke');
-          $endpoints['revocation'] = $url->setAbsolute()->toString();
-        }
+        $this->routeProvider->getRouteByName('simple_oauth_server_metadata.revoke');
+        $url = Url::fromRoute('simple_oauth_server_metadata.revoke', [], $options);
+        $endpoints['revocation'] = $url->setAbsolute()->toString();
       }
       catch (\Exception $e) {
         // Route doesn't exist.
       }
 
       try {
-        // Check if introspection route exists.
-        $routes = $this->routeProvider->getRoutesByPattern('/oauth/introspect');
-        if (count($routes) > 0) {
-          $url = Url::fromUri('internal:/oauth/introspect');
-          $endpoints['introspection'] = $url->setAbsolute()->toString();
-        }
+        $this->routeProvider->getRouteByName('simple_oauth_server_metadata.token_introspection');
+        $url = Url::fromRoute('simple_oauth_server_metadata.token_introspection', [], $options);
+        $endpoints['introspection'] = $url->setAbsolute()->toString();
       }
       catch (\Exception $e) {
         // Route doesn't exist.

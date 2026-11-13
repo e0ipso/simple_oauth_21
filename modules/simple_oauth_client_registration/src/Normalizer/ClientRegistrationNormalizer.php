@@ -6,8 +6,8 @@ namespace Drupal\simple_oauth_client_registration\Normalizer;
 
 use Drupal\consumers\Entity\ConsumerInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
-use Drupal\Core\Url;
-use Drupal\file\FileInterface;
+use Drupal\simple_oauth\Plugin\Oauth2GrantManagerInterface;
+use Drupal\simple_oauth_client_registration\Service\ClientMetadataMapper;
 use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
 use Drupal\simple_oauth_client_registration\Service\RegistrationTokenService;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -22,11 +22,22 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 final class ClientRegistrationNormalizer implements NormalizerInterface, DenormalizerInterface {
 
   /**
-   * Constructor.
+   * Constructs the registration normalizer.
+   *
+   * @param \Drupal\simple_oauth_client_registration\Service\RegistrationTokenService $tokenService
+   *   The registration token service.
+   * @param \Drupal\Core\File\FileUrlGeneratorInterface $fileUrlGenerator
+   *   The file URL generator.
+   * @param \Drupal\simple_oauth\Plugin\Oauth2GrantManagerInterface|null $grantManager
+   *   The installed grant capabilities, when supplied by the container.
+   * @param \Drupal\simple_oauth_client_registration\Service\ClientMetadataMapper|null $metadataMapper
+   *   The shared response mapper, or the built-in profile for legacy callers.
    */
   public function __construct(
     private readonly RegistrationTokenService $tokenService,
     private readonly FileUrlGeneratorInterface $fileUrlGenerator,
+    private readonly ?Oauth2GrantManagerInterface $grantManager = NULL,
+    private readonly ?ClientMetadataMapper $metadataMapper = NULL,
   ) {}
 
   /**
@@ -93,101 +104,43 @@ final class ClientRegistrationNormalizer implements NormalizerInterface, Denorma
    * @param \Drupal\consumers\Entity\ConsumerInterface $consumer
    *   The consumer entity.
    * @param array $context
-   *   Normalization context.
+   *   Normalization context. prepared_registration_response accepts a complete
+   *   credential DTO matching this consumer and performs no issuance. The
+   *   legacy include_registration_response and client_secret keys still
+   *   prepare first-issuance credentials when no prepared DTO is supplied.
    *
    * @return array
    *   The normalized client metadata.
+   *
+   * @throws \InvalidArgumentException
+   *   If the prepared context is invalid or belongs to another consumer.
+   * @throws \LogicException
+   *   If legacy issuance encounters an existing registration record.
    */
   private function normalizeConsumer(ConsumerInterface $consumer, array $context = []): array {
-    $metadata = [
-      'client_id' => $consumer->getClientId(),
-      'client_name' => $consumer->label(),
-      'client_uri' => $consumer->get('client_uri')->value ?? '',
-      'logo_uri' => $this->getLogoUri($consumer),
-      'tos_uri' => $consumer->get('tos_uri')->value ?? '',
-      'policy_uri' => $consumer->get('policy_uri')->value ?? '',
-      'jwks_uri' => $consumer->get('jwks_uri')->value ?? '',
-      'software_id' => $consumer->get('software_id')->value ?? '',
-      'software_version' => $consumer->get('software_version')->value ?? '',
-      'redirect_uris' => [],
-      'contacts' => [],
-      'grant_types' => [],
-    ];
-
-    // Get redirect URIs.
-    if (!$consumer->get('redirect')->isEmpty()) {
-      foreach ($consumer->get('redirect') as $redirect) {
-        $metadata['redirect_uris'][] = $redirect->get('value')->getValue();
+    // Explicit prepared credentials take precedence and never access storage.
+    // Pass the DTO returned by prepareRegistrationResponse(), or construct one
+    // with ClientRegistration::fromArray() from the original service response.
+    $prepared = $context['prepared_registration_response'] ?? NULL;
+    if (array_key_exists('prepared_registration_response', $context) && !$prepared instanceof ClientRegistration) {
+      throw new \InvalidArgumentException('prepared_registration_response must be a ClientRegistration DTO');
+    }
+    $mapper = $this->metadataMapper ?? new ClientMetadataMapper($this->fileUrlGenerator);
+    if ($prepared === NULL && !empty($context['include_registration_response'])) {
+      // Compatibility for supported first issuance only. Remove this branch
+      // only after the public context has completed its deprecation period.
+      $transaction = $this->tokenService->startTransaction();
+      try {
+        $prepared = $this->tokenService->prepareRegistrationResponse($consumer->getClientId(), $context['client_secret'] ?? NULL);
+        return $mapper->map($consumer, $prepared);
+      }
+      catch (\Throwable $e) {
+        $transaction->rollBack();
+        throw $e;
       }
     }
 
-    // Get contacts.
-    if (!$consumer->get('contacts')->isEmpty()) {
-      foreach ($consumer->get('contacts') as $contact) {
-        $metadata['contacts'][] = $contact->get('value')->getValue();
-      }
-    }
-
-    // Get grant types.
-    if (!$consumer->get('grant_types')->isEmpty()) {
-      foreach ($consumer->get('grant_types') as $grant_type) {
-        $metadata['grant_types'][] = $grant_type->get('value')->getValue();
-      }
-    }
-
-    // Add response metadata if this is a registration response.
-    if (!empty($context['include_registration_response'])) {
-      $client_id = $consumer->getClientId();
-
-      // Generate registration access token.
-      $registration_access_token = $this->tokenService->generateRegistrationAccessToken($client_id);
-
-      // Build registration client URI.
-      $registration_client_uri = Url::fromRoute('simple_oauth_client_registration.manage', [
-        'client_id' => $client_id,
-      ], ['absolute' => TRUE])->toString();
-
-      $metadata['registration_access_token'] = $registration_access_token;
-      $metadata['registration_client_uri'] = $registration_client_uri;
-      $metadata['client_id_issued_at'] = time();
-
-      // Include client secret if available in context.
-      if (!empty($context['client_secret'])) {
-        $metadata['client_secret'] = $context['client_secret'];
-        // Never expires.
-        $metadata['client_secret_expires_at'] = 0;
-      }
-    }
-
-    // Remove empty fields.
-    return array_filter($metadata, function ($value) {
-      return $value !== '' && $value !== [];
-    });
-  }
-
-  /**
-   * Gets the logo URI for a consumer.
-   *
-   * @param \Drupal\consumers\Entity\ConsumerInterface $consumer
-   *   The consumer entity.
-   *
-   * @return string
-   *   The logo URI or empty string.
-   */
-  private function getLogoUri(ConsumerInterface $consumer): string {
-    // First, check if there's an uploaded image file.
-    if (!$consumer->get('image')->isEmpty()) {
-      $image_field = $consumer->get('image')->first();
-      $file = $image_field?->get('entity')->getValue();
-      if ($file instanceof FileInterface) {
-        // Generate absolute URL for the image file.
-        $file_uri = $file->getFileUri();
-        return $this->fileUrlGenerator->generateAbsoluteString($file_uri);
-      }
-    }
-
-    // Fallback to logo_uri field if no image uploaded.
-    return $consumer->get('logo_uri')->value ?? '';
+    return $mapper->map($consumer, $prepared);
   }
 
   /**
@@ -277,6 +230,9 @@ final class ClientRegistrationNormalizer implements NormalizerInterface, Denorma
         'refresh_token',
         'urn:ietf:params:oauth:grant-type:device_code',
       ];
+      if ($this->grantManager !== NULL) {
+        $valid_grant_types = array_unique(array_merge($valid_grant_types, array_keys($this->grantManager->getDefinitions())));
+      }
       foreach ($metadata['grant_types'] as $grant_type) {
         if (!in_array($grant_type, $valid_grant_types, TRUE)) {
           throw new BadRequestHttpException('Invalid grant type: ' . $grant_type);

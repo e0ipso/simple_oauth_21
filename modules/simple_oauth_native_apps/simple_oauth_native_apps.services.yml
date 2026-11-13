@@ -9,17 +9,38 @@ services:
     arguments:
       - '@config.factory'
       - '@logger.channel.simple_oauth_native_apps'
+      - '@simple_oauth_native_apps.native_client_detector'
 
   simple_oauth_native_apps.user_agent_analyzer:
     class: Drupal\simple_oauth_native_apps\Service\UserAgentAnalyzer
     arguments:
       - '@config.factory'
+      - '@simple_oauth_native_apps.native_client_detector'
 
   simple_oauth_native_apps.configuration_validator:
     class: Drupal\simple_oauth_native_apps\Service\ConfigurationValidator
     arguments:
       - '@logger.factory'
       - '@string_translation'
+
+  simple_oauth_native_apps.consumer_policy_resolver:
+    class: Drupal\simple_oauth_native_apps\Service\ConsumerPolicyResolver
+    arguments:
+      - '@config.factory'
+      - '@cache.default'
+      - '@cache_tags.invalidator.checksum'
+    tags:
+      - { name: event_subscriber }
+
+  simple_oauth_native_apps.policy_import_subscriber:
+    class: Drupal\simple_oauth_native_apps\EventSubscriber\ConsumerPolicyImportSubscriber
+    arguments:
+      - '@simple_oauth_native_apps.consumer_policy_resolver'
+      - '@entity_type.manager'
+      - '@config.typed'
+      - '@string_translation'
+    tags:
+      - { name: event_subscriber }
 
   simple_oauth_native_apps.consumer_form_alter:
     class: Drupal\simple_oauth_native_apps\Form\ConsumerNativeAppsFormAlter
@@ -28,12 +49,27 @@ services:
       - '@entity_type.manager'
       - '@simple_oauth_native_apps.configuration_validator'
       - '@simple_oauth_native_apps.native_client_detector'
+      - '@simple_oauth_native_apps.consumer_policy_resolver'
+      - '@database'
+
+  simple_oauth_native_apps.security_policy:
+    class: Drupal\simple_oauth_native_apps\Service\NativeSecurityPolicy
+
+  simple_oauth_native_apps.client_classifier:
+    class: Drupal\simple_oauth_native_apps\Service\NativeClientClassifier
+
+  simple_oauth_native_apps.client_description:
+    class: Drupal\simple_oauth_native_apps\Service\NativeClientDescription
 
   simple_oauth_native_apps.native_client_detector:
     class: Drupal\simple_oauth_native_apps\Service\NativeClientDetector
     arguments:
       - '@config.factory'
       - '@logger.factory'
+      - '@simple_oauth_native_apps.consumer_policy_resolver'
+      - '@simple_oauth_native_apps.security_policy'
+      - '@simple_oauth_native_apps.client_classifier'
+      - '@simple_oauth_native_apps.client_description'
 
   simple_oauth_native_apps.pkce_enhancement:
     class: Drupal\simple_oauth_native_apps\Service\PKCEEnhancementService
@@ -46,6 +82,7 @@ services:
     class: Drupal\simple_oauth_native_apps\Service\MetadataProvider
     arguments:
       - '@config.factory'
+      - '@simple_oauth_native_apps.native_client_detector'
 
   simple_oauth_native_apps.authorization_request_subscriber:
     class: Drupal\simple_oauth_native_apps\EventSubscriber\AuthorizationRequestSubscriber
@@ -53,6 +90,9 @@ services:
       - '@simple_oauth_native_apps.user_agent_analyzer'
       - '@config.factory'
       - '@module_handler'
+      - '@entity_type.manager'
+      - '@simple_oauth_native_apps.native_client_detector'
+      - '@simple_oauth_native_apps.redirect_uri_validator'
     tags:
       - { name: event_subscriber }
 

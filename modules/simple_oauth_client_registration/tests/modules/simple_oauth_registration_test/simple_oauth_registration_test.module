@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 use Drupal\consumers\Entity\ConsumerInterface;
 use Drupal\Core\Entity\EntityStorageException;
+use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
 
 /**
@@ -29,5 +30,25 @@ function simple_oauth_registration_test_entity_base_field_info_alter(array &$fie
 function simple_oauth_registration_test_consumer_update(ConsumerInterface $consumer): void {
   if (\Drupal::state()->get('simple_oauth_registration_test.fail_update', FALSE)) {
     throw new EntityStorageException('Registration fixture persistence failure');
+  }
+}
+
+/**
+ * Implements hook_entity_delete().
+ *
+ * Fails after consumer deletion and native policy cleanup have run.
+ */
+function simple_oauth_registration_test_entity_delete(EntityInterface $entity): void {
+  if ($entity->getEntityTypeId() === 'consumer' && (string) $entity->id() === (string) \Drupal::state()->get('simple_oauth_registration_test.fail_delete_id', '')) {
+    throw new EntityStorageException('Registration fixture deletion failure');
+  }
+}
+
+/**
+ * Implements hook_entity_insert().
+ */
+function simple_oauth_registration_test_entity_insert(EntityInterface $entity): void {
+  if ($entity->getEntityTypeId() === 'consumer' && \Drupal::state()->get('simple_oauth_registration_test.fail_insert', FALSE)) {
+    throw new EntityStorageException('Registration fixture insertion failure');
   }
 }

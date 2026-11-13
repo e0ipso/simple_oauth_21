@@ -4,13 +4,10 @@ declare(strict_types=1);
 
 namespace Drupal\simple_oauth_client_registration\Service;
 
-use Drupal\consumers\Entity\Consumer;
 use Drupal\consumers\Entity\ConsumerInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Component\Utility\Crypt;
-use Drupal\Core\Url;
-use Drupal\file\FileInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\simple_oauth\Oauth2ScopeProviderInterface;
@@ -26,7 +23,7 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  *
  * Implements RFC 7591 Dynamic Client Registration Protocol logic.
  */
-final class ClientRegistrationService {
+final class ClientRegistrationService implements ClientRegistrationOperationsInterface, ClientRegistrationAdministrationInterface {
 
   /**
    * Consumer scope fields keyed by the grant types that use them.
@@ -60,6 +57,8 @@ final class ClientRegistrationService {
    *   The file URL generator.
    * @param \Drupal\simple_oauth\Oauth2ScopeProviderInterface $scopeProvider
    *   The provider for configured or dynamically supplied scopes.
+   * @param \Drupal\simple_oauth_client_registration\Service\ClientMetadataMapper|null $metadataMapper
+   *   The shared response mapper, or the built-in profile for legacy callers.
    */
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
@@ -68,6 +67,7 @@ final class ClientRegistrationService {
     private readonly RegistrationTokenService $tokenService,
     private readonly FileUrlGeneratorInterface $fileUrlGenerator,
     private readonly Oauth2ScopeProviderInterface $scopeProvider,
+    private readonly ?ClientMetadataMapper $metadataMapper = NULL,
   ) {}
 
   /**
@@ -97,7 +97,7 @@ final class ClientRegistrationService {
     $config = $this->configFactory->get('simple_oauth_client_registration.settings');
     $default_grant_types = $config->get('default_grant_types') ?? ['authorization_code', 'refresh_token'];
 
-    // Map RFC 7591 fields to Consumer entity fields using Consumer::create.
+    // Map RFC 7591 fields to Consumer entity fields.
     $values = [
       'client_id' => $client_id,
       'label' => $clientData->clientName ?? 'Dynamically Registered Client',
@@ -141,9 +141,17 @@ final class ClientRegistrationService {
       }
     }
 
-    // Create Consumer using the proven Consumer::create() pattern.
-    $consumer = Consumer::create($values);
-    $consumer->save();
+    /** @var \Drupal\consumers\Entity\ConsumerInterface $consumer */
+    $consumer = $this->entityTypeManager->getStorage('consumer')->create($values);
+    $this->applyApplicationType($consumer, $clientData->applicationType);
+    $this->validateConsumer($consumer);
+    try {
+      $consumer->save();
+    }
+    catch (\Throwable $e) {
+      $this->resetAfterRollback();
+      throw $e;
+    }
 
     return $consumer;
   }
@@ -158,6 +166,7 @@ final class ClientRegistrationService {
    *   The registration response data.
    */
   public function registerClient(ClientRegistration $registrationData): array {
+    $transaction = $this->tokenService->startTransaction();
     try {
       $this->logger->info('Client registration request received with @redirect_count redirect URIs', [
         '@redirect_count' => count($registrationData->redirectUris),
@@ -167,33 +176,9 @@ final class ClientRegistrationService {
       $consumer = $this->createConsumer($registrationData);
       $client_id = $consumer->getClientId();
 
-      // Generate registration access token.
-      $registration_access_token = $this->tokenService->generateRegistrationAccessToken($client_id);
-
-      // Build registration client URI.
-      $registration_client_uri = Url::fromRoute('simple_oauth_client_registration.manage', [
-        'client_id' => $client_id,
-      ], ['absolute' => TRUE])->toString();
-
-      // Build response according to RFC 7591.
-      $response = [
-        'client_id' => $client_id,
-        'registration_access_token' => $registration_access_token,
-        'registration_client_uri' => $registration_client_uri,
-        'client_id_issued_at' => time(),
-      ];
-
-      // Include client secret for confidential clients.
-      if ($consumer->get('confidential')->value && !empty($this->generatedSecret)) {
-        // Return the original secret value, not the hashed version stored in
-        // DB.
-        $response['client_secret'] = $this->generatedSecret;
-        // Never expires.
-        $response['client_secret_expires_at'] = 0;
-      }
-
-      // Include all client metadata in response.
-      $response = array_merge($response, $this->getClientMetadataArray($consumer));
+      $secret = (bool) $consumer->get('confidential')->value ? $this->generatedSecret : NULL;
+      $prepared = $this->tokenService->prepareRegistrationResponse($client_id, $secret);
+      $response = $this->getClientMetadataArray($consumer, $prepared);
 
       $this->logger->info('Client registration successful for client_id: @client_id', [
         '@client_id' => $client_id,
@@ -201,11 +186,16 @@ final class ClientRegistrationService {
 
       return $response;
     }
-    catch (\Exception $e) {
+    catch (\Throwable $e) {
+      $transaction->rollBack();
+      $this->resetAfterRollback();
       $this->logger->error('Client registration failed: @exception_type', [
         '@exception_type' => get_class($e),
       ]);
       throw $e;
+    }
+    finally {
+      $this->generatedSecret = NULL;
     }
   }
 
@@ -236,7 +226,7 @@ final class ClientRegistrationService {
    *   Client metadata and the replacement secret, for this response only.
    *
    * @throws \Symfony\Component\HttpKernel\Exception\BadRequestHttpException
-   *   If the client does not use a secret.
+   *   If the client does not use a secret or completed entity validation fails.
    * @throws \Drupal\Core\Entity\EntityStorageException
    *   If saving the replacement fails.
    */
@@ -251,6 +241,7 @@ final class ClientRegistrationService {
     $response = $this->getClientMetadataArray($consumer);
     $secret = $this->generateClientSecret();
     $consumer->set('secret', $secret);
+    $this->validateConsumer($consumer);
     try {
       $consumer->save();
     }
@@ -353,7 +344,9 @@ final class ClientRegistrationService {
   public function updateClientMetadata(string $client_id, ClientRegistration $metadata): array {
     // Validate the complete list before mutating even the cached consumer.
     $metadata->validateRedirectUris();
-    $consumer = $this->loadConsumer($client_id);
+    $consumer = clone $this->loadConsumer($client_id);
+
+    $this->applyApplicationType($consumer, $metadata->applicationType);
 
     // Handle client_name specially - it maps to the label field.
     if ($metadata->clientName !== NULL) {
@@ -385,7 +378,7 @@ final class ClientRegistrationService {
 
     // Update contacts if provided.
     $contacts = $metadata->contacts;
-    if (!empty($contacts)) {
+    if ($metadata->contactsProvided || !empty($contacts)) {
       $consumer->set('contacts', $contacts);
     }
 
@@ -409,9 +402,17 @@ final class ClientRegistrationService {
       }
     }
 
-    $consumer->save();
-
-    return $this->getClientMetadataArray($consumer);
+    $this->validateConsumer($consumer);
+    $transaction = $this->tokenService->startTransaction();
+    try {
+      $consumer->save();
+      return $this->getClientMetadataArray($consumer);
+    }
+    catch (\Throwable $e) {
+      $transaction->rollBack();
+      $this->resetAfterRollback();
+      throw $e;
+    }
   }
 
   /**
@@ -423,15 +424,67 @@ final class ClientRegistrationService {
   public function deleteClient(string $client_id): void {
     $consumer = $this->loadConsumer($client_id);
 
-    // Remove registration token.
-    $this->tokenService->revokeRegistrationAccessToken($client_id);
+    $transaction = $this->tokenService->startTransaction();
+    try {
+      $this->tokenService->revokeLifecycleCredentials($client_id);
+      $consumer->delete();
+      $this->logger->info('Client registration deleted for client_id: @client_id', [
+        '@client_id' => $client_id,
+      ]);
+    }
+    catch (\Throwable $e) {
+      $transaction->rollBack();
+      $this->resetAfterRollback();
+      throw $e;
+    }
+  }
 
-    // Delete the consumer.
-    $consumer->delete();
+  /**
+   * Validates the completed consumer through every installed constraint.
+   *
+   * @param \Drupal\consumers\Entity\ConsumerInterface $consumer
+   *   The completed consumer, including preserved fields on partial updates.
+   *
+   * @throws \Symfony\Component\HttpKernel\Exception\BadRequestHttpException
+   *   If any entity or field constraint rejects the completed values.
+   */
+  private function validateConsumer(ConsumerInterface $consumer): void {
+    if ($consumer->validate()->count() > 0) {
+      throw new BadRequestHttpException('Invalid client metadata');
+    }
+  }
 
-    $this->logger->info('Client registration deleted for client_id: @client_id', [
-      '@client_id' => $client_id,
-    ]);
+  /**
+   * Retains a native declaration using an installed classification control.
+   *
+   * Registration may opt into native policy, but cannot replace an explicit
+   * administrator classification or disable an existing native requirement.
+   * Omitted and web declarations leave classification and PKCE controls intact.
+   *
+   * @param \Drupal\consumers\Entity\ConsumerInterface $consumer
+   *   The consumer being created or updated.
+   * @param string|null $application_type
+   *   The declared application type, or NULL when omitted.
+   */
+  private function applyApplicationType(ConsumerInterface $consumer, ?string $application_type): void {
+    if ($application_type !== 'native' || !$consumer->hasField('native_app_override')) {
+      return;
+    }
+    $override = $consumer->get('native_app_override')->value;
+    if ($override === NULL || $override === '' || $override === 'auto-detect') {
+      $consumer->set('native_app_override', 'native');
+    }
+  }
+
+  /**
+   * Discards cached entities and configuration after lifecycle rollback.
+   *
+   * Entity hooks may have loaded or deleted consumer-specific configuration.
+   * A database rollback alone does not restore those in-memory objects.
+   */
+  private function resetAfterRollback(): void {
+    $this->entityTypeManager->getStorage('consumer')->resetCache();
+    $this->configFactory->reset();
   }
 
   /**
@@ -512,52 +565,17 @@ final class ClientRegistrationService {
    *
    * @param \Drupal\consumers\Entity\ConsumerInterface $consumer
    *   The consumer entity.
+   * @param \Drupal\simple_oauth_client_registration\Dto\ClientRegistration|null $prepared
+   *   Credentials explicitly prepared during registration, when supplied.
    *
    * @return array
    *   The client metadata array.
    */
-  private function getClientMetadataArray(ConsumerInterface $consumer): array {
-    $metadata = [
-      'client_id' => $consumer->getClientId(),
-      'client_name' => $consumer->label(),
-      'client_uri' => $consumer->get('client_uri')->value ?? '',
-      'logo_uri' => $this->getLogoUri($consumer),
-      'tos_uri' => $consumer->get('tos_uri')->value ?? '',
-      'policy_uri' => $consumer->get('policy_uri')->value ?? '',
-      'jwks_uri' => $consumer->get('jwks_uri')->value ?? '',
-      'software_id' => $consumer->get('software_id')->value ?? '',
-      'software_version' => $consumer->get('software_version')->value ?? '',
-      'redirect_uris' => [],
-      'contacts' => [],
-      'grant_types' => [],
-      'scope' => $this->getRegisteredScope($consumer),
-    ];
-
-    // Get redirect URIs.
-    if (!$consumer->get('redirect')->isEmpty()) {
-      foreach ($consumer->get('redirect') as $redirect) {
-        $metadata['redirect_uris'][] = $redirect->get('value')->getValue();
-      }
-    }
-
-    // Get contacts.
-    if (!$consumer->get('contacts')->isEmpty()) {
-      foreach ($consumer->get('contacts') as $contact) {
-        $metadata['contacts'][] = $contact->get('value')->getValue();
-      }
-    }
-
-    // Get grant types.
-    if (!$consumer->get('grant_types')->isEmpty()) {
-      foreach ($consumer->get('grant_types') as $grant_type) {
-        $metadata['grant_types'][] = $grant_type->get('value')->getValue();
-      }
-    }
-
-    // Report even an empty scope when the requested selection was filtered out.
-    return array_filter($metadata, static function ($value, string $key): bool {
-      return $key === 'scope' || ($value !== '' && $value !== []);
-    }, ARRAY_FILTER_USE_BOTH);
+  private function getClientMetadataArray(ConsumerInterface $consumer, ?ClientRegistration $prepared = NULL): array {
+    $metadata = ($this->metadataMapper ?? new ClientMetadataMapper($this->fileUrlGenerator))->map($consumer, $prepared);
+    // Management responses preserve even an empty registered scope selection.
+    $metadata['scope'] = $this->getRegisteredScope($consumer);
+    return $metadata;
   }
 
   /**
@@ -622,31 +640,6 @@ final class ClientRegistrationService {
       }
     }
     return implode(' ', array_keys($names));
-  }
-
-  /**
-   * Gets the logo URI for a consumer, prioritizing image field over logo_uri.
-   *
-   * @param \Drupal\consumers\Entity\ConsumerInterface $consumer
-   *   The consumer entity.
-   *
-   * @return string
-   *   The logo URI or empty string if none available.
-   */
-  private function getLogoUri(ConsumerInterface $consumer): string {
-    // First, check if there's an uploaded image file.
-    if (!$consumer->get('image')->isEmpty()) {
-      $image_field = $consumer->get('image')->first();
-      $file = $image_field?->get('entity')->getValue();
-      if ($file instanceof FileInterface) {
-        // Generate absolute URL for the image file.
-        $file_uri = $file->getFileUri();
-        return $this->fileUrlGenerator->generateAbsoluteString($file_uri);
-      }
-    }
-
-    // Fallback to logo_uri field if no image uploaded.
-    return $consumer->get('logo_uri')->value ?? '';
   }
 
 }

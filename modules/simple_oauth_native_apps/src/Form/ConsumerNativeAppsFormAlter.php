@@ -4,17 +4,23 @@ declare(strict_types=1);
 
 namespace Drupal\simple_oauth_native_apps\Form;
 
+use Drupal\Component\Utility\Html;
 use Drupal\consumers\Entity\ConsumerInterface;
+use Drupal\consumers\Entity\Consumer;
 use Drupal\Core\Ajax\AjaxResponse;
+use Drupal\Core\Ajax\AnnounceCommand;
 use Drupal\Core\Ajax\HtmlCommand;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\DependencyInjection\DependencySerializationTrait;
+use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\EntityFormInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\simple_oauth_native_apps\Service\ConfigurationValidator;
+use Drupal\simple_oauth_native_apps\Service\ConsumerPolicyResolver;
 use Drupal\simple_oauth_native_apps\Service\NativeClientDetector;
+use Drupal\simple_oauth_native_apps\Service\RedirectPolicyValue;
 
 /**
  * Alters consumer forms to include native app settings.
@@ -52,6 +58,27 @@ final class ConsumerNativeAppsFormAlter {
   protected NativeClientDetector $clientDetector;
 
   /**
+   * The shared policy resolver and write boundary.
+   *
+   * @var \Drupal\simple_oauth_native_apps\Service\ConsumerPolicyResolver
+   */
+  protected ConsumerPolicyResolver $policyResolver;
+
+  /**
+   * Whether service wiring opts new forms into automatic stable binding.
+   *
+   * @var bool
+   */
+  protected bool $bindNewPolicies;
+
+  /**
+   * The database for atomic entity and policy form submission, when available.
+   *
+   * @var \Drupal\Core\Database\Connection|null
+   */
+  protected ?Connection $database;
+
+  /**
    * Constructs a new ConsumerNativeAppsFormAlter.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
@@ -62,13 +89,22 @@ final class ConsumerNativeAppsFormAlter {
    *   The configuration validator.
    * @param \Drupal\simple_oauth_native_apps\Service\NativeClientDetector $client_detector
    *   The native client detector.
+   * @param \Drupal\simple_oauth_native_apps\Service\ConsumerPolicyResolver|null $policy_resolver
+   *   The policy boundary; NULL keeps original unbound constructor behavior.
+   * @param \Drupal\Core\Database\Connection|null $database
+   *   The database, or NULL for original programmatic constructor calls.
    */
   public function __construct(
     ConfigFactoryInterface $config_factory,
     EntityTypeManagerInterface $entity_type_manager,
     ConfigurationValidator $configuration_validator,
     NativeClientDetector $client_detector,
+    ?ConsumerPolicyResolver $policy_resolver = NULL,
+    ?Connection $database = NULL,
   ) {
+    $this->database = $database;
+    $this->bindNewPolicies = $policy_resolver !== NULL;
+    $this->policyResolver = $policy_resolver ?? new ConsumerPolicyResolver($config_factory);
     $this->configFactory = $config_factory;
     $this->entityTypeManager = $entity_type_manager;
     $this->configurationValidator = $configuration_validator;
@@ -117,8 +153,19 @@ final class ConsumerNativeAppsFormAlter {
     $global_config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
     // Get current consumer-specific settings if they exist.
-    $consumer_id = $consumer->id();
-    $consumer_config = $consumer_id ? $this->getConsumerNativeAppsSettings((string) $consumer_id) : [];
+    $conflict = FALSE;
+    try {
+      $record = $this->policyResolver->resolve($consumer);
+      $consumer_config = $record['name'] !== NULL ? $this->configFactory->get($record['name'])->get() : [];
+    }
+    catch (\UnexpectedValueException) {
+      $record = ['name' => NULL, 'data' => []];
+      $consumer_config = [];
+      $conflict = TRUE;
+    }
+    // Only forms built here opt into automatic binding of new policy records.
+    // Original programmatic submit calls remain unbound unless explicit.
+    $form['#native_apps_bind_new_policy'] = $this->bindNewPolicies;
 
     $form['native_apps'] = [
       '#type' => 'details',
@@ -128,6 +175,20 @@ final class ConsumerNativeAppsFormAlter {
       '#tree' => TRUE,
       '#weight' => 10,
     ];
+
+    if ($conflict) {
+      $form['native_apps']['policy_conflict'] = [
+        '#markup' => $this->t('Native policy ownership is ambiguous. Reconcile duplicate bindings or competing numeric records before saving this consumer.'),
+      ];
+    }
+    elseif ($record['name'] !== NULL && !array_key_exists('consumer_uuid', $record['data'])) {
+      $form['native_apps']['confirm_policy_owner'] = [
+        '#type' => 'checkbox',
+        '#title' => $this->t('Assign this legacy policy to this consumer after review'),
+        '#description' => $this->t('This record uses a numeric consumer ID. Its historical owner cannot be established from configuration. Review the policy before choosing this consumer as its owner. Saving without this confirmation preserves legacy numeric behavior. Bound policies follow the consumer UUID across environments. Enable Native Apps before importing policies; its import validation cannot run while the module is disabled.'),
+        '#default_value' => FALSE,
+      ];
+    }
 
     // WebView detection override.
     $form['native_apps']['webview_detection_override'] = [
@@ -139,7 +200,7 @@ final class ConsumerNativeAppsFormAlter {
       '#options' => [
         '' => $this->t('- Use global setting -'),
         'off' => $this->t('Off - Allow all requests'),
-        'warn' => $this->t('Warn - Log warnings but allow requests'),
+        'warn' => $this->t('Warn - Send warning headers but allow requests'),
         'block' => $this->t('Block - Reject WebView requests'),
       ],
       '#default_value' => $consumer_config['webview_detection_override'] ?? '',
@@ -150,7 +211,7 @@ final class ConsumerNativeAppsFormAlter {
       '#type' => 'select',
       '#title' => $this->t('Allow custom URI schemes override'),
       '#description' => $this->t('Override whether to allow custom URI schemes (e.g., myapp://callback) for this consumer. Leave empty to use global setting (@global).', [
-        '@global' => $this->getReadableValue($global_config->get('allow.custom_uri_schemes')),
+        '@global' => $this->getReadableValue(RedirectPolicyValue::normalize($global_config->get('allow.custom_uri_schemes'))),
       ]),
       '#options' => [
         '' => $this->t('- Use global setting -'),
@@ -166,7 +227,7 @@ final class ConsumerNativeAppsFormAlter {
       '#type' => 'select',
       '#title' => $this->t('Allow loopback redirects override'),
       '#description' => $this->t('Override whether to allow loopback IP redirects for this consumer. Leave empty to use global setting (@global).', [
-        '@global' => $this->getReadableValue($global_config->get('allow.loopback_redirects')),
+        '@global' => $this->getReadableValue(RedirectPolicyValue::normalize($global_config->get('allow.loopback_redirects'))),
       ]),
       '#options' => [
         '' => $this->t('- Use global setting -'),
@@ -238,11 +299,30 @@ final class ConsumerNativeAppsFormAlter {
         </ul>'),
     ];
 
+    // Apply submitted policy before Drupal validates the built consumer entity.
+    $form['#entity_builders'][] = 'simple_oauth_native_apps_build_consumer_policy';
+
     // Add custom validation.
     $form['#validate'][] = 'simple_oauth_native_apps_validate_consumer_settings';
 
     // Add custom submit handler.
-    $form['actions']['submit']['#submit'][] = 'simple_oauth_native_apps_submit_consumer_settings';
+    $form['#native_apps_entity_submit'] = $form['actions']['submit']['#submit'] ?? [];
+    $form['actions']['submit']['#submit'] = [[$this, 'submitWithPolicy']];
+  }
+
+  /**
+   * Supplies pending config overrides for entity constraint validation.
+   *
+   * @param \Drupal\consumers\Entity\Consumer $consumer
+   *   The consumer built by the entity form.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   The form state containing submitted policy controls.
+   */
+  public function buildConsumerPolicy(Consumer $consumer, FormStateInterface $form_state): void {
+    $values = $form_state->getValue('native_apps');
+    if (is_array($values)) {
+      $this->clientDetector->setSubmittedOverrides($consumer, $values);
+    }
   }
 
   /**
@@ -261,6 +341,27 @@ final class ConsumerNativeAppsFormAlter {
       'allow_loopback_override',
       'enhanced_pkce_override',
     ], '');
+
+    $form_object = $form_state->getFormObject();
+    if ($form_object instanceof EntityFormInterface && $form_object->getEntity() instanceof ConsumerInterface) {
+      try {
+        $binding = $values['consumer_uuid'] ?? NULL;
+        if (array_key_exists('consumer_uuid', $values) && !is_string($binding)) {
+          throw new \UnexpectedValueException('Invalid binding type.');
+        }
+        $this->policyResolver->assertWritable($form_object->getEntity(), $binding);
+      }
+      catch (\UnexpectedValueException) {
+        $form_state->setErrorByName('native_apps', $this->t('Native policy ownership conflicts with existing configuration or the binding is invalid. Reconcile the records before saving; ownership confirmation cannot replace a foreign binding.'));
+      }
+    }
+
+    // Consumer enums do not declare the legacy global Boolean strings.
+    foreach (['allow_custom_schemes_override', 'allow_loopback_override'] as $key) {
+      if (!in_array($values[$key], ['', 'auto-detect', 'native', 'web'], TRUE)) {
+        $form_state->setErrorByName('native_apps][' . $key, $this->t('Invalid consumer redirect policy. Choose inheritance, auto-detect, native, or web.'));
+      }
+    }
 
     // Build configuration in nested structure directly for validation.
     $validator_config = [];
@@ -294,12 +395,73 @@ final class ConsumerNativeAppsFormAlter {
   }
 
   /**
+   * Submits the entity and policy together, rolling back late ID collisions.
+   *
+   * New consumers have no numeric destination until the entity save assigns an
+   * ID. Validation checks known IDs; the final write rechecks the assigned ID.
+   * A transaction prevents a rejected policy from leaving a new consumer saved
+   * without the security settings its administrator submitted.
+   *
+   * @param array $form
+   *   The form, including its original entity submit callbacks.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   The submitted form state.
+   *
+   * @throws \Throwable
+   *   Entity or policy submission failed; database writes roll back.
+   */
+  public function submitWithPolicy(array &$form, FormStateInterface $form_state): void {
+    $this->checkConsumerPolicy($form, $form_state);
+    $transaction = $this->database?->startTransaction();
+    try {
+      foreach ($form['#native_apps_entity_submit'] ?? [] as $callback) {
+        $callback = $form_state->prepareCallback($callback);
+        $callback($form, $form_state);
+      }
+      $this->submitConsumerNativeAppsSettings($form, $form_state);
+    }
+    catch (\Throwable $exception) {
+      $transaction?->rollBack();
+      // A rolled-back consumer or config save may still be in static caches.
+      $this->entityTypeManager->getStorage('consumer')->resetCache();
+      $this->configFactory->reset();
+      throw $exception;
+    }
+  }
+
+  /**
+   * Rechecks ownership before the entity form submit and save callbacks.
+   *
+   * @param array $form
+   *   The form array.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   The submitted form state.
+   *
+   * @throws \UnexpectedValueException
+   *   Ownership changed after validation.
+   */
+  public function checkConsumerPolicy(array $form, FormStateInterface $form_state): void {
+    $form_object = $form_state->getFormObject();
+    if ($form_object instanceof EntityFormInterface && $form_object->getEntity() instanceof ConsumerInterface) {
+      $values = $form_state->getValue('native_apps', []);
+      $binding = $values['consumer_uuid'] ?? NULL;
+      if (array_key_exists('consumer_uuid', $values) && !is_string($binding)) {
+        throw new \UnexpectedValueException('Invalid binding type.');
+      }
+      $this->policyResolver->assertWritable($form_object->getEntity(), $binding);
+    }
+  }
+
+  /**
    * Submits consumer native app settings.
    *
    * @param array $form
    *   The form array.
    * @param \Drupal\Core\Form\FormStateInterface $form_state
    *   The form state.
+   *
+   * @throws \UnexpectedValueException
+   *   The consumer is missing or ownership requires reconciliation.
    */
   public function submitConsumerNativeAppsSettings(array $form, FormStateInterface $form_state): void {
     $form_object = $form_state->getFormObject();
@@ -315,47 +477,23 @@ final class ConsumerNativeAppsFormAlter {
     // Save consumer-specific settings only if the consumer has an ID.
     $consumer_id = $consumer->id();
     if ($consumer_id) {
-      $this->saveConsumerNativeAppsSettings((string) $consumer_id, $values);
-    }
-  }
-
-  /**
-   * Gets consumer-specific native app settings.
-   *
-   * @param string $consumer_id
-   *   The consumer ID.
-   *
-   * @return array
-   *   The consumer-specific settings.
-   */
-  protected function getConsumerNativeAppsSettings(string $consumer_id): array {
-    $config = $this->configFactory->get("simple_oauth_native_apps.consumer.$consumer_id");
-    return $config->get() ?: [];
-  }
-
-  /**
-   * Saves consumer-specific native app settings.
-   *
-   * @param string $consumer_id
-   *   The consumer ID.
-   * @param array $settings
-   *   The settings to save.
-   */
-  protected function saveConsumerNativeAppsSettings(string $consumer_id, array $settings): void {
-    // Filter out empty values to keep only actual overrides.
-    $filtered_settings = array_filter($settings, function ($value) {
-      return $value !== '';
-    });
-
-    $config = $this->configFactory->getEditable("simple_oauth_native_apps.consumer.$consumer_id");
-
-    if (empty($filtered_settings)) {
-      // Delete the config if no overrides are set.
-      $config->delete();
-    }
-    else {
-      // Save the filtered settings.
-      $config->setData($filtered_settings)->save();
+      $consumer = $this->entityTypeManager->getStorage('consumer')->load($consumer_id);
+      if (!$consumer instanceof ConsumerInterface) {
+        throw new \UnexpectedValueException('Native policy requires an existing consumer.');
+      }
+      $record = $this->policyResolver->assertWritable($consumer);
+      $confirm = (bool) ($values['confirm_policy_owner'] ?? FALSE);
+      unset($values['confirm_policy_owner']);
+      $bind = $confirm || (($form['#native_apps_bind_new_policy'] ?? FALSE) === TRUE && $record['name'] === NULL);
+      // A metadata-only confirmation must preserve all legacy values, including
+      // explicit empty values. Submitted edits retain normal clear semantics.
+      $confirmation_only = $confirm;
+      foreach ($values as $key => $value) {
+        if (!array_key_exists($key, $record['data']) || $record['data'][$key] !== $value) {
+          $confirmation_only = FALSE;
+        }
+      }
+      $this->policyResolver->save($consumer, $values, $bind, $confirmation_only);
     }
   }
 
@@ -444,6 +582,7 @@ final class ConsumerNativeAppsFormAlter {
     }
 
     $response->addCommand(new HtmlCommand('#client-detection-results', $markup));
+    $response->addCommand(new AnnounceCommand(trim(strip_tags($markup))));
 
     return $response;
   }
@@ -499,13 +638,28 @@ final class ConsumerNativeAppsFormAlter {
     $confidence = $result['confidence'];
     $details = $result['details'] ?? [];
 
-    $markup = '<div class="client-detection-result confidence-' . $confidence . '">';
+    $confidence_labels = [
+      'low' => $this->t('Low'),
+      'medium' => $this->t('Medium'),
+      'high' => $this->t('High'),
+    ];
+    $confidence_class = isset($confidence_labels[$confidence]) ? $confidence : 'unknown';
+    $confidence_label = $confidence_labels[$confidence] ?? ucfirst($confidence);
+
+    $markup = '<div class="client-detection-result confidence-' . $confidence_class . '">';
     $markup .= '<h4>' . $this->t('Detection Result') . '</h4>';
-    $markup .= '<p><strong>' . $this->t('Detected Client Type:') . '</strong> ' . ucfirst($type) . '</p>';
-    $markup .= '<p><strong>' . $this->t('Detection Confidence:') . '</strong> ' . ucfirst($confidence) . '</p>';
+    $markup .= '<p><strong>' . $this->t('Detected Client Type:') . '</strong> ' . Html::escape($this->getClientTypeLabel($type)) . '</p>';
+    $markup .= '<p><strong>' . $this->t('Detection Confidence:') . '</strong> ' . Html::escape((string) $confidence_label) . '</p>';
 
     if (isset($details['description'])) {
-      $markup .= '<p><strong>' . $this->t('Description:') . '</strong> ' . $details['description'] . '</p>';
+      $description = match ($details['description']) {
+        'Terminal/CLI application using loopback redirects' => $this->t('Terminal/CLI application using loopback redirects'),
+        'Mobile native application' => $this->t('Mobile native application'),
+        'Desktop native application' => $this->t('Desktop native application'),
+        'Web application' => $this->t('Web application'),
+        default => $details['description'],
+      };
+      $markup .= '<p><strong>' . $this->t('Description:') . '</strong> ' . Html::escape((string) $description) . '</p>';
     }
 
     // Show analyzed URIs.
@@ -513,7 +667,7 @@ final class ConsumerNativeAppsFormAlter {
     $markup .= '<h5>' . $this->t('Analyzed Redirect URIs:') . '</h5>';
     $markup .= '<ul>';
     foreach ($redirect_uris as $uri) {
-      $markup .= '<li><code>' . htmlspecialchars($uri) . '</code></li>';
+      $markup .= '<li><code>' . Html::escape($uri) . '</code></li>';
     }
     $markup .= '</ul>';
     $markup .= '</div>';
@@ -536,7 +690,7 @@ final class ConsumerNativeAppsFormAlter {
       $markup .= '<div class="messages messages--warning">';
       $markup .= '<strong>' . $this->t('Mixed Client Types Detected:') . '</strong> ';
       $markup .= $this->t('Your redirect URIs suggest multiple client types (@types). Consider using consistent URI patterns for better security.', [
-        '@types' => implode(', ', $result['mixed_types']),
+        '@types' => implode(', ', array_map($this->getClientTypeLabel(...), $result['mixed_types'])),
       ]);
       $markup .= '</div>';
     }
@@ -544,6 +698,25 @@ final class ConsumerNativeAppsFormAlter {
     $markup .= '</div>';
 
     return $markup;
+  }
+
+  /**
+   * Presents stable detector type values without changing detector results.
+   *
+   * @param string $type
+   *   The detector type.
+   *
+   * @return string
+   *   A translated label or unescaped fallback for the caller to escape.
+   */
+  private function getClientTypeLabel(string $type): string {
+    return (string) match ($type) {
+      'terminal' => $this->t('Terminal'),
+      'mobile' => $this->t('Mobile'),
+      'desktop' => $this->t('Desktop'),
+      'web' => $this->t('Web'),
+      default => ucfirst($type),
+    };
   }
 
   /**

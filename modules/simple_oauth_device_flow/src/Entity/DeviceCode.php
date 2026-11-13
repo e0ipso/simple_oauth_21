@@ -9,11 +9,12 @@ use Drupal\Core\Entity\ContentEntityBase;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
-use Drupal\Core\Url;
 use Drupal\simple_oauth\Entities\ScopeEntity;
+use Drupal\simple_oauth\Oauth2ScopeAdapterInterface;
 use League\OAuth2\Server\Entities\ClientEntityInterface;
 use League\OAuth2\Server\Entities\DeviceCodeEntityInterface;
 use League\OAuth2\Server\Entities\ScopeEntityInterface;
+use League\OAuth2\Server\Exception\OAuthServerException;
 
 /**
  * Defines the Device Code entity for OAuth 2.0 Device Authorization Grant.
@@ -25,6 +26,7 @@ use League\OAuth2\Server\Entities\ScopeEntityInterface;
  *   label = @Translation("OAuth2 Device Code"),
  *   handlers = {
  *     "storage" = "Drupal\Core\Entity\Sql\SqlContentEntityStorage",
+ *     "storage_schema" = "Drupal\simple_oauth_device_flow\Entity\DeviceCodeStorageSchema",
  *     "views_data" = "Drupal\views\EntityViewsData",
  *   },
  *   base_table = "oauth2_device_code",
@@ -44,6 +46,39 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
    * @var \League\OAuth2\Server\Entities\ClientEntityInterface|null
    */
   protected ?ClientEntityInterface $clientEntity = NULL;
+
+  /**
+   * The scope provider supplied by the repository for this instance.
+   */
+  protected ?Oauth2ScopeAdapterInterface $scopeProvider = NULL;
+
+  /**
+   * Supplies the provider used to map public names and stored scope IDs.
+   *
+   * @param \Drupal\simple_oauth\Oauth2ScopeAdapterInterface $scope_provider
+   *   The provider, including optional static or dynamic implementations.
+   */
+  public function setScopeProvider(Oauth2ScopeAdapterInterface $scope_provider): void {
+    $this->scopeProvider = $scope_provider;
+  }
+
+  /**
+   * Gets the supplied provider or the direct-entity compatibility fallback.
+   *
+   * @return \Drupal\simple_oauth\Oauth2ScopeAdapterInterface
+   *   The scope provider.
+   */
+  protected function getScopeProvider(): Oauth2ScopeAdapterInterface {
+    // phpcs:ignore DrupalPractice.Objects.GlobalDrupal.GlobalDrupal -- Direct entity callers predate provider injection.
+    return $this->scopeProvider ?? \Drupal::service('simple_oauth.oauth2_scope.provider');
+  }
+
+  /**
+   * The verification destination supplied for this transient instance.
+   *
+   * @var string|null
+   */
+  protected ?string $verificationUri = NULL;
 
   /**
    * {@inheritdoc}
@@ -261,9 +296,15 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
    */
   public function getScopes(): array {
     $oauth2scopes = [];
-    /** @var \Drupal\simple_oauth\Plugin\Field\FieldType\Oauth2ScopeReferenceItemInterface $scope */
-    foreach ($this->get('scopes') as $scope) {
-      $scope_entity = $scope->getScope();
+    $provider = $this->getScopeProvider();
+    foreach ($this->get('scopes')->getValue() as $scope) {
+      $id = $scope['scope_id'] ?? NULL;
+      if ($id === NULL || $id === '') {
+        continue;
+      }
+      $id = (string) $id;
+      // Read historical public names without rewriting their stored values.
+      $scope_entity = $provider->load($id) ?? $provider->loadByName($id);
       if ($scope_entity !== NULL) {
         $oauth2scopes[] = new ScopeEntity($scope_entity);
       }
@@ -273,9 +314,16 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
 
   /**
    * {@inheritdoc}
+   *
+   * @throws \League\OAuth2\Server\Exception\OAuthServerException
+   *   If the public scope name does not resolve through the scope provider.
    */
   public function addScope(ScopeEntityInterface $scope): void {
-    $this->get('scopes')->appendItem(['scope_id' => $scope->getIdentifier()]);
+    $resolved = $this->getScopeProvider()->loadByName($scope->getIdentifier());
+    if ($resolved === NULL) {
+      throw OAuthServerException::invalidScope($scope->getIdentifier());
+    }
+    $this->get('scopes')->appendItem(['scope_id' => $resolved->id()]);
   }
 
   /**
@@ -296,28 +344,25 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
    * {@inheritdoc}
    */
   public function getVerificationUri(): string {
-    $request = \Drupal::service('request_stack')->getCurrentRequest();
-    if ($request !== NULL && $request->getSchemeAndHttpHost()) {
-      $base_url = $request->getSchemeAndHttpHost();
-      return $base_url . '/oauth/device/verify';
+    if ($this->verificationUri !== NULL) {
+      return $this->verificationUri;
     }
-    // Fallback for contexts where request is not available.
-    return Url::fromRoute('simple_oauth_device_flow.device_verification_form', [], ['absolute' => TRUE])->toString();
+    return \Drupal::service('simple_oauth_device_flow.settings')->getAbsoluteVerificationUri();
   }
 
   /**
    * {@inheritdoc}
    */
   public function setVerificationUri(string $verificationUri): void {
-    // The verification URI is constructed dynamically, not stored.
-    // This method is required by the interface but doesn't need implementation.
+    $this->verificationUri = $verificationUri;
   }
 
   /**
    * {@inheritdoc}
    */
   public function getVerificationUriComplete(): string {
-    return $this->getVerificationUri() . '?user_code=' . $this->getUserCode();
+    $uri = $this->getVerificationUri();
+    return $uri . (str_contains($uri, '?') ? '&' : '?') . 'user_code=' . rawurlencode($this->getUserCode());
   }
 
   /**

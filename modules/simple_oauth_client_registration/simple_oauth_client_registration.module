@@ -7,6 +7,9 @@
  * Implements RFC 7591 Dynamic Client Registration for OAuth 2.0 clients.
  */
 
+declare(strict_types=1);
+
+use Drupal\consumers\Entity\ConsumerInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Form\FormStateInterface;
@@ -311,5 +314,53 @@ function simple_oauth_client_registration_form_consumer_form_alter(&$form, FormS
   // Ensure logo_uri appears right after image field.
   if (isset($form['logo_uri'])) {
     $form['logo_uri']['#weight'] = $form['image']['#weight'] + 0.1;
+  }
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_insert().
+ */
+function simple_oauth_client_registration_consumer_insert(ConsumerInterface $consumer): void {
+  // Issuance belongs to registration, after the consumer insert completes.
+  \Drupal::service('simple_oauth_client_registration.service.token')->revokeLifecycleCredentials($consumer->getClientId());
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_update().
+ */
+function simple_oauth_client_registration_consumer_update(ConsumerInterface $consumer): void {
+  // Drupal 10.2 exposes original state as a property. Newer versions have
+  // an API that also avoids deprecated property access.
+  $original = method_exists($consumer, 'getOriginal') ? $consumer->getOriginal() : ($consumer->original ?? NULL);
+  if ($original instanceof ConsumerInterface && $original->getClientId() !== $consumer->getClientId()) {
+    \Drupal::service('simple_oauth_client_registration.service.token')->revokeLifecycleCredentials($original->getClientId(), $consumer->getClientId());
+  }
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_predelete().
+ */
+function simple_oauth_client_registration_consumer_predelete(ConsumerInterface $consumer): void {
+  // Deletion can receive an entity with unsaved identifier edits. Revoke the
+  // stored identity, within the entity storage transaction, before it is lost.
+  $stored = \Drupal::entityTypeManager()->getStorage('consumer')->loadUnchanged($consumer->id());
+  $client_id = $stored instanceof ConsumerInterface ? $stored->getClientId() : $consumer->getClientId();
+  // Storage failures must propagate so the entity transaction rolls back.
+  \Drupal::service('simple_oauth_client_registration.service.token')->revokeLifecycleCredentials($client_id);
+}
+
+/**
+ * Implements hook_cron().
+ */
+function simple_oauth_client_registration_cron(): void {
+  // Limit each cron run to 100 candidates; later runs drain the remainder.
+  try {
+    \Drupal::service('simple_oauth_client_registration.service.token')->cleanupExpiredTokens(100);
+  }
+  catch (\Exception $e) {
+    // Retry on the next cron run without exposing query or credential data.
+    \Drupal::logger('simple_oauth_client_registration')->error('Registration token cleanup failed: @exception_type', [
+      '@exception_type' => get_class($e),
+    ]);
   }
 }

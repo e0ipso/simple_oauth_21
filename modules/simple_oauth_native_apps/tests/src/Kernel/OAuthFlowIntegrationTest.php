@@ -9,10 +9,21 @@ use Drupal\KernelTests\KernelTestBase;
 use Drupal\simple_oauth_native_apps\EventSubscriber\AuthorizationRequestSubscriber;
 use Drupal\simple_oauth_native_apps\EventSubscriber\PkceValidationSubscriber;
 use GuzzleHttp\Psr7\ServerRequest;
+use GuzzleHttp\Psr7\Response as PsrResponse;
+use League\OAuth2\Server\Entities\UserEntityInterface;
+use Drupal\Core\Cache\CacheableResponse;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpKernel\EventListener\RouterListener;
+use Symfony\Component\Routing\Matcher\UrlMatcher;
+use Symfony\Component\Routing\RequestContext;
+use Symfony\Component\Routing\Route;
+use Symfony\Component\Routing\RouteCollection;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Event\ResponseEvent;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\HttpKernel\KernelEvents;
@@ -52,6 +63,96 @@ final class OAuthFlowIntegrationTest extends KernelTestBase {
   }
 
   /**
+   * Tests real routing precedes validation and paths cannot select policy.
+   */
+  public function testPkceUsesMatchedRoutesAfterRouting(): void {
+    $client = Consumer::create([
+      'label' => 'Routed native client',
+      'client_id' => 'routed-native-client',
+      'native_app_override' => 'native',
+    ]);
+    $client->save();
+    $routes = new RouteCollection();
+    $provider = $this->container->get('router.route_provider');
+    foreach (['authorize' => '/identity/consent', 'token' => '/identity/exchange'] as $endpoint => $path) {
+      $route = clone $provider->getRouteByName('oauth2_token.' . $endpoint);
+      $route->setPath($path);
+      $routes->add('oauth2_token.' . $endpoint, $route);
+    }
+    $routes->add('unrelated.authorize', new Route('/reports/oauth/authorize/history'));
+    $routes->add('unrelated.token', new Route('/reports/oauth/token/history'));
+    $dispatcher = new EventDispatcher();
+    $dispatcher->addSubscriber(new RouterListener(new UrlMatcher($routes, new RequestContext()), new RequestStack()));
+    $dispatcher->addSubscriber($this->container->get('simple_oauth_native_apps.pkce_validation_subscriber'));
+    $outcomes = [];
+    $expected_outcomes = [];
+    foreach ([
+      ['/identity/consent', 'GET', 'oauth2_token.authorize', TRUE],
+      ['/identity/exchange', 'POST', 'oauth2_token.token', TRUE],
+      ['/reports/oauth/authorize/history', 'GET', 'unrelated.authorize', FALSE],
+      ['/reports/oauth/token/history', 'POST', 'unrelated.token', FALSE],
+    ] as [$path, $method, $route_name, $expected]) {
+      $request = Request::create($path, $method, [
+        'client_id' => 'routed-native-client',
+        'grant_type' => 'authorization_code',
+      ]);
+      $this->assertFalse($request->attributes->has('_route'));
+      $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+      $dispatcher->dispatch($event, KernelEvents::REQUEST);
+      $outcomes[$route_name] = [$request->attributes->get('_route'), $event->hasResponse()];
+      $expected_outcomes[$route_name] = [$route_name, $expected];
+      if ($event->hasResponse()) {
+        $this->assertSame(400, $event->getResponse()->getStatusCode());
+        $this->assertStringContainsString('mandatory', $event->getResponse()->getContent());
+      }
+    }
+    $this->assertSame($expected_outcomes, $outcomes);
+  }
+
+  /**
+   * Tests malformed credentials and grants do not throw or select a fallback.
+   */
+  public function testMalformedClientAndGrantParameters(): void {
+    $client = Consumer::create([
+      'label' => 'Parameter shape client',
+      'client_id' => 'shape-client',
+      'native_app_override' => 'native',
+    ]);
+    $client->save();
+    $subscriber = $this->container->get('simple_oauth_native_apps.pkce_validation_subscriber');
+    foreach ([[], ['shape-client'], 1, TRUE] as $malformed) {
+      foreach (['authorize', 'token'] as $endpoint) {
+        $request = Request::create('/oauth/' . $endpoint, $endpoint === 'authorize' ? 'GET' : 'POST', [
+          'client_id' => $malformed,
+          'grant_type' => 'authorization_code',
+        ]);
+        $request->attributes->set('_route', 'oauth2_token.' . $endpoint);
+        $request->headers->set('Authorization', 'Basic ' . base64_encode('shape-client:secret'));
+        $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+        $subscriber->onOauthRequest($event);
+        $this->assertTrue($event->hasResponse());
+        $this->assertSame(400, $event->getResponse()->getStatusCode());
+        $error = json_decode($event->getResponse()->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame('invalid_request', $error['error']);
+        $this->assertStringContainsString('client_id', $error['error_description']);
+        $this->assertFalse($request->attributes->has('oauth_enhanced_pkce_applied'));
+      }
+      $request = Request::create('/oauth/token', 'POST', [
+        'client_id' => 'shape-client',
+        'grant_type' => $malformed,
+      ]);
+      $request->attributes->set('_route', 'oauth2_token.token');
+      $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+      $subscriber->onOauthRequest($event);
+      $this->assertTrue($event->hasResponse());
+      $this->assertSame(400, $event->getResponse()->getStatusCode());
+      $error = json_decode($event->getResponse()->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+      $this->assertSame('invalid_request', $error['error']);
+      $this->assertStringContainsString('grant_type', $error['error_description']);
+    }
+  }
+
+  /**
    * Tests token validation follows credentials instead of query hints.
    */
   public function testTokenPkceUsesAuthenticatedClientIdentity(): void {
@@ -77,16 +178,18 @@ final class OAuthFlowIntegrationTest extends KernelTestBase {
     $credentials = [
       'body' => ['native-credential-client', NULL],
       'Basic' => [NULL, 'native-credential-client'],
+      'empty body before Basic' => ['', 'native-credential-client'],
       'body before Basic' => ['native-credential-client', 'ordinary-credential-client'],
     ];
 
     foreach ($credentials as $credential_name => [$body_client, $basic_client]) {
-      foreach (['ordinary-credential-client', 'missing-client', ''] as $query_client) {
+      foreach (['ordinary-credential-client', 'missing-client', '', ['native-credential-client']] as $query_client) {
         foreach ($verifiers as $verifier_name => $verifier) {
-          $request = Request::create('/oauth/token', Request::METHOD_POST, [
+          $request = Request::create('/identity/exchange', Request::METHOD_POST, [
             'grant_type' => 'authorization_code',
             'code_verifier' => $verifier,
           ]);
+          $request->attributes->set('_route', 'oauth2_token.token');
           $request->query->set('client_id', $query_client);
           if ($body_client !== NULL) {
             $request->request->set('client_id', $body_client);
@@ -96,7 +199,7 @@ final class OAuthFlowIntegrationTest extends KernelTestBase {
           }
           $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
           $subscriber->onOauthRequest($event);
-          $context = "$credential_name / $query_client / $verifier_name";
+          $context = $credential_name . ' / ' . json_encode($query_client) . ' / ' . $verifier_name;
           if ($verifier_name === 'low entropy') {
             $this->assertTrue($event->hasResponse(), $context);
             $this->assertSame(400, $event->getResponse()->getStatusCode(), $context);
@@ -112,13 +215,25 @@ final class OAuthFlowIntegrationTest extends KernelTestBase {
       }
     }
 
+    foreach ([TRUE, FALSE] as $native_query) {
+      $request = Request::create('/identity/oauth/token', 'POST', [
+        'client_id' => $native_query ? 'ordinary-credential-client' : 'native-credential-client',
+      ]);
+      $request->query->set('client_id', $native_query ? 'native-credential-client' : 'ordinary-credential-client');
+      $request->attributes->set('_route', 'oauth2_token.authorize');
+      $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+      $subscriber->onOauthRequest($event);
+      $this->assertSame($native_query, $event->hasResponse());
+    }
+
     // An unrelated native query hint must not impose native policy on a web
     // client, even when a conflicting Basic username names the native client.
-    $request = Request::create('/oauth/token', Request::METHOD_POST, [
+    $request = Request::create('/identity/exchange', Request::METHOD_POST, [
       'client_id' => 'ordinary-credential-client',
       'grant_type' => 'authorization_code',
       'code_verifier' => str_repeat('a', 43),
     ]);
+    $request->attributes->set('_route', 'oauth2_token.token');
     $request->query->set('client_id', 'native-credential-client');
     $request->headers->set('Authorization', 'Basic ' . base64_encode('native-credential-client:secret'));
     $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
@@ -154,7 +269,7 @@ final class OAuthFlowIntegrationTest extends KernelTestBase {
         NULL,
         NULL,
       ],
-      'omitted method' => ['authorize', ['code_challenge' => $challenge], NULL, NULL],
+      'omitted method' => ['authorize', ['code_challenge' => $challenge], 'invalid_request', 'S256'],
       'missing challenge' => ['authorize', [], 'invalid_request', 'mandatory'],
       'empty challenge' => ['authorize', ['code_challenge' => ''], 'invalid_request', 'mandatory'],
       'malformed challenge string' => [
@@ -237,12 +352,243 @@ final class OAuthFlowIntegrationTest extends KernelTestBase {
         }
       }
     }
+    $this->config('simple_oauth_native_apps.settings')->set('enforce_native_security', FALSE)->save();
+    $this->config('simple_oauth_native_apps.consumer.' . $client->id())
+      ->set('enhanced_pkce_override', 'enhanced')->save();
+    $this->config('simple_oauth_pkce.settings')->set('enforcement', 'mandatory')->save();
+    $request = Request::create('/oauth/authorize', 'GET', [
+      'client_id' => 'native-policy-client',
+      'response_type' => 'code',
+    ]);
+    $request->attributes->set('_route', 'oauth2_token.authorize');
+    $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+    $dispatcher->dispatch($event, KernelEvents::REQUEST);
+    $this->assertTrue($event->hasResponse());
+    $this->assertFalse($request->attributes->has('oauth_enhanced_pkce_applied'));
+    $data = json_decode($event->getResponse()->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+    $this->assertStringContainsString('required', $data['error_description']);
+
+  }
+
+  /**
+   * Tests absent native method settings require S256 at authorization.
+   */
+  public function testMissingNativeMethodRequiresS256AtAuthorization(): void {
+    $client = Consumer::create([
+      'label' => 'Missing native method',
+      'client_id' => 'missing-native-method',
+      'confidential' => FALSE,
+      'native_app_override' => 'native',
+      'pkce' => FALSE,
+    ]);
+    $client->save();
+    $subscriber = $this->container->get('simple_oauth_native_apps.pkce_validation_subscriber');
+    $config = $this->config('simple_oauth_native_apps.settings');
+    $verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+    foreach ([TRUE, FALSE] as $missing) {
+      if ($missing) {
+        $config->clear('native.enforce')->save();
+      }
+      else {
+        $config->set('native.enforce', NULL)->save();
+      }
+      foreach ([NULL, 'plain', 'S256'] as $method) {
+        $parameters = [
+          'client_id' => $client->getClientId(),
+          'response_type' => 'code',
+          'code_challenge' => $method === 'S256'
+            ? rtrim(strtr(base64_encode(hash('sha256', $verifier, TRUE)), '+/', '-_'), '=')
+            : $verifier,
+        ];
+        if ($method !== NULL) {
+          $parameters['code_challenge_method'] = $method;
+        }
+        $request = Request::create('/oauth/authorize', 'GET', $parameters);
+        $request->attributes->set('_route', 'oauth2_token.authorize');
+        $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+        $subscriber->onOauthRequest($event);
+        $this->assertSame($method !== 'S256', $event->hasResponse());
+        if ($event->hasResponse()) {
+          $this->assertSame(400, $event->getResponse()->getStatusCode());
+          $data = json_decode($event->getResponse()->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+          $this->assertSame('invalid_request', $data['error']);
+          $this->assertStringContainsString('S256', $data['error_description']);
+        }
+      }
+    }
+  }
+
+  /**
+   * Tests query-only authorization, plain tokens and enhanced web requirements.
+   */
+  public function testEffectivePkceAtRequestBoundaries(): void {
+    $this->installEntitySchema('oauth2_token');
+    $client = Consumer::create([
+      'label' => 'Policy boundary client',
+      'client_id' => 'boundary-client',
+      'confidential' => FALSE,
+      'redirect' => ['com.example.boundary:/callback'],
+      'native_app_override' => 'native',
+      'pkce' => FALSE,
+    ]);
+    $client->save();
+    $subscriber = $this->container->get('simple_oauth_native_apps.pkce_validation_subscriber');
+    $config = $this->config('simple_oauth_native_apps.settings');
+    $verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+    foreach (['S256', 'plain'] as $method) {
+      $config->set('native.enforce', $method)->save();
+      $challenge = $method === 'plain' ? $verifier : rtrim(strtr(base64_encode(hash('sha256', $verifier, TRUE)), '+/', '-_'), '=');
+      foreach ([FALSE, TRUE] as $query_pkce) {
+        $request = Request::create('/oauth/authorize?client_id=boundary-client', 'POST', [
+          'code_challenge' => $challenge,
+          'code_challenge_method' => $method,
+        ]);
+        $request->attributes->set('_route', 'oauth2_token.authorize');
+        if ($query_pkce) {
+          $request->query->add(['code_challenge' => $challenge, 'code_challenge_method' => $method]);
+        }
+        $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+        $subscriber->onOauthRequest($event);
+        $this->assertSame(!$query_pkce, $event->hasResponse(), $method);
+      }
+      $request = Request::create('/oauth/token', 'POST', [
+        'client_id' => 'boundary-client',
+        'grant_type' => 'authorization_code',
+        'code_verifier' => $verifier,
+      ]);
+      $request->attributes->set('_route', 'oauth2_token.token');
+      $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+      $subscriber->onOauthRequest($event);
+      $this->assertFalse($event->hasResponse(), $method);
+      $this->assertTrue($request->attributes->get('oauth_enhanced_pkce_applied'));
+    }
+
+    $client->set('native_app_override', 'web')->set('confidential', TRUE)->save();
+    $config->set('native.enhanced_pkce', 'enhanced')->set('native.enforce', 'S256')->save();
+    foreach ([TRUE, FALSE] as $enabled) {
+      $config->set('enforce_native_security', $enabled)->save();
+      $request = Request::create('/oauth/authorize', 'GET', ['client_id' => 'boundary-client']);
+      $request->attributes->set('_route', 'oauth2_token.authorize');
+      $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+      $subscriber->onOauthRequest($event);
+      $this->assertSame($enabled, $event->hasResponse());
+    }
+  }
+
+  /**
+   * Tests redirect restrictions at the actual authorization boundary.
+   */
+  public function testConsumerRedirectAuthorizationPolicy(): void {
+    $client = Consumer::create([
+      'label' => 'Redirect policy client',
+      'client_id' => 'redirect-policy-client',
+      'confidential' => FALSE,
+      'redirect' => ['com.example.policy:/callback'],
+      'native_app_override' => 'native',
+    ]);
+    $client->save();
+    $config = $this->config('simple_oauth_native_apps.settings');
+    $config->set('allow.custom_uri_schemes', 'web')->set('allow.loopback_redirects', 'web')->save();
+    $subscriber = $this->container->get('simple_oauth_native_apps.authorization_request_subscriber');
+    $override = $this->config('simple_oauth_native_apps.consumer.' . $client->id());
+    foreach (['', 'native', 'web'] as $permission) {
+      $override->set('allow_custom_schemes_override', $permission)->set('allow_loopback_override', $permission)->save();
+      $uris = [
+        NULL,
+        'com.example.policy:/callback',
+        'http://127.0.0.1:43123/callback',
+        'http://[::1]:43123/callback',
+        'https://example.com/callback',
+      ];
+      foreach ($uris as $uri) {
+        $parameters = ['client_id' => 'redirect-policy-client'];
+        if ($uri !== NULL) {
+          $parameters['redirect_uri'] = $uri;
+        }
+        $request = Request::create('/oauth/authorize', 'GET', $parameters);
+        $request->attributes->set('_route', 'oauth2_token.authorize');
+        $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+        $subscriber->onAuthorizationRequest($event);
+        $this->assertSame($permission !== 'native' && $uri !== 'https://example.com/callback', $event->hasResponse(), $permission . ' / ' . ($uri ?? 'omitted'));
+      }
+    }
+    $config->set('enforce_native_security', FALSE)->save();
+    $request = Request::create('/oauth/authorize', 'GET', ['client_id' => 'redirect-policy-client']);
+    $request->attributes->set('_route', 'oauth2_token.authorize');
+    $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+    $subscriber->onAuthorizationRequest($event);
+    $this->assertFalse($event->hasResponse());
+  }
+
+  /**
+   * Tests consumer WebView modes, strong markers, and response cache safety.
+   */
+  public function testConsumerWebviewPolicyAndWarningResponses(): void {
+    $client = Consumer::create([
+      'label' => 'WebView policy client',
+      'client_id' => 'webview-policy-client',
+      'confidential' => TRUE,
+      'redirect' => ['https://example.com/callback'],
+    ]);
+    $client->save();
+    $config = $this->config('simple_oauth_native_apps.settings');
+    $subscriber = $this->container->get('simple_oauth_native_apps.authorization_request_subscriber');
+    $override = $this->config('simple_oauth_native_apps.consumer.' . $client->id());
+    $user_agent = 'Mozilla/5.0 (Linux; Android 10; Pixel; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0.0.0 Mobile Safari/537.36';
+    foreach (['off', 'warn', 'block'] as $global) {
+      $config->set('webview.detection', $global)->save();
+      foreach (['', 'off', 'warn', 'block'] as $mode) {
+        $override->set('webview_detection_override', $mode)->save();
+        $effective = $mode === '' ? $global : $mode;
+        $request = Request::create('/oauth/authorize', 'GET', ['client_id' => 'webview-policy-client']);
+        $request->attributes->set('_route', 'oauth2_token.authorize');
+        $request->headers->set('User-Agent', $user_agent);
+        $kernel = $this->createMock(HttpKernelInterface::class);
+        $event = new RequestEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST);
+        $subscriber->onAuthorizationRequest($event);
+        $this->assertSame($effective === 'block', $event->hasResponse());
+        $response = new CacheableResponse();
+        $response_event = new ResponseEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST, $response);
+        $subscriber->onResponse($response_event);
+        $this->assertSame($effective === 'warn', $response->headers->has('X-OAuth-Security-Warning'));
+        if ($effective === 'warn') {
+          $this->assertTrue($response->headers->hasCacheControlDirective('no-store'));
+          $this->assertSame(0, $response->getCacheableMetadata()->getCacheMaxAge());
+          $this->assertSame('android_native', $response->headers->get('X-OAuth-Webview-Type'));
+        }
+      }
+    }
+    $config->set('webview.whitelist', ['Pixel'])->save();
+    $request = Request::create('/oauth/authorize', 'GET', ['client_id' => 'webview-policy-client']);
+    $request->attributes->set('_route', 'oauth2_token.authorize');
+    $request->headers->set('User-Agent', $user_agent);
+    $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+    $subscriber->onAuthorizationRequest($event);
+    $this->assertFalse($event->hasResponse());
+    $analyzer = $this->container->get('simple_oauth_native_apps.user_agent_analyzer');
+    $safe = str_replace('; wv', '', $user_agent);
+    $this->assertFalse($analyzer->isEmbeddedWebview($safe));
+    $config->set('webview.patterns', ['Pixel'])->save();
+    $this->assertTrue($analyzer->isEmbeddedWebview($safe));
+    $this->assertSame('custom', $analyzer->getWebviewType($safe)['category']);
+    $route = $this->container->get('router.route_provider')->getRouteByName('oauth2_token.authorize');
+    $this->assertTrue($route->getOption('no_cache'));
+    $plain_request = Request::create('/oauth/authorize');
+    $plain_response = new Response();
+    $subscriber->onResponse(new ResponseEvent($this->createMock(HttpKernelInterface::class), $plain_request, HttpKernelInterface::MAIN_REQUEST, $plain_response));
+    $this->assertFalse($plain_response->headers->has('X-OAuth-Security-Warning'));
   }
 
   /**
    * Tests the master switch controls every WebView enforcement mode.
    */
   public function testWebviewPoliciesRespectMasterSwitch(): void {
+    $client = Consumer::create([
+      'label' => 'Master policy client',
+      'client_id' => 'master-policy-client',
+      'native_app_override' => 'native',
+    ]);
+    $client->save();
     $config = $this->config('simple_oauth_native_apps.settings');
     $analyzer = $this->container->get('simple_oauth_native_apps.user_agent_analyzer');
     $subscriber = $this->container->get('simple_oauth_native_apps.authorization_request_subscriber');
@@ -258,6 +604,16 @@ final class OAuthFlowIntegrationTest extends KernelTestBase {
         $this->assertSame($enabled && $policy !== 'off', $analyzer->isDetectionEnabled());
         $this->assertSame($enabled && $policy === 'block', $event->hasResponse());
         $this->assertSame($enabled && $policy === 'warn', $request->attributes->has('oauth_webview_warning'));
+        $pkce_request = Request::create('/oauth/authorize', 'GET', ['client_id' => 'master-policy-client']);
+        $pkce_request->attributes->set('_route', 'oauth2_token.authorize');
+        $pkce_event = new RequestEvent($this->createMock(HttpKernelInterface::class), $pkce_request, HttpKernelInterface::MAIN_REQUEST);
+        $this->container->get('simple_oauth_native_apps.pkce_validation_subscriber')->onOauthRequest($pkce_event);
+        $this->assertSame($enabled, $pkce_event->hasResponse());
+        $metadata = $this->container->get('simple_oauth_native_apps.metadata_provider')->getMetadata();
+        $this->assertSame($enabled, $metadata['pkce_required']);
+        $this->assertSame($enabled && $policy !== 'off', $metadata['webview_detection_supported']);
+        $this->assertSame($enabled ? $policy : 'off', $metadata['webview_detection_policy']);
+
       }
     }
   }
@@ -346,6 +702,7 @@ final class OAuthFlowIntegrationTest extends KernelTestBase {
    * Tests the native plugin constructs a server retaining public-client PKCE.
    */
   public function testNativeGrantServerRequiresPublicChallenge(): void {
+    $this->installEntitySchema('oauth2_token');
     $consumer = Consumer::create([
       'label' => 'Native grant client',
       'client_id' => 'native-grant-client',
@@ -382,12 +739,116 @@ final class OAuthFlowIntegrationTest extends KernelTestBase {
         $this->assertSame('invalid_request', $exception->getErrorType());
         $this->assertStringContainsString('public clients', $exception->getHint());
       }
-      $query['code_challenge'] = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
-      $query['code_challenge_method'] = 'S256';
-      $authorization = $server->validateAuthorizationRequest($request->withQueryParams($query));
-      $this->assertSame('native-grant-client', $authorization->getClient()->getIdentifier());
-      $this->assertSame($query['code_challenge'], $authorization->getCodeChallenge());
-      $this->assertSame('S256', $authorization->getCodeChallengeMethod());
+      foreach (['native_app_authorization_code', 'authorization_code'] as $grant) {
+        $consumer->set('grant_types', [$grant])->set('pkce', FALSE)->save();
+        $server = $factory->get($consumer);
+        unset($query['code_challenge'], $query['code_challenge_method']);
+        $body_only = $request->withQueryParams($query)->withParsedBody([
+          'code_challenge' => 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk',
+          'code_challenge_method' => 'S256',
+        ]);
+        if ($grant === 'authorization_code') {
+          $this->assertNull($server->validateAuthorizationRequest($body_only)->getCodeChallenge());
+        }
+        else {
+          try {
+            $server->validateAuthorizationRequest($body_only);
+            $this->fail('The native grant must require a query challenge.');
+          }
+          catch (OAuthServerException $exception) {
+            $this->assertSame('invalid_request', $exception->getErrorType());
+          }
+        }
+        $query['code_challenge'] = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+        foreach ([NULL, 'S256'] as $method) {
+          unset($query['code_challenge_method']);
+          if ($method !== NULL) {
+            $query['code_challenge_method'] = $method;
+          }
+          $authorization = $server->validateAuthorizationRequest($request->withQueryParams($query));
+          $this->assertSame('native-grant-client', $authorization->getClient()->getIdentifier());
+          $this->assertSame($query['code_challenge'], $authorization->getCodeChallenge());
+          $this->assertSame($method ?? 'plain', $authorization->getCodeChallengeMethod());
+          // Complete a real League exchange using the code's stored method.
+          $user = $this->createMock(UserEntityInterface::class);
+          $user->method('getIdentifier')->willReturn('1');
+          $authorization->setUser($user);
+          $authorization->setAuthorizationApproved(TRUE);
+          $approved = $server->completeAuthorizationRequest($authorization, new PsrResponse());
+          parse_str(parse_url($approved->getHeaderLine('Location'), PHP_URL_QUERY), $redirect_query);
+          $token_parameters = [
+            'grant_type' => 'authorization_code',
+            'client_id' => 'native-grant-client',
+            'redirect_uri' => $query['redirect_uri'],
+            'code' => $redirect_query['code'],
+            'code_verifier' => $query['code_challenge'],
+          ];
+          if ($method === 'S256') {
+            // The chosen challenge has no known preimage: prove League still
+            // rejects a valid-format verifier that does not match the code.
+            try {
+              $server->respondToAccessTokenRequest((new ServerRequest('POST', 'https://example.com/oauth/token'))->withParsedBody($token_parameters), new PsrResponse());
+              $this->fail('League must reject an unmatched verifier.');
+            }
+            catch (OAuthServerException $exception) {
+              $this->assertSame('invalid_grant', $exception->getErrorType());
+            }
+          }
+          else {
+            $this->config('simple_oauth_native_apps.settings')->set('native.enforce', 'plain')->save();
+            $token_request = Request::create('/oauth/token', 'POST', $token_parameters);
+            $token_request->attributes->set('_route', 'oauth2_token.token');
+            $token_event = new RequestEvent($this->createMock(HttpKernelInterface::class), $token_request, HttpKernelInterface::MAIN_REQUEST);
+            $this->container->get('simple_oauth_native_apps.pkce_validation_subscriber')->onOauthRequest($token_event);
+            $this->assertFalse($token_event->hasResponse());
+            $token_response = $server->respondToAccessTokenRequest((new ServerRequest('POST', 'https://example.com/oauth/token'))->withParsedBody($token_parameters), new PsrResponse());
+            $this->assertSame(200, $token_response->getStatusCode());
+            $token = json_decode((string) $token_response->getBody(), TRUE, 512, JSON_THROW_ON_ERROR);
+            $this->assertArrayHasKey('access_token', $token);
+            $this->config('simple_oauth_native_apps.settings')->set('native.enforce', 'S256')->save();
+          }
+
+        }
+      }
+      // Native policy supplements registered matching, including RFC 8252's
+      // literal-loopback port exception and private single-slash syntax.
+      $consumer->set('redirect', [
+        'com.example.grant:/callback',
+        'http://127.0.0.1:10000/callback',
+        'http://[::1]:10000/callback',
+        'https://example.com/callback',
+      ])->save();
+      $server = $factory->get($consumer);
+      $matching_cases = [
+        'com.example.grant:/callback' => TRUE,
+        'com.example.grant:/different' => FALSE,
+        'http://127.0.0.1:43123/callback' => TRUE,
+        'http://[::1]:43123/callback' => TRUE,
+        'http://127.0.0.1:43123/different' => FALSE,
+        'https://example.com/callback' => TRUE,
+        'https://example.com/callback/extra' => FALSE,
+      ];
+      foreach ($matching_cases as $uri => $matches) {
+        $query['redirect_uri'] = $uri;
+        $boundary_request = Request::create('/oauth/authorize', 'GET', $query);
+        $boundary_request->attributes->set('_route', 'oauth2_token.authorize');
+        $boundary_event = new RequestEvent($this->createMock(HttpKernelInterface::class), $boundary_request, HttpKernelInterface::MAIN_REQUEST);
+        $this->container->get('simple_oauth_native_apps.pkce_validation_subscriber')->onOauthRequest($boundary_event);
+        $this->container->get('simple_oauth_native_apps.authorization_request_subscriber')->onAuthorizationRequest($boundary_event);
+        $this->assertFalse($boundary_event->hasResponse(), $uri);
+        try {
+          $server->validateAuthorizationRequest($request->withQueryParams($query));
+          $this->assertTrue($matches, $uri);
+        }
+        catch (OAuthServerException $exception) {
+          $this->assertFalse($matches, $uri);
+          $this->assertSame('invalid_client', $exception->getErrorType());
+        }
+      }
+      $this->config('simple_oauth_native_apps.settings')->set('enforce_native_security', FALSE)->save();
+      $consumer->set('grant_types', ['native_app_authorization_code'])->save();
+      $this->assertInstanceOf(AuthorizationServer::class, $factory->get($consumer));
+
     }
     finally {
       unlink($key_file);
@@ -405,6 +866,7 @@ final class OAuthFlowIntegrationTest extends KernelTestBase {
     // Test that subscriber is properly registered.
     $events = AuthorizationRequestSubscriber::getSubscribedEvents();
     $this->assertArrayHasKey('kernel.request', $events);
+    $this->assertArrayHasKey('kernel.response', $events);
   }
 
   /**
@@ -564,11 +1026,12 @@ final class OAuthFlowIntegrationTest extends KernelTestBase {
       'http://127.0.0.1:8080/callback' => TRUE,
       'http://[::1]:3000/oauth' => TRUE,
 
+      // HTTPS web redirects use standard validation.
+      'https://example.com/callback' => TRUE,
+
       // Invalid/dangerous URIs.
       'javascript://malicious' => FALSE,
       'data://harmful' => FALSE,
-    // Not loopback.
-      'https://example.com/callback' => FALSE,
     ];
 
     foreach ($test_uris as $uri => $expected_valid) {
@@ -598,6 +1061,8 @@ final class OAuthFlowIntegrationTest extends KernelTestBase {
       'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 [FBAN/FBIOS]' => TRUE,
       'Mozilla/5.0 (Linux; Android 10; SM-G973F) Chrome/86.0.4240.198 Mobile Safari/537.36 Instagram' => TRUE,
       'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 WKWebView/1.0' => TRUE,
+
+      'Mozilla/5.0 (Linux; Android 10; Pixel; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0.0.0 Mobile Safari/537.36' => TRUE,
 
       // Safe browser user agents (should not be detected).
       'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 Version/16.0 Mobile Safari/604.1' => FALSE,

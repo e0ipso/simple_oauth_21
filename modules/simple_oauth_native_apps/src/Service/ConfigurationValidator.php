@@ -122,10 +122,9 @@ final class ConfigurationValidator {
   public function validateRedirectUriConfig(array $config): array {
     $errors = [];
 
-    $valid_policies = ['auto-detect', 'native', 'web'];
     foreach (['custom_uri_schemes', 'loopback_redirects'] as $setting) {
-      if (array_key_exists($setting, $config['allow'] ?? []) && !in_array($config['allow'][$setting], $valid_policies, TRUE)) {
-        $errors[] = $this->t('Invalid redirect policy for @setting. Must be one of: auto-detect, native, web.', [
+      if (array_key_exists($setting, $config['allow'] ?? []) && RedirectPolicyValue::normalize($config['allow'][$setting]) === NULL) {
+        $errors[] = $this->t('Invalid redirect policy for @setting. Must be one of: auto-detect, native, web, 1, 0.', [
           '@setting' => $setting,
         ]);
       }
@@ -134,8 +133,8 @@ final class ConfigurationValidator {
     // Check for logical conflicts.
     // Consider 'web' as not allowing the feature, 'native' and 'auto-detect'
     // as allowing it.
-    $custom_uri_disabled = isset($config['allow']['custom_uri_schemes']) && $config['allow']['custom_uri_schemes'] === 'web';
-    $loopback_disabled = isset($config['allow']['loopback_redirects']) && $config['allow']['loopback_redirects'] === 'web';
+    $custom_uri_disabled = isset($config['allow']['custom_uri_schemes']) && RedirectPolicyValue::normalize($config['allow']['custom_uri_schemes']) === 'web';
+    $loopback_disabled = isset($config['allow']['loopback_redirects']) && RedirectPolicyValue::normalize($config['allow']['loopback_redirects']) === 'web';
 
     if (
       !empty($config['require_exact_redirect_match'])
@@ -218,6 +217,34 @@ final class ConfigurationValidator {
     $logging_errors = $this->validateLoggingConfig($config);
     $errors = array_merge($errors, $logging_errors);
 
+    $errors = array_merge($errors, $this->validateRuntimeSettings($config));
+
+    return $errors;
+  }
+
+  /**
+   * Validates optional detection and metadata controls without changing them.
+   *
+   * @param array $config
+   *   Configuration containing zero or more optional runtime settings.
+   *
+   * @return array
+   *   Key-specific errors without including supplied values.
+   */
+  private function validateRuntimeSettings(array $config): array {
+    $errors = [];
+    if (array_key_exists('detection_sensitivity', $config)) {
+      $value = $config['detection_sensitivity'];
+      // Match the numeric values accepted by Drupal's float schema type.
+      if (!is_numeric($value) || filter_var($value, FILTER_VALIDATE_FLOAT) === FALSE || !is_finite((float) $value) || $value < 0 || $value > 1) {
+        $errors[] = $this->t('The detection_sensitivity setting must be a number from 0 to 1 inclusive.');
+      }
+    }
+    foreach (['cache_detection_results', 'allow_plain_pkce'] as $key) {
+      if (array_key_exists($key, $config) && !is_bool($config[$key])) {
+        $errors[] = $this->t('The @key setting must be a boolean value.', ['@key' => $key]);
+      }
+    }
     return $errors;
   }
 

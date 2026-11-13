@@ -88,7 +88,7 @@ final class DeviceVerificationController extends ControllerBase {
     }
 
     // Log the device verification page access.
-    $user_code = $request->query->get('user_code');
+    $user_code = $request->query->all()['user_code'] ?? NULL;
     if (!empty($user_code)) {
       $this->logger->info('Device verification form accessed by user @user_id with pre-filled user code', [
         '@user_id' => $this->currentUser->id(),
@@ -110,9 +110,6 @@ final class DeviceVerificationController extends ControllerBase {
     // Don't cache the form to ensure fresh CSRF tokens.
       'max-age' => 0,
     ];
-
-    // Add CSS for better presentation.
-    $form['#attached']['library'][] = 'simple_oauth_device_flow/device_verification';
 
     return $form;
   }

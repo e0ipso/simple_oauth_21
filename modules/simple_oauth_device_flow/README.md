@@ -18,9 +18,9 @@ This module provides full compliance with [RFC 8628 OAuth 2.0 Device Authorizati
 
 ## Requirements
 
-- Drupal 10.2+ or Drupal 11+
+- Drupal 10.3+ or Drupal 11+
 - Simple OAuth 2.1 module (`simple_oauth_21`)
-- Simple OAuth module (`simple_oauth`)
+- Simple OAuth module (`simple_oauth`) >=6.1.4,<7.0
 - Consumers module (`consumers`)
 
 ## Installation

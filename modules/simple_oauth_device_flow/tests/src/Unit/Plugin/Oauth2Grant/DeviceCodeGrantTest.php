@@ -6,6 +6,9 @@ namespace Drupal\Tests\simple_oauth_device_flow\Unit\Plugin\Oauth2Grant;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\Path\PathValidatorInterface;
+use Drupal\Core\Routing\UrlGeneratorInterface;
+use Drupal\Core\Url;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\simple_oauth\Repositories\OptionalRefreshTokenRepositoryInterface;
@@ -91,13 +94,19 @@ final class DeviceCodeGrantTest extends UnitTestCase {
     $this->configFactory->get('simple_oauth_device_flow.settings')
       ->willReturn($this->config->reveal());
 
+    $url_generator = $this->createMock(UrlGeneratorInterface::class);
+    $url_generator->method('generateFromRoute')->willReturn('https://example.org/base/device');
+    $verification_url = Url::fromRoute('simple_oauth_device_flow.device_verification_form');
+    $verification_url->setUrlGenerator($url_generator);
+    $path_validator = $this->createMock(PathValidatorInterface::class);
+    $path_validator->method('getUrlIfValid')->willReturn($verification_url);
     $this->deviceCodeGrant = new DeviceCodeGrant(
       [],
       'device_code',
       ['label' => 'Device Code'],
       $this->deviceCodeRepository->reveal(),
       $this->refreshTokenRepository->reveal(),
-      new DeviceFlowSettingsService($this->configFactory->reveal())
+      new DeviceFlowSettingsService($this->configFactory->reveal(), $path_validator)
     );
   }
 
@@ -216,21 +225,21 @@ final class DeviceCodeGrantTest extends UnitTestCase {
    * @covers ::isClientEligible
    */
   public function testIsClientEligible(): void {
-    // Test eligible client.
-    $grant_types_field = $this->prophesize(FieldItemListInterface::class);
-    $grant_types_field->getValue()->willReturn([['value' => 'device_code']]);
-    $this->consumer->get('grant_types')->willReturn($grant_types_field->reveal());
-
-    $result = $this->deviceCodeGrant->isClientEligible($this->consumer->reveal());
-    $this->assertTrue($result);
-
-    // Test ineligible client.
-    $grant_types_field2 = $this->prophesize(FieldItemListInterface::class);
-    $grant_types_field2->getValue()->willReturn([['value' => 'authorization_code']]);
-    $this->consumer->get('grant_types')->willReturn($grant_types_field2->reveal());
-
-    $result = $this->deviceCodeGrant->isClientEligible($this->consumer->reveal());
-    $this->assertFalse($result);
+    foreach ([
+      ['device_code'],
+      ['urn:ietf:params:oauth:grant-type:device_code'],
+      ['device_code', 'urn:ietf:params:oauth:grant-type:device_code'],
+      ['authorization_code'],
+      [],
+    ] as $grants) {
+      $field = $this->prophesize(FieldItemListInterface::class);
+      $field->getValue()->willReturn(array_map(static fn(string $grant): array => ['value' => $grant], $grants));
+      $this->consumer->get('grant_types')->willReturn($field->reveal());
+      $this->assertSame(
+        $grants !== [] && $grants !== ['authorization_code'],
+        $this->deviceCodeGrant->isClientEligible($this->consumer->reveal()),
+      );
+    }
   }
 
   /**
@@ -283,7 +292,8 @@ final class DeviceCodeGrantTest extends UnitTestCase {
     });
     $device->method('getIdentifier')->willReturn('opaque-device-code');
     $device->method('getUserCode')->willReturn('BCDF-GHJK');
-    $device->method('getVerificationUri')->willReturn('/oauth/device/verify');
+    $device->expects($this->once())->method('setVerificationUri')->with('https://example.org/base/device');
+    $device->method('getVerificationUri')->willReturn('https://example.org/base/device');
     $this->deviceCodeRepository->getNewDeviceCode()->willReturn($device);
     $this->deviceCodeRepository->persistDeviceCode($device)->shouldBeCalledOnce();
     $client = $this->createMock(ClientEntityInterface::class);
@@ -292,6 +302,7 @@ final class DeviceCodeGrantTest extends UnitTestCase {
     $clients->method('getClientEntity')->with('grant-lifetime-client')->willReturn($client);
     $grant = $this->deviceCodeGrant->getGrantType($this->consumer->reveal());
     $this->assertInstanceOf(LeagueDeviceCodeGrant::class, $grant);
+    $this->assertSame('urn:ietf:params:oauth:grant-type:device_code', $grant->getIdentifier());
     $grant->setClientRepository($clients);
     $grant->setScopeRepository($this->createMock(ScopeRepositoryInterface::class));
     $grant->setDefaultScope('');

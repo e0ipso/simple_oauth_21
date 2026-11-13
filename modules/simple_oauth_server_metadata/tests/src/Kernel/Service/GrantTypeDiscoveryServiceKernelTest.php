@@ -9,6 +9,11 @@ use Drupal\simple_oauth\Plugin\Oauth2Grant\AuthorizationCode;
 use Drupal\simple_oauth\Plugin\Oauth2Grant\ClientCredentials;
 use Drupal\simple_oauth\Plugin\Oauth2Grant\RefreshToken;
 use Drupal\simple_oauth\Plugin\Oauth2GrantManager;
+use Drupal\simple_oauth\Repositories\OptionalRefreshTokenRepositoryInterface;
+use Drupal\simple_oauth_21\Plugin\Oauth2GrantIdentifierInterface;
+use Drupal\simple_oauth_device_flow\DeviceGrantType;
+use Drupal\simple_oauth_device_flow\Plugin\Oauth2Grant\DeviceCodeGrant;
+use Drupal\simple_oauth_native_apps\Plugin\Oauth2Grant\NativeAppAuthorizationCode;
 use Drupal\simple_oauth_server_metadata\Service\GrantTypeDiscoveryService;
 use Drupal\simple_oauth_server_metadata\Service\OpenIdConfigurationService;
 use Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService;
@@ -34,6 +39,7 @@ final class GrantTypeDiscoveryServiceKernelTest extends KernelTestBase {
     'system',
     'file',
     'simple_oauth',
+    'simple_oauth_21',
     'simple_oauth_server_metadata',
     'consumers',
     'serialization',
@@ -66,6 +72,43 @@ final class GrantTypeDiscoveryServiceKernelTest extends KernelTestBase {
     ], $service->getGrantTypesSupported());
     self::assertNotContains('implicit', $service->getGrantTypesSupported());
     self::assertNotContains('urn:ietf:params:oauth:grant-type:device_code', $service->getGrantTypesSupported());
+    $claims = $this->container->get('simple_oauth_server_metadata.claims_auth_discovery');
+    self::assertSame(['S256', 'plain'], $claims->getCodeChallengeMethodsSupported());
+    self::assertNotContains('config:simple_oauth_pkce.settings', $claims->getCacheTags());
+    self::assertSame(-1, $claims->getCacheMaxAge());
+  }
+
+  /**
+   * Tests optional grants retain plugin IDs while publishing wire identifiers.
+   */
+  public function testOptionalGrantIdentifiers(): void {
+    $this->enableModules(['options', 'simple_oauth_pkce', 'simple_oauth_native_apps', 'simple_oauth_device_flow']);
+    $refresh = $this->createMock(OptionalRefreshTokenRepositoryInterface::class);
+    $refresh->expects($this->never())->method('disableRefreshToken');
+    $this->container->set('simple_oauth.repositories.refresh_token', $refresh);
+    $manager = $this->container->get('plugin.manager.oauth2_grant.processor');
+    $manager->clearCachedDefinitions();
+    $native = $manager->createInstance('native_app_authorization_code');
+    $device = $manager->createInstance(DeviceGrantType::CANONICAL);
+    $this->assertInstanceOf(NativeAppAuthorizationCode::class, $native);
+    $this->assertInstanceOf(DeviceCodeGrant::class, $device);
+    $this->assertInstanceOf(Oauth2GrantIdentifierInterface::class, $native);
+    $this->assertInstanceOf(Oauth2GrantIdentifierInterface::class, $device);
+    $this->assertSame('authorization_code', $native->getGrantTypeIdentifier());
+    $this->assertSame(DeviceGrantType::CANONICAL, $device->getGrantTypeIdentifier());
+    $this->assertSame('native_app_authorization_code', $native->getPluginId());
+    $this->assertSame(DeviceGrantType::CANONICAL, $device->getPluginId());
+    $service = $this->container->get('simple_oauth_server_metadata.grant_type_discovery');
+    $this->assertEqualsCanonicalizing([
+      'authorization_code',
+      'client_credentials',
+      'refresh_token',
+      DeviceGrantType::CANONICAL,
+    ], $service->getGrantTypesSupported());
+    $this->assertSame(['code'], $service->getResponseTypesSupported());
+    $native_only = $this->createDiscoveryWithGrants(['native_app_authorization_code']);
+    $this->assertSame(['authorization_code'], $native_only->getGrantTypesSupported());
+    $this->assertSame(['code'], $native_only->getResponseTypesSupported());
   }
 
   /**
@@ -158,7 +201,13 @@ final class GrantTypeDiscoveryServiceKernelTest extends KernelTestBase {
     }
     $scopes = $this->createMock(ScopeDiscoveryService::class);
     $scopes->method('getScopesSupported')->willReturn(['openid']);
+    $scopes->method('getCacheTags')->willReturn([]);
+    $scopes->method('getCacheContexts')->willReturn([]);
+    $scopes->method('getCacheMaxAge')->willReturn(-1);
     $claims = $this->createMock(ClaimsAuthDiscoveryService::class);
+    $claims->method('getCacheTags')->willReturn([]);
+    $claims->method('getCacheContexts')->willReturn([]);
+    $claims->method('getCacheMaxAge')->willReturn(-1);
     $claims->method('getSubjectTypesSupported')->willReturn(['public']);
     $claims->method('getIdTokenSigningAlgValuesSupported')->willReturn(['RS256']);
     foreach ([FALSE, TRUE] as $disabled) {

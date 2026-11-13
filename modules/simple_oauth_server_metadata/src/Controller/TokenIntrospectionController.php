@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Drupal\simple_oauth_server_metadata\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\simple_oauth\Entity\Oauth2TokenInterface;
 use Drupal\user\UserInterface;
 use Drupal\simple_oauth_server_metadata\Service\TokenLookupService;
+use Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -43,12 +45,22 @@ final class TokenIntrospectionController extends ControllerBase {
    *   The logger service.
    * @param \Drupal\simple_oauth_server_metadata\Service\TokenLookupService $tokenLookup
    *   The validated token lookup service.
+   * @param \Drupal\Core\Session\AccountProxyInterface|null $current_user
+   *   The authenticated account proxy, or NULL for legacy constructor callers.
+   * @param \Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService|null $endpointDiscovery
+   *   The canonical issuer discovery service. Legacy callers may omit it;
+   *   only those callers construct discovery with ControllerBase's language
+   *   and module service accessors.
    */
   public function __construct(
     private readonly RequestStack $requestStack,
     private readonly LoggerInterface $logger,
     private readonly TokenLookupService $tokenLookup,
-  ) {}
+    ?AccountProxyInterface $current_user = NULL,
+    private readonly ?EndpointDiscoveryService $endpointDiscovery = NULL,
+  ) {
+    $this->currentUser = $current_user;
+  }
 
   /**
    * {@inheritdoc}
@@ -58,6 +70,8 @@ final class TokenIntrospectionController extends ControllerBase {
       $container->get('request_stack'),
       $container->get('logger.channel.simple_oauth'),
       $container->get('simple_oauth_server_metadata.token_lookup'),
+      $container->get('current_user'),
+      $container->get('simple_oauth_server_metadata.endpoint_discovery'),
     );
   }
 
@@ -203,20 +217,14 @@ final class TokenIntrospectionController extends ControllerBase {
    *   TRUE if authorized, FALSE otherwise.
    */
   private function isAuthorizedToIntrospect(Oauth2TokenInterface $token): bool {
-    $currentUserId = $this->currentUser()->id();
-
-    // Load the full user account to ensure all roles and permissions are
-    // available. The currentUser() service may return a lightweight proxy that
-    // doesn't have all user data fully loaded during OAuth authentication.
-    /** @var \Drupal\user\UserInterface|null $userAccount */
-    $userAccount = $this->entityTypeManager()->getStorage('user')->load($currentUserId);
-
-    if (!$userAccount) {
+    $account = $this->currentUser();
+    if ($account->isAnonymous()) {
       return FALSE;
     }
+    $currentUserId = $account->id();
 
-    // Check bypass permission first.
-    if ($userAccount->hasPermission('bypass token introspection restrictions')) {
+    // Keep the authenticating token's scope restrictions in permission checks.
+    if ($account->hasPermission('bypass token introspection restrictions')) {
       return TRUE;
     }
 
@@ -228,7 +236,7 @@ final class TokenIntrospectionController extends ControllerBase {
     }
     $tokenOwnerId = $owner_field->target_id;
 
-    return (int) $tokenOwnerId === (int) $currentUserId;
+    return (int) $tokenOwnerId > 0 && (int) $tokenOwnerId === (int) $currentUserId;
   }
 
   /**
@@ -331,11 +339,19 @@ final class TokenIntrospectionController extends ControllerBase {
       $response['aud'] = $response['client_id'];
     }
 
-    // Add iss (issuer) - the site base URL.
-    $currentRequest = $this->requestStack->getCurrentRequest();
-    if ($currentRequest) {
-      $baseUrl = $currentRequest->getSchemeAndHttpHost();
-      $response['iss'] = $baseUrl;
+    // Prefer the authenticated signed issuer, including deliberate overrides.
+    $issuer = $resolved['issuer'] ?? NULL;
+    if ($issuer === NULL && $this->requestStack->getCurrentRequest() !== NULL) {
+      try {
+        $discovery = $this->endpointDiscovery ?? new EndpointDiscoveryService($this->languageManager(), $this->moduleHandler());
+        $issuer = $discovery->getIssuer();
+      }
+      catch (\Exception) {
+        // Opaque tokens have no issuer claim. Omit it without URL context.
+      }
+    }
+    if ($issuer !== NULL && $issuer !== '') {
+      $response['iss'] = $issuer;
     }
 
     // Add jti (JWT ID) - token UUID.

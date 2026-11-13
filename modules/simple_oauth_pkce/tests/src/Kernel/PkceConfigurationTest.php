@@ -4,10 +4,16 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\simple_oauth_pkce\Kernel;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\Form\FormState;
+use Drupal\simple_oauth_21\Controller\OAuth21ComplianceController;
+use Drupal\simple_oauth_pkce\Form\PkceSettingsForm;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\simple_oauth_pkce\Service\PkceSettingsService;
 use Drupal\KernelTests\Core\Entity\EntityKernelTestBase;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
@@ -16,6 +22,7 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
  * Test PKCE configuration and service functionality.
  */
 #[Group('simple_oauth_pkce')]
+#[RunTestsInSeparateProcesses]
 final class PkceConfigurationTest extends EntityKernelTestBase {
 
   /**
@@ -98,12 +105,61 @@ final class PkceConfigurationTest extends EntityKernelTestBase {
   }
 
   /**
+   * Tests malformed stored policy cannot silently make PKCE optional.
+   */
+  public function testInvalidEnforcementFallsBackToMandatory(): void {
+    foreach (['mandatroy', '', 'OPTIONAL', ' optional ', NULL] as $value) {
+      $this->config('simple_oauth_pkce.settings')->set('enforcement', $value)->save();
+      $stored = $this->config('simple_oauth_pkce.settings')->getRawData();
+      $this->assertSame('mandatory', $this->pkceSettings->getEnforcementLevel());
+      $this->assertTrue($this->pkceSettings->isMandatory());
+      $this->assertFalse($this->pkceSettings->isDisabled());
+      $this->assertSame($stored, $this->config('simple_oauth_pkce.settings')->getRawData());
+    }
+    // Runtime overrides can supply types that configuration saves reject.
+    foreach ([FALSE, 0, []] as $value) {
+      $config = $this->createMock(ImmutableConfig::class);
+      $config->method('get')->with('enforcement')->willReturn($value);
+      $factory = $this->createMock(ConfigFactoryInterface::class);
+      $factory->method('get')->with('simple_oauth_pkce.settings')->willReturn($config);
+      $settings = new PkceSettingsService($factory);
+      $this->assertSame('mandatory', $settings->getEnforcementLevel());
+      $this->assertTrue($settings->isMandatory());
+      $this->assertFalse($settings->isDisabled());
+    }
+  }
+
+  /**
+   * Tests schema and form validation reject unsupported enforcement strings.
+   */
+  public function testEnforcementValidation(): void {
+    $data = $this->config('simple_oauth_pkce.settings')->getRawData();
+    $typed_config = $this->container->get('config.typed');
+    $form = PkceSettingsForm::create($this->container);
+    foreach (['mandatory', 'optional', 'disabled', 'mandatroy', ''] as $level) {
+      $valid = in_array($level, ['mandatory', 'optional', 'disabled'], TRUE);
+      $data['enforcement'] = $level;
+      $violations = $typed_config->createFromNameAndData('simple_oauth_pkce.settings', $data)->validate();
+      $this->assertSame($valid, $violations->count() === 0);
+      $state = (new FormState())->setValues([
+        'enforcement' => $level,
+        's256_enabled' => TRUE,
+        'plain_enabled' => TRUE,
+      ]);
+      $elements = $form->buildForm([], $state);
+      $form->validateForm($elements, $state);
+      $this->assertSame(!$valid, isset($state->getErrors()['enforcement']));
+    }
+  }
+
+  /**
    * Tests global authorization and token policy before controller processing.
    */
   public function testGlobalRequestPolicy(): void {
     /** @var array<int, array{string, bool, bool, string, array<string, string>, int|null}> $cases */
     $cases = [
       ['mandatory', TRUE, TRUE, 'authorize', [], 400],
+      ['mandatroy', TRUE, TRUE, 'authorize', [], 400],
       ['optional', TRUE, TRUE, 'authorize', [], NULL],
       ['disabled', FALSE, FALSE, 'authorize', [], NULL],
       [
@@ -127,6 +183,7 @@ final class PkceConfigurationTest extends EntityKernelTestBase {
         400,
       ],
       ['mandatory', TRUE, TRUE, 'token', [], 400],
+      ['mandatroy', TRUE, TRUE, 'token', [], 400],
       ['mandatory', TRUE, TRUE, 'token', ['code_verifier' => 'valid-verifier'], NULL],
       ['optional', TRUE, TRUE, 'token', [], NULL],
       ['disabled', FALSE, FALSE, 'token', [], NULL],
@@ -149,6 +206,7 @@ final class PkceConfigurationTest extends EntityKernelTestBase {
         $this->assertFalse($event->hasResponse());
       }
       else {
+        $this->assertTrue($event->hasResponse());
         $this->assertSame($status, $event->getResponse()->getStatusCode());
         $this->assertSame('invalid_request', json_decode($event->getResponse()->getContent(), TRUE)['error']);
         $this->assertTrue($event->getResponse()->headers->hasCacheControlDirective('no-store'));
@@ -219,6 +277,36 @@ final class PkceConfigurationTest extends EntityKernelTestBase {
         }
       }
     }
+  }
+
+  /**
+   * Tests config-tag invalidation without flushing unrelated caches or routes.
+   */
+  public function testSettingsSaveInvalidatesConsumers(): void {
+    $compliance = $this->container->get('simple_oauth_21.compliance_service');
+    $controller = OAuth21ComplianceController::create($this->container);
+    $build = $controller->display();
+    self::assertContains('config:simple_oauth_pkce.settings', $build['#cache']['tags']);
+    $cache = $this->container->get('cache.default');
+    $cache->set('dashboard', $build, -1, $build['#cache']['tags']);
+    $cache->set('unrelated', 'keep');
+    $routes = $this->container->get('router.route_provider');
+    $settings = $this->pkceSettings;
+    $form = PkceSettingsForm::create($this->container);
+    $state = (new FormState())->setValues([
+      'enforcement' => 'disabled',
+      's256_enabled' => FALSE,
+      'plain_enabled' => FALSE,
+    ]);
+    $elements = [];
+    $form->submitForm($elements, $state);
+    self::assertFalse($cache->get('dashboard'));
+    self::assertSame('keep', $cache->get('unrelated')->data);
+    self::assertSame($routes, $this->container->get('router.route_provider'));
+    self::assertSame($settings, $this->container->get('simple_oauth_pkce.settings'));
+    self::assertTrue($settings->isDisabled());
+    self::assertSame([], $settings->getSupportedMethods());
+    self::assertSame('needs_attention', $compliance->getRfcComplianceStatus()['rfc_7636']['status']);
   }
 
 }

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Drupal\simple_oauth_native_apps\Form;
 
 use Drupal\simple_oauth_native_apps\Service\UserAgentAnalyzer;
+use Drupal\simple_oauth_native_apps\Service\RedirectPolicyValue;
+use Drupal\Core\Render\Element\Radios;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Form\ConfigFormBase;
@@ -211,7 +213,8 @@ final class NativeAppsSettingsForm extends ConfigFormBase {
         'native' => $this->t('Native - Allow custom URI schemes'),
         'web' => $this->t('Web - Disallow custom URI schemes'),
       ],
-      '#default_value' => $config->get('allow.custom_uri_schemes') ?? 'auto-detect',
+      '#default_value' => RedirectPolicyValue::normalize($config->get('allow.custom_uri_schemes') ?? 'auto-detect'),
+      '#value_callback' => [self::class, 'redirectPolicyValue'],
       '#required' => TRUE,
     ];
 
@@ -224,7 +227,8 @@ final class NativeAppsSettingsForm extends ConfigFormBase {
         'native' => $this->t('Native - Allow loopback redirects'),
         'web' => $this->t('Web - Disallow loopback redirects'),
       ],
-      '#default_value' => $config->get('allow.loopback_redirects') ?? 'auto-detect',
+      '#default_value' => RedirectPolicyValue::normalize($config->get('allow.loopback_redirects') ?? 'auto-detect'),
+      '#value_callback' => [self::class, 'redirectPolicyValue'],
       '#required' => TRUE,
     ];
 
@@ -300,6 +304,24 @@ final class NativeAppsSettingsForm extends ConfigFormBase {
   }
 
   /**
+   * Accepts declared legacy submissions before radio option validation.
+   *
+   * @param array $element
+   *   The global redirect permission radios element.
+   * @param mixed $input
+   *   Submitted input, or FALSE while building defaults.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   The current form state.
+   *
+   * @return mixed
+   *   The canonical selection, or the original input for normal validation.
+   */
+  public static function redirectPolicyValue(array &$element, mixed $input, FormStateInterface $form_state): mixed {
+    $value = Radios::valueCallback($element, $input, $form_state);
+    return RedirectPolicyValue::normalize($value) ?? $value;
+  }
+
+  /**
    * {@inheritdoc}
    */
   public function validateForm(array &$form, FormStateInterface $form_state): void {
@@ -352,7 +374,11 @@ final class NativeAppsSettingsForm extends ConfigFormBase {
       'native' => $values['native'] ?? [],
     ];
 
-    return $config;
+    // Runtime-only controls have no form widgets. Validate their stored values
+    // before an unrelated save can cast malformed data through the schema.
+    return $config + array_intersect_key($this->config('simple_oauth_native_apps.settings')->get(), array_flip([
+      'detection_sensitivity', 'cache_detection_results', 'allow_plain_pkce',
+    ]));
   }
 
   /**
@@ -430,8 +456,14 @@ final class NativeAppsSettingsForm extends ConfigFormBase {
 
     // Save redirect URI settings.
     $config->set('require_exact_redirect_match', (bool) $values['require_exact_redirect_match']);
-    $config->set('allow.custom_uri_schemes', $values['allow']['custom_uri_schemes']);
-    $config->set('allow.loopback_redirects', $values['allow']['loopback_redirects']);
+    foreach (['custom_uri_schemes', 'loopback_redirects'] as $key) {
+      $stored = $config->get('allow.' . $key);
+      $submitted = $values['allow'][$key];
+      // Retain imported legacy bytes when the selected meaning is unchanged.
+      if (RedirectPolicyValue::normalize($stored) !== RedirectPolicyValue::normalize($submitted)) {
+        $config->set('allow.' . $key, RedirectPolicyValue::normalize($submitted));
+      }
+    }
 
     // Save PKCE settings.
     $config->set('native.enhanced_pkce', $values['native']['enhanced_pkce']);

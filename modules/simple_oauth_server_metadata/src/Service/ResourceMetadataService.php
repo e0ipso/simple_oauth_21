@@ -1,11 +1,14 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\simple_oauth_server_metadata\Service;
 
 use Drupal\Core\Cache\CacheableDependencyInterface;
-use Drupal\Core\Cache\CacheableDependencyTrait;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Url;
+use Drupal\simple_oauth_server_metadata\Trait\MetadataCacheabilityTrait;
+use Drupal\simple_oauth_server_metadata\Trait\MetadataUrlTrait;
 use Drupal\simple_oauth_server_metadata\Event\ResourceMetadataEvent;
 use Drupal\simple_oauth_server_metadata\Event\ResourceMetadataEvents;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -15,7 +18,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  */
 class ResourceMetadataService implements CacheableDependencyInterface {
 
-  use CacheableDependencyTrait;
+  use MetadataCacheabilityTrait;
+  use MetadataUrlTrait;
 
   /**
    * Constructs a ResourceMetadataService object.
@@ -39,6 +43,7 @@ class ResourceMetadataService implements CacheableDependencyInterface {
 
     $this->cacheContexts = [
       'url.path',
+      'url.site',
       'user.permissions',
     ];
   }
@@ -53,6 +58,7 @@ class ResourceMetadataService implements CacheableDependencyInterface {
    *   The resource metadata array compliant with RFC 9728.
    */
   public function getResourceMetadata(array $config_override = []): array {
+    $this->generationCacheability = NULL;
     $metadata = [];
 
     // Add required fields per RFC 9728.
@@ -70,9 +76,21 @@ class ResourceMetadataService implements CacheableDependencyInterface {
     $event = new ResourceMetadataEvent($metadata);
     $this->eventDispatcher->dispatch($event, ResourceMetadataEvents::BUILD);
     $metadata = $event->metadata;
+    $this->generationCacheability = CacheableMetadata::createFromObject($config)
+      ->addCacheableDependency($event);
 
     // Remove empty optional fields per RFC 9728.
     $metadata = $this->filterEmptyFields($metadata);
+
+    // Project known collections as JSON arrays without changing their sources.
+    foreach ([
+      'authorization_servers',
+      'bearer_methods_supported',
+    ] as $field) {
+      if (isset($metadata[$field]) && is_array($metadata[$field])) {
+        $metadata[$field] = array_values($metadata[$field]);
+      }
+    }
 
     return $metadata;
   }
@@ -121,36 +139,6 @@ class ResourceMetadataService implements CacheableDependencyInterface {
   }
 
   /**
-   * Ensures a URL is absolute.
-   *
-   * @param string $url
-   *   The URL to check.
-   *
-   * @return string
-   *   The absolute URL.
-   */
-  protected function ensureAbsoluteUrl(string $url): string {
-    // If URL already contains scheme, it's absolute.
-    if (preg_match('/^https?:\/\//', $url)) {
-      return $url;
-    }
-
-    // If URL starts with /, it's a relative path - convert to absolute.
-    if (strpos($url, '/') === 0) {
-      try {
-        return Url::fromUserInput($url)->setAbsolute()->toString();
-      }
-      catch (\Exception $e) {
-        // If URL conversion fails, return as-is.
-        return $url;
-      }
-    }
-
-    // Return as-is for other cases.
-    return $url;
-  }
-
-  /**
    * Filters out empty optional fields.
    *
    * @param array $metadata
@@ -168,8 +156,8 @@ class ResourceMetadataService implements CacheableDependencyInterface {
       if (in_array($key, $required_fields)) {
         return TRUE;
       }
-      // Filter out empty optional fields.
-      return !empty($value);
+      // Keep meaningful scalar extension values, including FALSE and zero.
+      return $value !== NULL && $value !== '' && $value !== [];
     }, ARRAY_FILTER_USE_BOTH);
   }
 

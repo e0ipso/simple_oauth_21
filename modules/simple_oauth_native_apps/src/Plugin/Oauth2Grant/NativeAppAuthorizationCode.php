@@ -7,6 +7,7 @@ namespace Drupal\simple_oauth_native_apps\Plugin\Oauth2Grant;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\simple_oauth\Plugin\Oauth2GrantBase;
+use Drupal\simple_oauth_21\Plugin\Oauth2GrantIdentifierInterface;
 use Drupal\simple_oauth_native_apps\Service\PKCEEnhancementService;
 use Drupal\simple_oauth_native_apps\Service\NativeClientDetector;
 use League\OAuth2\Server\Grant\AuthCodeGrant;
@@ -27,7 +28,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *   label = @Translation("Native App Authorization Code"),
  * )
  */
-final class NativeAppAuthorizationCode extends Oauth2GrantBase implements ContainerFactoryPluginInterface {
+final class NativeAppAuthorizationCode extends Oauth2GrantBase implements ContainerFactoryPluginInterface, Oauth2GrantIdentifierInterface {
 
   /**
    * The authorization code repository.
@@ -109,9 +110,16 @@ final class NativeAppAuthorizationCode extends Oauth2GrantBase implements Contai
   /**
    * {@inheritdoc}
    */
+  public function getGrantTypeIdentifier(): string {
+    return 'authorization_code';
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function getGrantType(Consumer $client): GrantTypeInterface {
     // Validate this is a native client that requires enhanced PKCE.
-    if (!$this->nativeClientDetector->requiresEnhancedPkce($client)) {
+    if (!$this->isClientEligible($client)) {
       throw new \InvalidArgumentException('Native app authorization code grant is only available for native clients requiring enhanced PKCE.');
     }
 
@@ -224,7 +232,8 @@ final class NativeAppAuthorizationCode extends Oauth2GrantBase implements Contai
    */
   public function isClientEligible(Consumer $client): bool {
     // Only native clients requiring enhanced PKCE can use this grant.
-    return $this->nativeClientDetector->requiresEnhancedPkce($client);
+    return !$this->nativeClientDetector->getEffectivePolicy($client)['enabled']
+      || $this->nativeClientDetector->requiresEnhancedPkce($client);
   }
 
   /**

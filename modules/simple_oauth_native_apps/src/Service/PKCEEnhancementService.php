@@ -134,14 +134,7 @@ final class PKCEEnhancementService {
    *   TRUE if S256 is required.
    */
   public function requiresS256Method(Consumer $client): bool {
-    $config = $this->configFactory->get('simple_oauth_native_apps.settings');
-
-    $enforced_method = $config->get('native.enforce') ?? 'S256';
-    if (!in_array($enforced_method, ['off', 'S256', 'plain'], TRUE)) {
-      $enforced_method = 'S256';
-    }
-
-    return $enforced_method === 'S256'
+    return $this->nativeClientDetector->getEnforcedPkceMethod() === 'S256'
       && $this->nativeClientDetector->requiresEnhancedPkce($client)
       && $this->nativeClientDetector->isNativeClient($client);
   }
@@ -214,12 +207,10 @@ final class PKCEEnhancementService {
     }
 
     // Native clients must use S256 if enforcement is enabled.
-    $enforced_method = $config->get('native.enforce') ?? 'off';
+    $enforced_method = $this->nativeClientDetector->getEnforcedPkceMethod();
 
     // Defensive programming: validate config value before use.
-    if (empty($enforced_method) || !in_array($enforced_method, ['off', 'S256', 'plain'], TRUE)) {
-      // Fallback to safe default if config is invalid/missing.
-      $enforced_method = 'S256';
+    if (!in_array($config->get('native.enforce'), ['off', 'S256', 'plain'], TRUE)) {
       $this->logger->warning('Invalid or missing native.enforce configuration, falling back to S256');
     }
 
@@ -268,15 +259,16 @@ final class PKCEEnhancementService {
       'enhanced_applied' => TRUE,
     ];
 
-    // PKCE is mandatory for native clients.
-    if ($is_native && empty($code_challenge) && empty($code_verifier)) {
+    // Every client selected for enhanced validation must use PKCE.
+    if (empty($code_challenge) && empty($code_verifier)) {
       $result['valid'] = FALSE;
-      $result['errors'][] = 'PKCE parameters are mandatory for native clients';
+      $result['errors'][] = 'PKCE parameters are mandatory for clients requiring enhanced PKCE';
       return $result;
     }
 
-    // Validate challenge method if provided.
-    if ($code_challenge_method) {
+    // Authorization defaults to plain. Tokens have no bound method here.
+    if ($code_challenge !== NULL) {
+      $code_challenge_method ??= 'plain';
       $method_validation = $this->validateChallengeMethod($code_challenge_method, $is_native);
       if (!$method_validation['valid']) {
         $result['valid'] = FALSE;
@@ -288,7 +280,9 @@ final class PKCEEnhancementService {
     }
 
     // Validate challenge format if provided.
-    if ($code_challenge && !$this->isValidChallengeFormat($code_challenge)) {
+    if ($code_challenge && !($code_challenge_method === 'plain'
+      ? $this->isValidVerifierFormat($code_challenge)
+      : $this->isValidChallengeFormat($code_challenge))) {
       $result['valid'] = FALSE;
       $result['errors'][] = 'Invalid code challenge format';
     }
@@ -342,7 +336,9 @@ final class PKCEEnhancementService {
     ];
 
     // Basic format validation.
-    if ($code_challenge && !$this->isValidChallengeFormat($code_challenge)) {
+    if ($code_challenge && !($code_challenge_method === 'plain'
+      ? $this->isValidVerifierFormat($code_challenge)
+      : $this->isValidChallengeFormat($code_challenge))) {
       $result['valid'] = FALSE;
       $result['errors'][] = 'Invalid code challenge format';
     }
@@ -461,6 +457,10 @@ final class PKCEEnhancementService {
    *   The validation result.
    */
   protected function logValidationResult(Consumer $client, array $result): void {
+    if ($result['valid'] && !(bool) $this->configFactory->get('simple_oauth_native_apps.settings')->get('log.pkce_validations')) {
+      return;
+    }
+
     $level = $result['valid'] ? 'info' : 'warning';
     $status = $result['valid'] ? 'VALID' : 'INVALID';
     $enhanced = $result['enhanced_applied'] ? 'enhanced' : 'standard';
@@ -506,10 +506,10 @@ final class PKCEEnhancementService {
     return [
       'enhanced_pkce_enabled' => $client !== NULL
         ? $this->nativeClientDetector->requiresEnhancedPkce($client)
-        : ($config->get('native.enhanced_pkce') ?? 'auto-detect') !== 'not-enhanced',
-      'enforce_method' => $config->get('native.enforce') ?? 'S256',
+        : $this->nativeClientDetector->getEffectivePolicy()['enhanced_pkce'],
+      'enforce_method' => $this->nativeClientDetector->getEnforcedPkceMethod(),
       'minimum_entropy_bits' => self::MINIMUM_ENTROPY_BITS,
-      'log_validations' => FALSE,
+      'log_validations' => (bool) $config->get('log.pkce_validations'),
     ];
   }
 

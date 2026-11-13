@@ -31,9 +31,44 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        drupal-core: ['10', '11-dev']
-        php-version: ['8.3']
-        db-version: ['10.9']
+        include:
+          - drupal-core: '10'
+            core-requirement: '^10.3'
+            php-version: '8.3'
+            simple-oauth: '^6.1.4'
+            phpstan: '^1.12'
+            phpstan-drupal: '^1.2.12'
+            deprecation-rules: '^1.2'
+            drush: '^12 || ^13'
+            db-version: '10.9'
+          - drupal-core: '11-dev'
+            core-requirement: '11.x-dev'
+            php-version: '8.3'
+            simple-oauth: '^6.1.4'
+            phpstan: '^2.1'
+            phpstan-drupal: '^2.0'
+            deprecation-rules: '^2.0'
+            drush: '^13'
+            db-version: '10.9'
+          - drupal-core: '11'
+            core-requirement: '^11'
+            php-version: '8.3'
+            simple-oauth: '^6.1.4'
+            phpstan: '^2.1'
+            phpstan-drupal: '^2.0'
+            deprecation-rules: '^2.0'
+            drush: '^13'
+            db-version: '10.9'
+          # Pin the upstream minimum on a maintained Drupal 10 release.
+          - drupal-core: '10.6.21'
+            core-requirement: '10.6.21'
+            php-version: '8.1'
+            simple-oauth: '6.1.4'
+            phpstan: '^1.12'
+            phpstan-drupal: '^1.2.12'
+            deprecation-rules: '^1.2'
+            drush: '^12'
+            db-version: '10.9'
 
     services:
       mariadb:
@@ -79,7 +114,7 @@ jobs:
             ${{ runner.os }}-composer-
 
       - name: Create Drupal project
-        run: composer create-project drupal/recommended-project:^${{ matrix.drupal-core }} ${{ env.DRUPAL_ROOT }} --no-interaction
+        run: composer create-project "drupal/recommended-project:${{ matrix.core-requirement }}" ${{ env.DRUPAL_ROOT }} --no-interaction
 
       - name: Configure Drupal project
         working-directory: ${{ env.DRUPAL_ROOT }}
@@ -89,13 +124,13 @@ jobs:
           composer --no-interaction config minimum-stability dev
 
           composer require --no-interaction --no-progress --with-all-dependencies \
-            drupal/core-dev:^${{ matrix.drupal-core }} \
+            "drupal/core-dev:${{ matrix.core-requirement }}" \
             drupal/coder \
-            drush/drush \
-            phpstan/phpstan \
-            mglaman/phpstan-drupal \
-            phpstan/phpstan-deprecation-rules \
-            drupal/simple_oauth:^6
+            "drush/drush:${{ matrix.drush }}" \
+            "phpstan/phpstan:${{ matrix.phpstan }}" \
+            "mglaman/phpstan-drupal:${{ matrix.phpstan-drupal }}" \
+            "phpstan/phpstan-deprecation-rules:${{ matrix.deprecation-rules }}" \
+            "drupal/simple_oauth:${{ matrix.simple-oauth }}"
 
           composer dump-autoload
 

@@ -6,7 +6,7 @@ namespace Drupal\simple_oauth_client_registration\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
-use Drupal\simple_oauth_client_registration\Service\ClientRegistrationService;
+use Drupal\simple_oauth_client_registration\Service\ClientRegistrationOperationsInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Core\Cache\CacheableJsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -22,13 +22,13 @@ final class ClientRegistrationController extends ControllerBase {
   /**
    * Constructs a ClientRegistrationController object.
    *
-   * @param \Drupal\simple_oauth_client_registration\Service\ClientRegistrationService $registrationService
+   * @param \Drupal\simple_oauth_client_registration\Service\ClientRegistrationOperationsInterface $registrationService
    *   The client registration service.
    * @param \Symfony\Component\Serializer\SerializerInterface $serializer
    *   The serializer.
    */
   public function __construct(
-    protected readonly ClientRegistrationService $registrationService,
+    protected readonly ClientRegistrationOperationsInterface $registrationService,
     protected readonly SerializerInterface $serializer,
   ) {}
 
@@ -82,6 +82,8 @@ final class ClientRegistrationController extends ControllerBase {
       // responses).
       $response->setMaxAge(0);
       $response->setPrivate();
+      $response->headers->set('Cache-Control', 'no-store, private');
+      $response->headers->set('Pragma', 'no-cache');
 
       // Add CORS headers for cross-origin requests.
       $response->headers->set('Access-Control-Allow-Origin', '*');
@@ -283,7 +285,18 @@ final class ClientRegistrationController extends ControllerBase {
     }
 
     // Update client metadata using the DTO.
-    $updated_metadata = $this->registrationService->updateClientMetadata($client_id, $clientRegistration);
+    try {
+      $updated_metadata = $this->registrationService->updateClientMetadata($client_id, $clientRegistration);
+    }
+    catch (BadRequestHttpException) {
+      return new CacheableJsonResponse([
+        'error' => 'invalid_client_metadata',
+        'error_description' => 'Invalid client metadata',
+      ], 400, [
+        'Access-Control-Allow-Origin' => '*',
+        'Access-Control-Allow-Methods' => Request::METHOD_PUT,
+      ]);
+    }
 
     $response = new CacheableJsonResponse($updated_metadata);
     $response->headers->set('Access-Control-Allow-Origin', '*');
