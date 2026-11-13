@@ -24,6 +24,7 @@ services:
         '@simple_oauth.repositories.client',
         '@lock',
         '@datetime.time',
+        '@simple_oauth.oauth2_scope.provider',
       ]
 
   # Consumers can replace each operation contract independently.
@@ -52,3 +53,7 @@ services:
       - '@datetime.time'
       - '@simple_oauth_device_flow.logger_factory'
       - '@simple_oauth.repositories.scope'
+      - null
+      - '@state'
+      - '@lock'
+      - '@simple_oauth.oauth2_scope.provider'

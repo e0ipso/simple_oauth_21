@@ -10,6 +10,7 @@ use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\simple_oauth\Entities\ScopeEntity;
+use Drupal\simple_oauth\Oauth2ScopeAdapterInterface;
 use League\OAuth2\Server\Entities\ClientEntityInterface;
 use League\OAuth2\Server\Entities\DeviceCodeEntityInterface;
 use League\OAuth2\Server\Entities\ScopeEntityInterface;
@@ -45,6 +46,32 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
    * @var \League\OAuth2\Server\Entities\ClientEntityInterface|null
    */
   protected ?ClientEntityInterface $clientEntity = NULL;
+
+  /**
+   * The scope provider supplied by the repository for this instance.
+   */
+  protected ?Oauth2ScopeAdapterInterface $scopeProvider = NULL;
+
+  /**
+   * Supplies the provider used to map public names and stored scope IDs.
+   *
+   * @param \Drupal\simple_oauth\Oauth2ScopeAdapterInterface $scope_provider
+   *   The provider, including optional static or dynamic implementations.
+   */
+  public function setScopeProvider(Oauth2ScopeAdapterInterface $scope_provider): void {
+    $this->scopeProvider = $scope_provider;
+  }
+
+  /**
+   * Gets the supplied provider or the direct-entity compatibility fallback.
+   *
+   * @return \Drupal\simple_oauth\Oauth2ScopeAdapterInterface
+   *   The scope provider.
+   */
+  protected function getScopeProvider(): Oauth2ScopeAdapterInterface {
+    // phpcs:ignore DrupalPractice.Objects.GlobalDrupal.GlobalDrupal -- Direct entity callers predate provider injection.
+    return $this->scopeProvider ?? \Drupal::service('simple_oauth.oauth2_scope.provider');
+  }
 
   /**
    * The verification destination supplied for this transient instance.
@@ -269,13 +296,15 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
    */
   public function getScopes(): array {
     $oauth2scopes = [];
-    /** @var \Drupal\simple_oauth\Plugin\Field\FieldType\Oauth2ScopeReferenceItemInterface $scope */
-    foreach ($this->get('scopes') as $scope) {
-      $scope_entity = $scope->getScope();
-      // Older records stored public names instead of internal scope IDs.
-      if ($scope_entity === NULL && !$scope->isEmpty()) {
-        $scope_entity = \Drupal::service('simple_oauth.oauth2_scope.provider')->loadByName($scope->get('scope_id')->getValue());
+    $provider = $this->getScopeProvider();
+    foreach ($this->get('scopes')->getValue() as $scope) {
+      $id = $scope['scope_id'] ?? NULL;
+      if ($id === NULL || $id === '') {
+        continue;
       }
+      $id = (string) $id;
+      // Read historical public names without rewriting their stored values.
+      $scope_entity = $provider->load($id) ?? $provider->loadByName($id);
       if ($scope_entity !== NULL) {
         $oauth2scopes[] = new ScopeEntity($scope_entity);
       }
@@ -290,7 +319,7 @@ class DeviceCode extends ContentEntityBase implements DeviceCodeEntityInterface 
    *   If the public scope name does not resolve through the scope provider.
    */
   public function addScope(ScopeEntityInterface $scope): void {
-    $resolved = \Drupal::service('simple_oauth.oauth2_scope.provider')->loadByName($scope->getIdentifier());
+    $resolved = $this->getScopeProvider()->loadByName($scope->getIdentifier());
     if ($resolved === NULL) {
       throw OAuthServerException::invalidScope($scope->getIdentifier());
     }

@@ -113,8 +113,8 @@ final class DeviceFlowSettingsService {
    *   If the configured path does not resolve to the verification form.
    */
   public function getAbsoluteVerificationUri(): string {
-    $path = $this->getVerificationUri();
-    if (!preg_match('@^/(?!/)[A-Za-z0-9/_-]*$@D', $path)) {
+    $path = $this->getConfig()->get('verification_uri') ?? '/oauth/device';
+    if (!is_string($path) || !preg_match('@^/(?!/)[A-Za-z0-9/_-]*$@D', $path)) {
       throw new \UnexpectedValueException('Invalid local device verification path.');
     }
     // phpcs:ignore DrupalPractice.Objects.GlobalDrupal.GlobalDrupal -- Preserve the original constructor for external callers.

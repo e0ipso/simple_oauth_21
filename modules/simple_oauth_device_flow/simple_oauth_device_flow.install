@@ -39,6 +39,7 @@ function simple_oauth_device_flow_install($is_syncing) {
  * Implements hook_uninstall().
  */
 function simple_oauth_device_flow_uninstall($is_syncing) {
+  \Drupal::state()->delete('simple_oauth_device_flow.cleanup_last_success');
   if (!$is_syncing) {
     // Remove configuration.
     \Drupal::configFactory()->getEditable('simple_oauth_device_flow.settings')->delete();
