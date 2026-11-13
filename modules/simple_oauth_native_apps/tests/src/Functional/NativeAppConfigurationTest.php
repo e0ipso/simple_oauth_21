@@ -57,6 +57,75 @@ final class NativeAppConfigurationTest extends TokenBearerFunctionalTestBase {
   }
 
   /**
+   * Tests absent native policy methods through a complete OAuth exchange.
+   *
+   * @throws \GuzzleHttp\Exception\GuzzleException
+   *   If an HTTP request fails.
+   */
+  public function testMissingNativeMethodAuthorizationExchange(): void {
+    $owner = $this->drupalCreateUser(['grant simple_oauth codes', 'access content']);
+    $this->client->set('native_app_override', 'native')
+      ->set('pkce', FALSE)->set('confidential', FALSE)->save();
+    $this->drupalLogin($owner);
+    $config = $this->config('simple_oauth_native_apps.settings');
+    $verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+
+    foreach ([TRUE, FALSE] as $missing) {
+      if ($missing) {
+        $config->clear('native.enforce')->save();
+      }
+      else {
+        $config->set('native.enforce', NULL)->save();
+      }
+      $parameters = [
+        'client_id' => $this->client->getClientId(),
+        'response_type' => 'code',
+        'redirect_uri' => $this->redirectUri,
+        'scope' => 'test:scope1',
+        'code_challenge' => $verifier,
+      ];
+      foreach ([NULL, 'plain'] as $method) {
+        $query = $parameters;
+        if ($method !== NULL) {
+          $query['code_challenge_method'] = $method;
+        }
+        $response = $this->get(Url::fromRoute('oauth2_token.authorize'), ['query' => $query]);
+        $this->assertSame(400, $response->getStatusCode());
+        $error = Json::decode((string) $response->getBody());
+        $this->assertSame('invalid_request', $error['error']);
+        $this->assertStringContainsString('S256', $error['error_description']);
+      }
+
+      $parameters['code_challenge'] = self::base64urlencode(hash('sha256', $verifier, TRUE));
+      $parameters['code_challenge_method'] = 'S256';
+      $parameters['state'] = $this->randomMachineName();
+      $this->drupalGet(Url::fromRoute('oauth2_token.authorize'), ['query' => $parameters]);
+      if ($this->getSession()->getPage()->hasButton('Allow')) {
+        $this->submitForm([], 'Allow');
+      }
+      parse_str(parse_url($this->getSession()->getCurrentUrl(), PHP_URL_QUERY) ?? '', $query);
+      $this->assertArrayHasKey('code', $query);
+      $this->assertSame($parameters['state'], $query['state']);
+
+      $exchange = [
+        'grant_type' => 'authorization_code',
+        'client_id' => $this->client->getClientId(),
+        'redirect_uri' => $this->redirectUri,
+        'code' => $query['code'],
+      ];
+      $wrong_verifier = self::base64urlencode(random_bytes(48));
+      $response = $this->post($this->url, $exchange + ['code_verifier' => $wrong_verifier]);
+      $this->assertSame(400, $response->getStatusCode());
+      $this->assertSame('invalid_grant', Json::decode((string) $response->getBody())['error']);
+      $tokens = $this->assertValidTokenResponse($this->post($this->url, $exchange + ['code_verifier' => $verifier]), TRUE);
+      $this->assertNotEmpty($tokens['access_token']);
+      $replay = $this->post($this->url, $exchange + ['code_verifier' => $verifier]);
+      $this->assertSame(400, $replay->getStatusCode());
+      $this->assertSame('invalid_grant', Json::decode((string) $replay->getBody())['error']);
+    }
+  }
+
+  /**
    * Tests malformed PKCE parameters through the authorization and token routes.
    *
    * Both native policies must reject array parameters before grant processing,

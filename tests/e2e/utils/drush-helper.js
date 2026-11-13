@@ -30,8 +30,8 @@ async function execDrushInTestSite(command, options = {}) {
   };
 
   try {
-    // Use drush with database access
-    const drushCommand = `vendor/bin/drush ${command}`;
+    // Allow the runner to target an isolated site with DRUPAL_DRUSH.
+    const drushCommand = `${process.env.DRUPAL_DRUSH || 'vendor/bin/drush'} ${command}`;
 
     // Execute synchronously to match the expected API
     const result = execSync(drushCommand, defaults);
