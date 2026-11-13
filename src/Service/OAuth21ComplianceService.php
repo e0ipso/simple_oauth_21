@@ -250,8 +250,8 @@ final class OAuth21ComplianceService implements CacheableDependencyInterface {
   private function checkNativeAppsStatus(Config $config): string {
     $custom_schemes_setting = $config->get('allow.custom_uri_schemes');
     $loopback_setting = $config->get('allow.loopback_redirects');
-    $allow_custom_schemes = in_array($custom_schemes_setting, ['native', 'auto-detect'], TRUE);
-    $allow_loopback = in_array($loopback_setting, ['native', 'auto-detect'], TRUE);
+    $allow_custom_schemes = in_array($custom_schemes_setting, ['native', 'auto-detect', '1'], TRUE);
+    $allow_loopback = in_array($loopback_setting, ['native', 'auto-detect', '1'], TRUE);
 
     return ((bool) $config->get('enforce_native_security') && $allow_custom_schemes && $allow_loopback) ? 'configured' : 'needs_attention';
   }
