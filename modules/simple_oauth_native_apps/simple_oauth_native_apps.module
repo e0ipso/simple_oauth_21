@@ -221,6 +221,7 @@ function simple_oauth_native_apps_entity_insert(EntityInterface $entity) {
     // Clear native client detection cache when a consumer is inserted.
     $detector = \Drupal::service('simple_oauth_native_apps.native_client_detector');
     $detector->clearCache();
+    $detector->clearClientCache($entity);
   }
 }
 
@@ -240,7 +241,7 @@ function simple_oauth_native_apps_entity_update(EntityInterface $entity) {
  */
 function simple_oauth_native_apps_entity_delete(EntityInterface $entity) {
   if ($entity->getEntityTypeId() === 'consumer') {
-    \Drupal::configFactory()->getEditable('simple_oauth_native_apps.consumer.' . $entity->id())->delete();
+    \Drupal::service('simple_oauth_native_apps.consumer_policy_resolver')->delete($entity);
     // Clear cache for the specific client.
     $detector = \Drupal::service('simple_oauth_native_apps.native_client_detector');
     $detector->clearClientCache($entity);

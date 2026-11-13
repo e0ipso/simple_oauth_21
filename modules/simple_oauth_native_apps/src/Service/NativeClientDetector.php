@@ -39,6 +39,20 @@ class NativeClientDetector {
   private \WeakMap $submittedOverrides;
 
   /**
+   * The shared consumer policy boundary.
+   *
+   * @var \Drupal\simple_oauth_native_apps\Service\ConsumerPolicyResolver
+   */
+  private readonly ConsumerPolicyResolver $policyResolver;
+
+  /**
+   * Whole policy scoped to one effective-policy calculation, never a cache.
+   *
+   * @var array
+   */
+  private array $resolvedOverrides = [];
+
+  /**
    * Native client URI scheme patterns.
    *
    * @var array
@@ -83,11 +97,15 @@ class NativeClientDetector {
    *   The configuration factory.
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface|\Psr\Log\LoggerInterface $logger_factory
    *   The logger channel factory or an existing channel.
+   * @param \Drupal\simple_oauth_native_apps\Service\ConsumerPolicyResolver|null $policy_resolver
+   *   The policy boundary, or NULL for original constructor compatibility.
    */
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
     LoggerChannelFactoryInterface|LoggerInterface $logger_factory,
+    ?ConsumerPolicyResolver $policy_resolver = NULL,
   ) {
+    $this->policyResolver = $policy_resolver ?? new ConsumerPolicyResolver($configFactory);
     $this->submittedOverrides = new \WeakMap();
     $this->logger = $logger_factory instanceof LoggerInterface
       ? $logger_factory
@@ -121,15 +139,18 @@ class NativeClientDetector {
    *
    * @return string|null
    *   The override, or NULL to inherit.
+   *
+   * @throws \UnexpectedValueException
+   *   Stored policy ownership requires reconciliation.
    */
   private function getConsumerOverride(Consumer $client, string $key): ?string {
     if (isset($this->submittedOverrides[$client])) {
       return $this->submittedOverrides[$client][$key] ?? NULL;
     }
-    if ($client->isNew()) {
-      return NULL;
-    }
-    return $this->configFactory->get('simple_oauth_native_apps.consumer.' . $client->id())->get($key);
+    $policy = ($this->resolvedOverrides[0] ?? NULL) === $client
+      ? $this->resolvedOverrides[1]
+      : $this->policyResolver->getPolicy($client);
+    return $policy[$key] ?? NULL;
   }
 
   /**
@@ -216,8 +237,33 @@ class NativeClientDetector {
    * @return array
    *   Effective enabled, enhanced_pkce, custom_schemes, loopback and webview
    *   values.
+   *
+   * @throws \UnexpectedValueException
+   *   Stored policy ownership requires reconciliation.
    */
   public function getEffectivePolicy(?Consumer $client = NULL): array {
+    $previous = $this->resolvedOverrides;
+    if ($client !== NULL) {
+      $this->resolvedOverrides = [$client, $this->policyResolver->getPolicy($client)];
+    }
+    try {
+      return $this->resolveEffectivePolicy($client);
+    }
+    finally {
+      $this->resolvedOverrides = $previous;
+    }
+  }
+
+  /**
+   * Calculates effective policy using one selected record for all controls.
+   *
+   * @param \Drupal\consumers\Entity\Consumer|null $client
+   *   The consumer, or NULL for global capability reporting.
+   *
+   * @return array
+   *   Effective native security controls.
+   */
+  private function resolveEffectivePolicy(?Consumer $client): array {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
     $enabled = (bool) $config->get('enforce_native_security');
     $enhanced = $client !== NULL ? $this->getConsumerEnhancedPkceOverride($client) : NULL;
@@ -1000,14 +1046,14 @@ class NativeClientDetector {
   }
 
   /**
-   * Clears cache for a specific client.
+   * Clears detection and pending form policy after a client is persisted.
    *
    * @param \Drupal\consumers\Entity\Consumer $client
    *   The consumer entity.
    */
   public function clearClientCache(Consumer $client): void {
     $cache_key = 'native_detection_' . $client->id();
-    unset($this->detectionCache[$cache_key]);
+    unset($this->detectionCache[$cache_key], $this->submittedOverrides[$client]);
   }
 
 }
