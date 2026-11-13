@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\simple_oauth_client_registration\Service;
 
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Transaction;
 use Drupal\Component\Utility\Crypt;
 use Psr\Log\LoggerInterface;
 
@@ -23,6 +24,16 @@ final class RegistrationTokenService {
     private readonly Connection $database,
     private readonly LoggerInterface $logger,
   ) {}
+
+  /**
+   * Starts an atomic lifecycle operation on the token storage connection.
+   *
+   * @return \Drupal\Core\Database\Transaction
+   *   The transaction, committed when the caller releases it.
+   */
+  public function startTransaction(): Transaction {
+    return $this->database->startTransaction();
+  }
 
   /**
    * Generates a registration access token for a client.

@@ -7,7 +7,8 @@ namespace Drupal\simple_oauth_client_registration\Normalizer;
 use Drupal\consumers\Entity\ConsumerInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Url;
-use Drupal\file\FileInterface;
+use Drupal\simple_oauth\Plugin\Oauth2GrantManagerInterface;
+use Drupal\simple_oauth_client_registration\Service\ClientMetadataMapper;
 use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
 use Drupal\simple_oauth_client_registration\Service\RegistrationTokenService;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -22,11 +23,19 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 final class ClientRegistrationNormalizer implements NormalizerInterface, DenormalizerInterface {
 
   /**
-   * Constructor.
+   * Constructs the registration normalizer.
+   *
+   * @param \Drupal\simple_oauth_client_registration\Service\RegistrationTokenService $tokenService
+   *   The registration token service.
+   * @param \Drupal\Core\File\FileUrlGeneratorInterface $fileUrlGenerator
+   *   The file URL generator.
+   * @param \Drupal\simple_oauth\Plugin\Oauth2GrantManagerInterface|null $grantManager
+   *   The installed grant capabilities, when supplied by the container.
    */
   public function __construct(
     private readonly RegistrationTokenService $tokenService,
     private readonly FileUrlGeneratorInterface $fileUrlGenerator,
+    private readonly ?Oauth2GrantManagerInterface $grantManager = NULL,
   ) {}
 
   /**
@@ -99,41 +108,7 @@ final class ClientRegistrationNormalizer implements NormalizerInterface, Denorma
    *   The normalized client metadata.
    */
   private function normalizeConsumer(ConsumerInterface $consumer, array $context = []): array {
-    $metadata = [
-      'client_id' => $consumer->getClientId(),
-      'client_name' => $consumer->label(),
-      'client_uri' => $consumer->get('client_uri')->value ?? '',
-      'logo_uri' => $this->getLogoUri($consumer),
-      'tos_uri' => $consumer->get('tos_uri')->value ?? '',
-      'policy_uri' => $consumer->get('policy_uri')->value ?? '',
-      'jwks_uri' => $consumer->get('jwks_uri')->value ?? '',
-      'software_id' => $consumer->get('software_id')->value ?? '',
-      'software_version' => $consumer->get('software_version')->value ?? '',
-      'redirect_uris' => [],
-      'contacts' => [],
-      'grant_types' => [],
-    ];
-
-    // Get redirect URIs.
-    if (!$consumer->get('redirect')->isEmpty()) {
-      foreach ($consumer->get('redirect') as $redirect) {
-        $metadata['redirect_uris'][] = $redirect->get('value')->getValue();
-      }
-    }
-
-    // Get contacts.
-    if (!$consumer->get('contacts')->isEmpty()) {
-      foreach ($consumer->get('contacts') as $contact) {
-        $metadata['contacts'][] = $contact->get('value')->getValue();
-      }
-    }
-
-    // Get grant types.
-    if (!$consumer->get('grant_types')->isEmpty()) {
-      foreach ($consumer->get('grant_types') as $grant_type) {
-        $metadata['grant_types'][] = $grant_type->get('value')->getValue();
-      }
-    }
+    $metadata = (new ClientMetadataMapper($this->fileUrlGenerator))->map($consumer);
 
     // Add response metadata if this is a registration response.
     if (!empty($context['include_registration_response'])) {
@@ -163,31 +138,6 @@ final class ClientRegistrationNormalizer implements NormalizerInterface, Denorma
     return array_filter($metadata, function ($value) {
       return $value !== '' && $value !== [];
     });
-  }
-
-  /**
-   * Gets the logo URI for a consumer.
-   *
-   * @param \Drupal\consumers\Entity\ConsumerInterface $consumer
-   *   The consumer entity.
-   *
-   * @return string
-   *   The logo URI or empty string.
-   */
-  private function getLogoUri(ConsumerInterface $consumer): string {
-    // First, check if there's an uploaded image file.
-    if (!$consumer->get('image')->isEmpty()) {
-      $image_field = $consumer->get('image')->first();
-      $file = $image_field?->get('entity')->getValue();
-      if ($file instanceof FileInterface) {
-        // Generate absolute URL for the image file.
-        $file_uri = $file->getFileUri();
-        return $this->fileUrlGenerator->generateAbsoluteString($file_uri);
-      }
-    }
-
-    // Fallback to logo_uri field if no image uploaded.
-    return $consumer->get('logo_uri')->value ?? '';
   }
 
   /**
@@ -277,6 +227,9 @@ final class ClientRegistrationNormalizer implements NormalizerInterface, Denorma
         'refresh_token',
         'urn:ietf:params:oauth:grant-type:device_code',
       ];
+      if ($this->grantManager !== NULL) {
+        $valid_grant_types = array_unique(array_merge($valid_grant_types, array_keys($this->grantManager->getDefinitions())));
+      }
       foreach ($metadata['grant_types'] as $grant_type) {
         if (!in_array($grant_type, $valid_grant_types, TRUE)) {
           throw new BadRequestHttpException('Invalid grant type: ' . $grant_type);
