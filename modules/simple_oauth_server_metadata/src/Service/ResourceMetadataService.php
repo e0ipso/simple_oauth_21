@@ -57,6 +57,7 @@ class ResourceMetadataService implements CacheableDependencyInterface {
    *   The resource metadata array compliant with RFC 9728.
    */
   public function getResourceMetadata(array $config_override = []): array {
+    $this->generationCacheability = NULL;
     $metadata = [];
 
     // Add required fields per RFC 9728.
@@ -74,7 +75,8 @@ class ResourceMetadataService implements CacheableDependencyInterface {
     $event = new ResourceMetadataEvent($metadata);
     $this->eventDispatcher->dispatch($event, ResourceMetadataEvents::BUILD);
     $metadata = $event->metadata;
-    $this->generationCacheability = CacheableMetadata::createFromObject($event);
+    $this->generationCacheability = CacheableMetadata::createFromObject($config)
+      ->addCacheableDependency($event);
 
     // Remove empty optional fields per RFC 9728.
     $metadata = $this->filterEmptyFields($metadata);

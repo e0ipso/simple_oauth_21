@@ -66,6 +66,7 @@ class ServerMetadataService implements CacheableDependencyInterface {
    *   The server metadata array compliant with RFC 8414.
    */
   public function getServerMetadata(array $config_override = []): array {
+    $this->generationCacheability = NULL;
     $metadata = [];
 
     // Add required fields per RFC 8414.
@@ -111,7 +112,8 @@ class ServerMetadataService implements CacheableDependencyInterface {
     // Remove empty optional fields per RFC 8414.
     $metadata = $this->filterEmptyFields($metadata);
 
-    $this->generationCacheability = CacheableMetadata::createFromObject($this->scopeDiscovery)
+    $this->generationCacheability = CacheableMetadata::createFromObject($config)
+      ->addCacheableDependency($this->scopeDiscovery)
       ->addCacheableDependency($this->claimsAuthDiscovery);
 
     return $metadata;

@@ -7,6 +7,7 @@ namespace Drupal\simple_oauth_device_flow\Plugin\Oauth2Grant;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\simple_oauth\Plugin\Oauth2GrantBase;
+use Drupal\simple_oauth_21\Plugin\Oauth2GrantIdentifierInterface;
 use Drupal\simple_oauth_device_flow\Service\DeviceFlowSettingsService;
 use Drupal\simple_oauth_device_flow\DeviceGrantType;
 use League\OAuth2\Server\Grant\DeviceCodeGrant as LeagueDeviceCodeGrant;
@@ -27,7 +28,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *   label = @Translation("Device Code"),
  * )
  */
-final class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryPluginInterface {
+final class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryPluginInterface, Oauth2GrantIdentifierInterface {
 
   /**
    * The device code repository.
@@ -92,6 +93,13 @@ final class DeviceCodeGrant extends Oauth2GrantBase implements ContainerFactoryP
       $container->get('simple_oauth.repositories.refresh_token'),
       $container->get('simple_oauth_device_flow.settings')
     );
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getGrantTypeIdentifier(): string {
+    return DeviceGrantType::CANONICAL;
   }
 
   /**

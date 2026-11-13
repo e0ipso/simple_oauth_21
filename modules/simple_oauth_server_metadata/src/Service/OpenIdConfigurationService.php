@@ -65,6 +65,7 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
    *   When required metadata fields are missing or invalid.
    */
   public function getOpenIdConfiguration(): array {
+    $this->generationCacheability = NULL;
     $config = $this->configFactory->get('simple_oauth_server_metadata.settings');
     $response_types = $this->getSupportedResponseTypes();
 
@@ -148,7 +149,8 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
     // Validate the metadata before returning.
     $this->validateMetadata($metadata);
 
-    $this->generationCacheability = CacheableMetadata::createFromObject($this->scopeDiscoveryService)
+    $this->generationCacheability = CacheableMetadata::createFromObject($config)
+      ->addCacheableDependency($this->scopeDiscoveryService)
       ->addCacheableDependency($this->claimsAuthDiscoveryService);
 
     return $metadata;

@@ -58,7 +58,7 @@ class ScopeDiscoveryService implements CacheableDependencyInterface {
     }
     elseif (!$this->scopeProvider instanceof CacheableDependencyInterface) {
       // Unknown external collections cannot promise tag-based invalidation.
-      $cacheability->setCacheMaxAge(300);
+      $cacheability->mergeCacheMaxAge(300);
     }
     $this->generationCacheability = $cacheability;
     $scopes = [];
