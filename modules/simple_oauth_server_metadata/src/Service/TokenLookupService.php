@@ -13,6 +13,9 @@ use Drupal\Core\Site\Settings;
 use Drupal\simple_oauth\Entity\Oauth2TokenInterface;
 use Drupal\simple_oauth\Server\ResourceServerFactoryInterface;
 use League\OAuth2\Server\Exception\OAuthServerException;
+use Lcobucci\JWT\Encoding\JoseEncoder;
+use Lcobucci\JWT\Token\Parser;
+use Lcobucci\JWT\UnencryptedToken;
 use Symfony\Bridge\PsrHttpMessage\HttpMessageFactoryInterface;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -54,7 +57,7 @@ final class TokenLookupService {
    * @param string $token_value
    *   The token representation issued to the client.
    *
-   * @return array{token: \Drupal\simple_oauth\Entity\Oauth2TokenInterface, client_id: string, scope: ?string}|null
+   * @return array{token: \Drupal\simple_oauth\Entity\Oauth2TokenInterface, client_id: string, scope: ?string, issuer: ?string}|null
    *   The token and authenticated metadata, or NULL for an invalid token.
    *
    * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
@@ -63,6 +66,7 @@ final class TokenLookupService {
    */
   public function resolveToken(string $token_value): ?array {
     $scope = NULL;
+    $issuer = NULL;
     if (substr_count($token_value, '.') === 2) {
       $request = Request::create('/');
       $request->headers->set('Authorization', 'Bearer ' . $token_value);
@@ -73,6 +77,13 @@ final class TokenLookupService {
       }
       catch (OAuthServerException) {
         return NULL;
+      }
+      // The resource server authenticates these exact bytes before claims are
+      // read. Its returned attributes do not include the signed issuer.
+      $jwt = (new Parser(new JoseEncoder()))->parse($token_value);
+      if ($jwt instanceof UnencryptedToken) {
+        $claim = $jwt->claims()->get('iss');
+        $issuer = is_string($claim) && $claim !== '' ? $claim : NULL;
       }
       $identifier = $validated->getAttribute('oauth_access_token_id');
       $client_id = $validated->getAttribute('oauth_client_id');
@@ -133,7 +144,7 @@ final class TokenLookupService {
       return NULL;
     }
 
-    return ['token' => $token, 'client_id' => $client_id, 'scope' => $scope];
+    return ['token' => $token, 'client_id' => $client_id, 'scope' => $scope, 'issuer' => $issuer];
   }
 
 }

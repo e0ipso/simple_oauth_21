@@ -14,6 +14,13 @@ use Drupal\simple_oauth\Plugin\Oauth2GrantInterface;
 use Drupal\simple_oauth\Plugin\Oauth2GrantManager;
 use Drupal\simple_oauth_21\Plugin\Oauth2GrantIdentifierInterface;
 use Drupal\simple_oauth_server_metadata\Service\ClientAuthenticationService;
+use Drupal\simple_oauth_server_metadata\Service\ClaimsAuthDiscoveryService;
+use Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService;
+use Drupal\simple_oauth_server_metadata\Service\ServerMetadataService;
+use Drupal\simple_oauth_server_metadata\Service\OpenIdConfigurationService;
+use Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
+use Drupal\Core\Path\PathValidatorInterface;
 use Drupal\simple_oauth_server_metadata\Service\ScopeDiscoveryService;
 use Drupal\simple_oauth_server_metadata\Service\GrantTypeDiscoveryService;
 use Drupal\Tests\UnitTestCase;
@@ -62,6 +69,182 @@ final class DiscoveryPolicyTest extends UnitTestCase {
     $service = new GrantTypeDiscoveryService($manager, $this->getConfigFactoryStub());
     $this->assertSame(['authorization_code', 'urn:example:custom-grant'], $service->getGrantTypesSupported());
     $this->assertSame(['code'], $service->getResponseTypesSupported());
+  }
+
+  /**
+   * Tests capability extensions, absent code grants and legacy construction.
+   */
+  public function testCapabilityHelpers(): void {
+    foreach ([FALSE, TRUE] as $disabled) {
+      $factory = $this->getConfigFactoryStub([
+        'simple_oauth.settings' => ['disable_openid_connect' => $disabled],
+        'simple_oauth_server_metadata.settings' => [],
+      ]);
+      $endpoints = $this->createMock(EndpointDiscoveryService::class);
+      $endpoints->method('getIssuer')->willReturn('https://issuer.example/');
+      $endpoints->method('getCoreEndpoints')->willReturn([]);
+      foreach ([
+        'getAuthorizationEndpoint',
+        'getTokenEndpoint',
+        'getJwksUri',
+        'getUserInfoEndpoint',
+        'getOauthServerMetadataEndpoint',
+      ] as $method) {
+        $endpoints->method($method)->willReturn('https://issuer.example/endpoint');
+      }
+      $scopes = $this->createMock(ScopeDiscoveryService::class);
+      $scopes->method('getScopesSupported')->willReturn([]);
+      foreach ([$scopes, $factory->get('simple_oauth.settings'), $factory->get('simple_oauth_server_metadata.settings')] as $dependency) {
+        $dependency->method('getCacheContexts')->willReturn([]);
+        $dependency->method('getCacheTags')->willReturn([]);
+        $dependency->method('getCacheMaxAge')->willReturn(-1);
+      }
+      foreach (['client_credentials', 'code', 'authorization_code', 'replacement'] as $id) {
+        $plugin = $id === 'replacement'
+          ? $this->createMockForIntersectionOfInterfaces([
+            Oauth2GrantInterface::class,
+            Oauth2GrantIdentifierInterface::class,
+          ])
+          : $this->createMock(Oauth2GrantInterface::class);
+        if ($id === 'replacement') {
+          $plugin->method('getGrantTypeIdentifier')->willReturn('authorization_code');
+        }
+        $plugin->expects($this->never())->method('getGrantType');
+        $manager = $this->createMock(Oauth2GrantManager::class);
+        $manager->method('getDefinitions')->willReturn([$id => []]);
+        $manager->method('createInstance')->willReturn($plugin);
+        $grants = new GrantTypeDiscoveryService($manager, $factory);
+        $claims = new ClaimsAuthDiscoveryService($factory, NULL, $grants);
+        $server = new ServerMetadataService($factory, $endpoints, $grants, $scopes, $claims);
+        $metadata = $server->getServerMetadata();
+        $enabled = $id !== 'client_credentials';
+        $this->assertSame($enabled, $claims->getAuthorizationCodeFlowEnabled());
+        $this->assertSame(in_array('code', $metadata['response_types_supported'], TRUE), $claims->getAuthorizationCodeFlowEnabled());
+        $this->assertFalse($claims->getImplicitFlowEnabled());
+        $openid = new OpenIdConfigurationService($factory, $endpoints, $scopes, $grants, $claims, ['sub']);
+        if ($enabled) {
+          $oidc = $openid->getOpenIdConfiguration();
+          $this->assertSame($claims->getAuthorizationCodeFlowEnabled(), $oidc['authorization_code_flow_enabled']);
+          $this->assertSame($claims->getImplicitFlowEnabled(), $oidc['implicit_flow_enabled']);
+        }
+        else {
+          try {
+            $openid->getOpenIdConfiguration();
+            $this->fail('OIDC discovery requires at least one response type.');
+          }
+          catch (\InvalidArgumentException $exception) {
+            $this->assertStringContainsString('response_types_supported', $exception->getMessage());
+          }
+        }
+      }
+      // Respect the response capability override rather than reconstructing it.
+      $grants = $this->createMock(GrantTypeDiscoveryService::class);
+      $grants->method('getGrantTypesSupported')->willReturn(['urn:example:custom']);
+      $response_types = [];
+      $grants->method('getResponseTypesSupported')->willReturnCallback(static function () use (&$response_types): array {
+        return $response_types;
+      });
+      $claims = new ClaimsAuthDiscoveryService($factory, NULL, $grants);
+      $server = new ServerMetadataService($factory, $endpoints, $grants, $scopes, $claims);
+      $openid = new OpenIdConfigurationService($factory, $endpoints, $scopes, $grants, $claims, ['sub']);
+      foreach ([[], ['code'], []] as $response_types) {
+        $metadata = $server->getServerMetadata();
+        $this->assertSame($response_types !== [], $claims->getAuthorizationCodeFlowEnabled());
+        $this->assertSame(in_array('code', $metadata['response_types_supported'], TRUE), $claims->getAuthorizationCodeFlowEnabled());
+        if ($response_types !== []) {
+          $this->assertSame($openid->getOpenIdConfiguration()['authorization_code_flow_enabled'], $claims->getAuthorizationCodeFlowEnabled());
+        }
+      }
+      $legacy = new ClaimsAuthDiscoveryService($factory);
+      $this->assertTrue($legacy->getAuthorizationCodeFlowEnabled());
+      $this->assertFalse($legacy->getImplicitFlowEnabled());
+    }
+  }
+
+  /**
+   * Tests implicit flow stays disabled for original constructor callers.
+   */
+  public function testImplicitCapabilityDisabled(): void {
+    $claims = new ClaimsAuthDiscoveryService($this->getConfigFactoryStub());
+    $this->assertFalse($claims->getImplicitFlowEnabled());
+  }
+
+  /**
+   * Tests shared URL fallback and each service's protected override dispatch.
+   */
+  public function testOptionalUrlHelperExtensions(): void {
+    $factory = $this->getConfigFactoryStub([
+      'simple_oauth_server_metadata.settings' => [
+        'service_documentation' => '/docs',
+        'op_policy_uri' => '/policy',
+        'op_tos_uri' => '/terms',
+        'resource_documentation' => '/docs',
+      ],
+      'simple_oauth.settings' => [],
+    ]);
+    $endpoints = $this->createMock(EndpointDiscoveryService::class);
+    $endpoints->method('getIssuer')->willReturn('https://issuer.example/');
+    foreach ([
+      'getAuthorizationEndpoint',
+      'getTokenEndpoint',
+      'getJwksUri',
+      'getUserInfoEndpoint',
+      'getOauthServerMetadataEndpoint',
+    ] as $method) {
+      $endpoints->method($method)->willReturn('https://issuer.example/endpoint');
+    }
+    $endpoints->method('getCoreEndpoints')->willReturn([]);
+    $grants = $this->createMock(GrantTypeDiscoveryService::class);
+    $grants->method('getResponseTypesSupported')->willReturn(['code']);
+    $grants->method('getGrantTypesSupported')->willReturn(['authorization_code']);
+    $scopes = $this->createMock(ScopeDiscoveryService::class);
+    $scopes->method('getScopesSupported')->willReturn([]);
+    foreach ([$scopes, $factory->get('simple_oauth.settings'), $factory->get('simple_oauth_server_metadata.settings')] as $dependency) {
+      $dependency->method('getCacheContexts')->willReturn([]);
+      $dependency->method('getCacheTags')->willReturn([]);
+      $dependency->method('getCacheMaxAge')->willReturn(-1);
+    }
+    $claims = new ClaimsAuthDiscoveryService($factory, NULL, $grants);
+    $server = new class ($factory, $endpoints, $grants, $scopes, $claims) extends ServerMetadataService {
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function ensureAbsoluteUrl(string $url): string {
+        return 'https://override.example' . parent::ensureAbsoluteUrl($url);
+      }
+
+    };
+    $openid = new class ($factory, $endpoints, $scopes, $grants, $claims, ['sub']) extends OpenIdConfigurationService {
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function ensureAbsoluteUrl(string $url): string {
+        return 'https://override.example' . parent::ensureAbsoluteUrl($url);
+      }
+
+    };
+    $resource = new class ($factory, $endpoints, $this->createMock(EventDispatcherInterface::class)) extends ResourceMetadataService {
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function ensureAbsoluteUrl(string $url): string {
+        return 'https://override.example' . parent::ensureAbsoluteUrl($url);
+      }
+
+    };
+    // Fail URL conversion deliberately; the configured value must survive.
+    $validator = $this->createMock(PathValidatorInterface::class);
+    $validator->method('getUrlIfValidWithoutAccessCheck')->willThrowException(new \RuntimeException('URL context unavailable.'));
+    \Drupal::getContainer()->set('path.validator', $validator);
+    foreach ([$server->getServerMetadata(), $openid->getOpenIdConfiguration()] as $metadata) {
+      foreach (['service_documentation' => '/docs', 'op_policy_uri' => '/policy', 'op_tos_uri' => '/terms'] as $field => $path) {
+        $this->assertSame('https://override.example' . $path, $metadata[$field]);
+      }
+    }
+    $this->assertSame('https://override.example/docs', $resource->getResourceMetadata()['resource_documentation']);
   }
 
   /**

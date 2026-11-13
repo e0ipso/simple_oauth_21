@@ -17,6 +17,15 @@ use Drupal\Core\Site\Settings;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\simple_oauth\Authentication\TokenAuthUser;
 use Drupal\simple_oauth\Entity\Oauth2Scope;
+use Drupal\simple_oauth\Entities\AccessTokenEntity;
+use Drupal\simple_oauth\Entities\ClientEntity;
+use Drupal\Core\Extension\ModuleHandlerInterface;
+use League\OAuth2\Server\CryptKey;
+use Lcobucci\JWT\Encoding\JoseEncoder;
+use Lcobucci\JWT\Token\Parser;
+use Lcobucci\JWT\Configuration;
+use Lcobucci\JWT\Signer\Key\InMemory;
+use Lcobucci\JWT\Signer\Rsa\Sha256;
 use Drupal\simple_oauth\Entity\Oauth2Token;
 use Drupal\simple_oauth_server_metadata\Controller\OpenIdConfigurationController;
 use Drupal\simple_oauth_server_metadata\Controller\ResourceMetadataController;
@@ -1030,6 +1039,204 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
   }
 
   /**
+   * Tests issuer claims from upstream signing through real resource validation.
+   */
+  public function testAuthenticatedIssuerConsistency(): void {
+    foreach (['user', 'consumer', 'oauth2_token'] as $entity_type) {
+      $this->installEntitySchema($entity_type);
+    }
+    $user = User::create(['name' => 'owner', 'status' => 1]);
+    $user->save();
+    $this->container->get('current_user')->setAccount($user);
+    $consumer = Consumer::create(['label' => 'issuer', 'client_id' => 'issuer']);
+    $consumer->save();
+    $key = openssl_pkey_new(['private_key_bits' => 2048]);
+    openssl_pkey_export($key, $private_key);
+    $public_path = $this->siteDirectory . '/issuer-public.key';
+    file_put_contents($public_path, openssl_pkey_get_details($key)['key']);
+    $this->config('simple_oauth.settings')->set('public_key', $public_path)->save();
+    $stack = $this->container->get('request_stack');
+    $controller = TokenIntrospectionController::create($this->container);
+    $lookup = $this->container->get('simple_oauth_server_metadata.token_lookup');
+    $repository = $this->container->get('simple_oauth.repositories.access_token');
+    foreach (['http://first.example/subdir', 'http://second.example/other'] as $site) {
+      $request = Request::create($site . '/oauth/introspect', 'POST', [], [], [], [
+        'SCRIPT_NAME' => parse_url($site, PHP_URL_PATH) . '/index.php',
+        'SCRIPT_FILENAME' => '/index.php',
+      ]);
+      $stack->push($request);
+      $this->container->get('router.request_context')->fromRequest($request);
+      try {
+        $default = $this->container->get('simple_oauth_server_metadata.endpoint_discovery')->getIssuer();
+        $this->assertSame(str_replace('http:', 'https:', $site) . '/', $default);
+        $this->assertSame($default, $this->container->get('simple_oauth_server_metadata.server_metadata')->getServerMetadata()['issuer']);
+        $this->assertSame($default, $this->container->get('simple_oauth_server_metadata.openid_configuration')->getOpenIdConfiguration()['issuer']);
+        $refresh = Oauth2Token::create([
+          'bundle' => 'refresh_token',
+          'auth_user_id' => $user->id(),
+          'value' => bin2hex(random_bytes(20)),
+          'expire' => time() + 3600,
+        ]);
+        $refresh->save();
+        $payload = [
+          'refresh_token_id' => $refresh->get('value')->value,
+          'client_id' => $consumer->getClientId(),
+          'expire_time' => time() + 3600,
+          'scopes' => [],
+        ];
+        $opaque = Crypto::encryptWithPassword(json_encode($payload), Core::ourSubstr(Settings::getHashSalt(), 0, 32));
+        $request->request->set('token', $opaque);
+        $this->assertSame($default, json_decode($controller->introspect($request)->getContent(), TRUE)['iss']);
+        $legacy = new TokenIntrospectionController($stack, $this->container->get('logger.channel.simple_oauth'), $lookup);
+        $this->assertSame($default, json_decode($legacy->introspect($request)->getContent(), TRUE)['iss']);
+        foreach ([NULL, 'https://custom.example/tenant'] as $custom) {
+          if ($custom === NULL) {
+            $issued = $repository->getNewToken(new ClientEntity($consumer), [], (string) $user->id());
+          }
+          else {
+            $handler = $this->createMock(ModuleHandlerInterface::class);
+            $handler->method('alter')->willReturnCallback(static function ($type, &$claims) use ($custom): void {
+              $claims['iss'] = $custom;
+            });
+            $issued = new AccessTokenEntity($handler, $this->container->get('datetime.time'), $this->container->get('language_manager'));
+            $issued->setClient(new ClientEntity($consumer));
+            $issued->setUserIdentifier((string) $user->id());
+          }
+          $issued->setIdentifier(bin2hex(random_bytes(20)));
+          $issued->setExpiryDateTime(new \DateTimeImmutable('+1 hour'));
+          $issued->setPrivateKey(new CryptKey($private_key, NULL, FALSE));
+          $repository->persistNewAccessToken($issued);
+          $value = $issued->toString();
+          $expected = $custom ?? $default;
+          $this->assertSame($expected, (new Parser(new JoseEncoder()))->parse($value)->claims()->get('iss'));
+          $this->assertSame($expected, $lookup->resolveToken($value)['issuer'] ?? NULL);
+          $request->request->set('token', $value);
+          $this->assertSame($expected, json_decode($controller->introspect($request)->getContent(), TRUE)['iss']);
+          // A signed issuer remains usable without any request-stack context.
+          $standalone = new TokenIntrospectionController(new RequestStack(), $this->container->get('logger.channel.simple_oauth'), $lookup, $this->container->get('current_user'));
+          $this->assertSame($expected, json_decode($standalone->introspect($request)->getContent(), TRUE)['iss']);
+          $parts = explode('.', $value);
+          $claims = json_decode(base64_decode(strtr($parts[1], '-_', '+/')), TRUE);
+          $claims['iss'] = 'https://forged.example';
+          $parts[1] = rtrim(strtr(base64_encode(json_encode($claims)), '+/', '-_'), '=');
+          foreach ([implode('.', $parts), $issued->getIdentifier()] as $invalid) {
+            $request->request->set('token', $invalid);
+            $this->assertNull($lookup->resolveToken($invalid));
+            $this->assertSame(['active' => FALSE], json_decode($controller->introspect($request)->getContent(), TRUE));
+          }
+          // A different authenticated caller cannot see the signed issuer.
+          $other = User::create(['name' => 'other-' . $issued->getIdentifier(), 'status' => 1]);
+          $other->save();
+          $this->container->get('current_user')->setAccount($other);
+          $request->request->set('token', $value);
+          $this->assertSame(['active' => FALSE], json_decode($controller->introspect($request)->getContent(), TRUE));
+          $this->container->get('current_user')->setAccount($user);
+          // Reuse an authenticated record with a genuinely signed missing-iss
+          // JWT. This fixture is independent of upstream token serialization.
+          $jwt_config = Configuration::forSymmetricSigner(new Sha256(), InMemory::plainText($private_key));
+          $missing_issuer = $jwt_config->builder()
+            ->permittedFor($consumer->getClientId())
+            ->identifiedBy($issued->getIdentifier())
+            ->relatedTo((string) $user->id())
+            ->issuedAt(new \DateTimeImmutable('-1 minute'))
+            ->expiresAt(new \DateTimeImmutable('+1 hour'))
+            ->getToken($jwt_config->signer(), $jwt_config->signingKey())->toString();
+          $this->assertNull($lookup->resolveToken($missing_issuer)['issuer']);
+          $request->request->set('token', $missing_issuer);
+          $this->assertSame($default, json_decode($controller->introspect($request)->getContent(), TRUE)['iss']);
+          $this->assertArrayNotHasKey('iss', json_decode($standalone->introspect($request)->getContent(), TRUE));
+          $issued->setExpiryDateTime(new \DateTimeImmutable('-1 minute'));
+          $this->assertNull($lookup->resolveToken($issued->toString()));
+          // A valid signature cannot bypass stored client ownership checks.
+          $foreign = Consumer::create(['label' => 'foreign', 'client_id' => 'foreign-' . $issued->getIdentifier()]);
+          $foreign->save();
+          $records = $this->container->get('entity_type.manager')->getStorage('oauth2_token')->loadByProperties(['value' => $issued->getIdentifier()]);
+          $record = reset($records);
+          $record->set('client', $foreign->id())->save();
+          $this->assertNull($lookup->resolveToken($value));
+          $record->set('client', $consumer->id())->save();
+          $repository->revokeAccessToken($issued->getIdentifier());
+          $this->assertNull($lookup->resolveToken($value));
+        }
+      }
+      finally {
+        $stack->pop();
+      }
+    }
+  }
+
+  /**
+   * Tests optional URLs share normalization and preserve stored raw values.
+   */
+  public function testOptionalUrlConsistency(): void {
+    $config = $this->config('simple_oauth_server_metadata.settings');
+    $fields = ['service_documentation', 'op_policy_uri', 'op_tos_uri'];
+    $stack = $this->container->get('request_stack');
+    foreach (['https://first.example/subdir', 'https://second.example/other'] as $site) {
+      $request = Request::create($site . '/discovery', 'GET', [], [], [], [
+        'SCRIPT_NAME' => parse_url($site, PHP_URL_PATH) . '/index.php',
+        'SCRIPT_FILENAME' => '/index.php',
+      ]);
+      $stack->push($request);
+      $this->container->get('router.request_context')->fromRequest($request);
+      try {
+        foreach (['/docs', 'https://external.example/docs', ''] as $raw) {
+          foreach ($fields as $field) {
+            $config->set($field, $raw);
+          }
+          $config->save();
+          $stored = $this->container->get('config.storage')->read($config->getName());
+          foreach ([
+            ServerMetadataController::create($this->container)(),
+            OpenIdConfigurationController::create($this->container)->configuration(),
+          ] as $response) {
+            $metadata = json_decode($response->getContent(), TRUE);
+            foreach ($fields as $field) {
+              if ($raw === '') {
+                $this->assertArrayNotHasKey($field, $metadata);
+              }
+              else {
+                $this->assertSame($raw === '/docs' ? $site . '/docs' : $raw, $metadata[$field]);
+              }
+            }
+            $this->assertContains('url.site', $response->getCacheableMetadata()->getCacheContexts());
+            $this->assertContains('config:' . $config->getName(), $response->getCacheableMetadata()->getCacheTags());
+          }
+          $this->assertSame($stored, $this->container->get('config.storage')->read($config->getName()));
+          foreach ($fields as $field) {
+            $this->assertSame($raw, $this->container->get('config.factory')->get($config->getName())->get($field));
+          }
+          $preview = $this->container->get('simple_oauth_server_metadata.server_metadata')->getServerMetadata(['service_documentation' => '/preview']);
+          $this->assertSame($site . '/preview', $preview['service_documentation']);
+        }
+      }
+      finally {
+        $stack->pop();
+      }
+    }
+  }
+
+  /**
+   * Tests normally injected capability helpers track repeated discovery builds.
+   */
+  public function testCapabilityHelperConsistency(): void {
+    $claims = $this->container->get('simple_oauth_server_metadata.claims_auth_discovery');
+    foreach ([FALSE, TRUE, FALSE] as $disabled) {
+      $this->config('simple_oauth.settings')->set('disable_openid_connect', $disabled)->save();
+      $metadata = $this->container->get('simple_oauth_server_metadata.server_metadata')->getServerMetadata();
+      $this->assertSame(in_array('code', $metadata['response_types_supported'], TRUE), $claims->getAuthorizationCodeFlowEnabled());
+      $this->assertFalse($claims->getImplicitFlowEnabled());
+      if (!$disabled) {
+        $openid = $this->container->get('simple_oauth_server_metadata.openid_configuration')->getOpenIdConfiguration();
+        $this->assertSame($openid['authorization_code_flow_enabled'], $claims->getAuthorizationCodeFlowEnabled());
+        $this->assertSame($openid['implicit_flow_enabled'], $claims->getImplicitFlowEnabled());
+      }
+      $this->assertContains('config:simple_oauth.settings', $claims->getCacheTags());
+      $this->assertContains('config:core.extension', $claims->getCacheTags());
+    }
+  }
+
+  /**
    * Tests scoped bypass permission, owner fallback and inactive responses.
    */
   public function testIntrospectionUsesTokenScopedPermissions(): void {
@@ -1080,6 +1287,15 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
         $response = $controller->introspect(Request::create('/oauth/introspect', 'POST', ['token' => $value]));
         $data = json_decode($response->getContent(), TRUE);
         $this->assertSame($allowed || $owner === $user->id(), $data['active']);
+        if ($data['active']) {
+          $expected = $this->container->get('simple_oauth_server_metadata.endpoint_discovery')->getIssuer();
+          $this->assertSame($expected, $data['iss']);
+          $legacy = new TokenIntrospectionController($request_stack, $this->container->get('logger.channel.simple_oauth'), $this->container->get('simple_oauth_server_metadata.token_lookup'));
+          $post = Request::create('/oauth/introspect', 'POST', ['token' => $value]);
+          $this->assertSame($expected, json_decode($legacy->introspect($post)->getContent(), TRUE)['iss']);
+          $without_context = new TokenIntrospectionController(new RequestStack(), $this->container->get('logger.channel.simple_oauth'), $this->container->get('simple_oauth_server_metadata.token_lookup'), $current_user);
+          $this->assertArrayNotHasKey('iss', json_decode($without_context->introspect($post)->getContent(), TRUE));
+        }
         if (!$data['active']) {
           $this->assertSame(['active' => FALSE], $data);
         }

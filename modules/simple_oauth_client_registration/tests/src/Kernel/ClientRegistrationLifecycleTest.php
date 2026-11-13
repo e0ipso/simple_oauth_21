@@ -43,6 +43,7 @@ use Drupal\simple_oauth_client_registration\Service\TokenEndpointAuthMethodResol
 use GuzzleHttp\Psr7\ServerRequest;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Drupal\user\Entity\Role;
+use Drupal\user\Entity\User;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\HttpFoundation\Request;
@@ -1094,6 +1095,17 @@ final class ClientRegistrationLifecycleTest extends KernelTestBase {
    * Tests grant scope filtering and the administrative client allowlist.
    */
   public function testScopeRestrictionsAndLegacyFields(): void {
+    Role::create(['id' => 'scope_manager', 'label' => 'Scope manager'])
+      ->grantPermission('administer consumer access settings')->save();
+    $manager = User::create([
+      'uid' => 2,
+      'name' => 'Scope manager',
+      'status' => 1,
+      'roles' => ['scope_manager'],
+    ]);
+    $manager->save();
+    $this->container->get('current_user')->setAccount($manager);
+    $this->assertTrue($manager->hasPermission('administer consumer access settings'));
     foreach (['read' => ['authorization_code'], 'machine' => ['client_credentials']] as $name => $grants) {
       Oauth2Scope::create([
         'name' => 'test:' . $name,

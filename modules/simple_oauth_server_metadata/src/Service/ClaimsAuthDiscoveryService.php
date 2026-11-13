@@ -24,10 +24,14 @@ class ClaimsAuthDiscoveryService implements CacheableDependencyInterface {
    *   The configuration factory.
    * @param \Drupal\simple_oauth_pkce\Service\PkceSettingsService|null $pkceSettings
    *   The optional global PKCE policy settings.
+   * @param \Drupal\simple_oauth_server_metadata\Service\GrantTypeDiscoveryService|null $grantTypeDiscovery
+   *   The optional capability discovery service. Legacy standalone callers
+   *   without it retain their historical authorization code capability result.
    */
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
     private readonly ?PkceSettingsService $pkceSettings = NULL,
+    private readonly ?GrantTypeDiscoveryService $grantTypeDiscovery = NULL,
   ) {
     $this->cacheTags = ['config:core.extension'];
     if ($pkceSettings !== NULL) {
@@ -195,9 +199,9 @@ class ClaimsAuthDiscoveryService implements CacheableDependencyInterface {
    *   TRUE if authorization code flow is enabled, FALSE otherwise.
    */
   public function getAuthorizationCodeFlowEnabled(): bool {
-    // Authorization code flow is the core OAuth 2.0 flow and should always
-    // be enabled in Simple OAuth.
-    return TRUE;
+    $this->refreshConfigCacheability();
+    return $this->grantTypeDiscovery === NULL
+      || in_array('code', $this->grantTypeDiscovery->getResponseTypesSupported(), TRUE);
   }
 
   /**
@@ -207,10 +211,8 @@ class ClaimsAuthDiscoveryService implements CacheableDependencyInterface {
    *   TRUE if implicit flow is enabled, FALSE otherwise.
    */
   public function getImplicitFlowEnabled(): bool {
-    // Implicit flow support can be determined by checking if 'token' and
-    // 'id_token' response types are supported.
-    // For OAuth 2.1 compliance, implicit flow should be discouraged.
-    return TRUE;
+    // Discovery does not advertise implicit or hybrid authorization flows.
+    return FALSE;
   }
 
   /**
