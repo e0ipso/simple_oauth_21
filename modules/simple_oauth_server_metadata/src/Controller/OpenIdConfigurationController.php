@@ -82,6 +82,7 @@ final class OpenIdConfigurationController extends ControllerBase {
 
       // Add cache metadata from service.
       $response->addCacheableDependency($this->openIdConfigurationService);
+      $response->addCacheableDependency($simple_oauth_config);
 
       // Add CORS headers for cross-origin requests.
       $response->headers->set('Access-Control-Allow-Origin', '*');

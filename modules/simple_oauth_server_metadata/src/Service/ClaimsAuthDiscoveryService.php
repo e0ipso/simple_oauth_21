@@ -5,16 +5,17 @@ declare(strict_types=1);
 namespace Drupal\simple_oauth_server_metadata\Service;
 
 use Drupal\Core\Cache\CacheableDependencyInterface;
-use Drupal\Core\Cache\CacheableDependencyTrait;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\simple_oauth_pkce\Service\PkceSettingsService;
+use Drupal\simple_oauth_server_metadata\Trait\MetadataCacheabilityTrait;
 
 /**
  * Service for discovering claims, authentication methods, and algorithms.
  */
 class ClaimsAuthDiscoveryService implements CacheableDependencyInterface {
 
-  use CacheableDependencyTrait;
+  use MetadataCacheabilityTrait;
 
   /**
    * Constructs a ClaimsAuthDiscoveryService object.
@@ -118,6 +119,7 @@ class ClaimsAuthDiscoveryService implements CacheableDependencyInterface {
    *   An array of supported code challenge methods.
    */
   public function getCodeChallengeMethodsSupported(): array {
+    $this->refreshConfigCacheability();
     if ($this->pkceSettings !== NULL && !$this->pkceSettings->isDisabled()) {
       return $this->pkceSettings->getSupportedMethods();
     }
@@ -230,8 +232,22 @@ class ClaimsAuthDiscoveryService implements CacheableDependencyInterface {
    *   TRUE if OpenID Connect is enabled, FALSE otherwise.
    */
   protected function isOpenIdConnectEnabled(): bool {
+    $this->refreshConfigCacheability();
     $config = $this->configFactory->get('simple_oauth.settings');
     return !(bool) $config->get('disable_openid_connect');
+  }
+
+  /**
+   * Refreshes config dependencies without retaining earlier override metadata.
+   *
+   * Claims and PKCE methods can run in either order. Rebuild their combined
+   * dependencies each time, keeping subclass baseline cacheability separate.
+   */
+  private function refreshConfigCacheability(): void {
+    $this->generationCacheability = CacheableMetadata::createFromObject($this->configFactory->get('simple_oauth.settings'));
+    if ($this->pkceSettings !== NULL) {
+      $this->generationCacheability->addCacheableDependency($this->configFactory->get('simple_oauth_pkce.settings'));
+    }
   }
 
 }

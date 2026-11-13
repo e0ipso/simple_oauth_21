@@ -6,6 +6,7 @@ namespace Drupal\simple_oauth_server_metadata\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\simple_oauth\Plugin\Oauth2GrantManager;
+use Drupal\simple_oauth_21\Plugin\Oauth2GrantIdentifierInterface;
 
 /**
  * Service for discovering OAuth 2.0 grant types and response types.
@@ -40,8 +41,12 @@ class GrantTypeDiscoveryService {
       // The implicit grant plugin self-excludes when use_implicit is FALSE
       // by throwing PluginNotFoundException in its constructor.
       try {
-        $this->grantManager->createInstance($plugin_id);
-        $grant_types[] = $plugin_id;
+        $plugin = $this->grantManager->createInstance($plugin_id);
+        // Discovery must not initialize client-specific League grants: doing
+        // so can mutate repositories shared with subsequent token requests.
+        $grant_types[] = $plugin instanceof Oauth2GrantIdentifierInterface
+          ? $plugin->getGrantTypeIdentifier()
+          : $plugin_id;
       }
       catch (\Exception $e) {
         // Plugin is not available, skip it.
@@ -49,7 +54,7 @@ class GrantTypeDiscoveryService {
       }
     }
 
-    return $grant_types;
+    return array_values(array_unique($grant_types));
   }
 
   /**

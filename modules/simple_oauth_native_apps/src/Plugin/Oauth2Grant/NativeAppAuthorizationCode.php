@@ -7,6 +7,7 @@ namespace Drupal\simple_oauth_native_apps\Plugin\Oauth2Grant;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\simple_oauth\Plugin\Oauth2GrantBase;
+use Drupal\simple_oauth_21\Plugin\Oauth2GrantIdentifierInterface;
 use Drupal\simple_oauth_native_apps\Service\PKCEEnhancementService;
 use Drupal\simple_oauth_native_apps\Service\NativeClientDetector;
 use League\OAuth2\Server\Grant\AuthCodeGrant;
@@ -27,7 +28,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *   label = @Translation("Native App Authorization Code"),
  * )
  */
-final class NativeAppAuthorizationCode extends Oauth2GrantBase implements ContainerFactoryPluginInterface {
+final class NativeAppAuthorizationCode extends Oauth2GrantBase implements ContainerFactoryPluginInterface, Oauth2GrantIdentifierInterface {
 
   /**
    * The authorization code repository.
@@ -104,6 +105,13 @@ final class NativeAppAuthorizationCode extends Oauth2GrantBase implements Contai
       $container->get('simple_oauth_native_apps.pkce_enhancement'),
       $container->get('simple_oauth_native_apps.native_client_detector')
     );
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getGrantTypeIdentifier(): string {
+    return 'authorization_code';
   }
 
   /**

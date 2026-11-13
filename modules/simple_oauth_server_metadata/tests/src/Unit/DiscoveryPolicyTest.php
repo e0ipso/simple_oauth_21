@@ -10,8 +10,12 @@ use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\simple_oauth\Oauth2ScopeInterface;
 use Drupal\simple_oauth\Oauth2ScopeProviderInterface;
+use Drupal\simple_oauth\Plugin\Oauth2GrantInterface;
+use Drupal\simple_oauth\Plugin\Oauth2GrantManager;
+use Drupal\simple_oauth_21\Plugin\Oauth2GrantIdentifierInterface;
 use Drupal\simple_oauth_server_metadata\Service\ClientAuthenticationService;
 use Drupal\simple_oauth_server_metadata\Service\ScopeDiscoveryService;
+use Drupal\simple_oauth_server_metadata\Service\GrantTypeDiscoveryService;
 use Drupal\Tests\UnitTestCase;
 use GuzzleHttp\Psr7\ServerRequest;
 use League\OAuth2\Server\Repositories\ClientRepositoryInterface;
@@ -31,6 +35,33 @@ final class DiscoveryPolicyTest extends UnitTestCase {
     $container = new ContainerBuilder();
     $container->set('cache_contexts_manager', new CacheContextsManager($container, ['url.query_args', 'url.site']));
     \Drupal::setContainer($container);
+  }
+
+  /**
+   * Tests extension mappings, legacy fallback, and unavailable plugins.
+   */
+  public function testGrantWireIdentifierDiscovery(): void {
+    $mapped = $this->createMockForIntersectionOfInterfaces([
+      Oauth2GrantInterface::class,
+      Oauth2GrantIdentifierInterface::class,
+    ]);
+    $mapped->method('getGrantTypeIdentifier')->willReturn('authorization_code');
+    $mapped->expects($this->never())->method('getGrantType');
+    $extension = $this->createMock(Oauth2GrantInterface::class);
+    $extension->expects($this->never())->method('getGrantType');
+    $manager = $this->createMock(Oauth2GrantManager::class);
+    $manager->method('getDefinitions')->willReturn(array_fill_keys([
+      'replacement', 'authorization_code', 'urn:example:custom-grant', 'unavailable',
+    ], []));
+    $manager->method('createInstance')->willReturnCallback(static function (string $id) use ($mapped, $extension): Oauth2GrantInterface {
+      if ($id === 'unavailable') {
+        throw new \RuntimeException('Optional dependency unavailable.');
+      }
+      return $id === 'replacement' ? $mapped : $extension;
+    });
+    $service = new GrantTypeDiscoveryService($manager, $this->getConfigFactoryStub());
+    $this->assertSame(['authorization_code', 'urn:example:custom-grant'], $service->getGrantTypesSupported());
+    $this->assertSame(['code'], $service->getResponseTypesSupported());
   }
 
   /**
@@ -75,6 +106,24 @@ final class DiscoveryPolicyTest extends UnitTestCase {
     $this->assertSame(1800, $service->getCacheMaxAge());
     $this->assertContains('external:collection', $service->getCacheTags());
     $this->assertContains('url.site', $service->getCacheContexts());
+  }
+
+  /**
+   * Tests the fallback collection lifetime cannot extend an override's limit.
+   */
+  public function testExternalProviderHonorsConfigurationLimit(): void {
+    $factory = $this->getConfigFactoryStub(['simple_oauth.settings' => ['scope_provider' => 'external']]);
+    $config = $factory->get('simple_oauth.settings');
+    $config->method('getCacheTags')->willReturn(['override:scope']);
+    $config->method('getCacheContexts')->willReturn(['url.query_args']);
+    $config->method('getCacheMaxAge')->willReturn(30);
+    $provider = $this->createMock(Oauth2ScopeProviderInterface::class);
+    $provider->method('loadMultiple')->willReturn([]);
+    $service = new ScopeDiscoveryService($provider, $factory, $this->createMock(LoggerChannelFactoryInterface::class));
+    $service->getScopesSupported();
+    $this->assertSame(30, $service->getCacheMaxAge());
+    $this->assertContains('override:scope', $service->getCacheTags());
+    $this->assertContains('url.query_args', $service->getCacheContexts());
   }
 
   /**
