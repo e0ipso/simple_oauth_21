@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\simple_oauth_device_flow\Kernel;
 
+use Drupal\Core\Config\ConfigImporter;
+use Drupal\Core\Config\ConfigImporterException;
+use Drupal\Core\Config\MemoryStorage;
+use Drupal\Core\Config\StorageComparer;
+use Drupal\simple_oauth_device_flow\Form\DeviceFlowSettingsForm;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Lock\DatabaseLockBackend;
@@ -39,6 +44,7 @@ use Drupal\simple_oauth_device_flow\Form\DeviceVerificationForm;
 use Drupal\simple_oauth_device_flow\Entity\DeviceCode;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\InputBag;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpFoundation\Session\Session;
 use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
@@ -120,6 +126,11 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     // Test settings validation.
     $this->assertGreaterThan(0, $settings->getDeviceCodeExpiration());
     $this->assertGreaterThan(0, $settings->getPollingInterval());
+    // Verification retains its existing max(1, configured integer) semantics.
+    foreach ([0, -1, 3] as $attempts) {
+      $this->config('simple_oauth_device_flow.settings')->set('max_authorization_attempts', $attempts)->save();
+      $this->assertSame($attempts, $settings->getMaxAuthorizationAttempts());
+    }
   }
 
   /**
@@ -180,6 +191,8 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
 
     // Installed configuration must provide the documented issuance defaults.
     $this->assertSame(1800, $config->get('device_code_lifetime'));
+    $this->assertSame(8, $config->get('user_code_length'));
+    $this->assertSame('BCDFGHJKLMNPQRSTVWXZ', $config->get('user_code_charset'));
     $this->assertSame(5, $config->get('polling_interval'));
     $this->assertSame('/oauth/device', $config->get('verification_uri'));
   }
@@ -1139,6 +1152,10 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     $service = $this->container->get('simple_oauth_device_flow.device_code_service');
     $first = $service->generateDeviceAuthorization($client);
     $second = $service->generateDeviceAuthorization($client);
+    // Issued records survive unsafe replacement generation settings.
+    $this->config('simple_oauth_device_flow.settings')->set('user_code_length', 6)
+      ->set('user_code_charset', 'AB')->set('user_code_format', 'XXXXXX')
+      ->set('device_code_lifetime', 1)->set('max_authorization_attempts', 1)->save();
     $repository = $this->container->get('simple_oauth_device_flow.device_code_repository');
     $this->container->get('current_user')->setAccount(new UserSession(['uid' => 7]));
     $stack = $this->container->get('request_stack');
@@ -1205,6 +1222,206 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
       ->willReturnOnConsecutiveCalls($storage->create(), NULL);
     $generator = new UserCodeGenerator($this->container->get('config.factory'), $lookup, $logger_factory);
     $this->assertTrue($generator->validateCodeFormat($generator->generateUserCode()));
+  }
+
+  /**
+   * Tests charset overrides keep their hook and satisfy the issuance policy.
+   */
+  public function testGeneratorCharsetExtensionPolicy(): void {
+    $this->installDeviceFixtures();
+    $this->config('simple_oauth_device_flow.settings')->set('user_code_length', 11)->save();
+    $generator = new class($this->container->get('config.factory'), $this->container->get('simple_oauth_device_flow.user_code_lookup'), $this->container->get('simple_oauth_device_flow.logger_factory')) extends UserCodeGenerator {
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function getCharset(): string {
+        return '0123456789';
+      }
+
+    };
+    $this->assertMatchesRegularExpression('/^[0-9]{11}$/D', $generator->generateUserCode());
+    $weak = new class($this->container->get('config.factory'), $this->container->get('simple_oauth_device_flow.user_code_lookup'), $this->container->get('simple_oauth_device_flow.logger_factory')) extends UserCodeGenerator {
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function getCharset(): string {
+        return 'AB';
+      }
+
+    };
+    $this->expectException(\RuntimeException::class);
+    $weak->generateUserCode();
+  }
+
+  /**
+   * Tests custom formatter codes retain bounded exact pending lookup.
+   *
+   * @param string $separator
+   *   The formatter's separator, including multibyte output.
+   * @param int $group_size
+   *   The number of significant characters in each displayed group.
+   *
+   * @dataProvider customFormatterProvider
+   */
+  #[DataProvider('customFormatterProvider')]
+  public function testCustomFormatterPendingCompatibility(string $separator, int $group_size): void {
+    $this->installDeviceFixtures();
+    $client = $this->createDeviceClient('custom-format-client');
+    $repository = $this->container->get('simple_oauth_device_flow.device_code_repository');
+    $settings = $this->container->get('simple_oauth_device_flow.settings');
+    $logger = $this->container->get('simple_oauth_device_flow.logger_factory');
+    $generator = new class($this->container->get('config.factory'), $repository, $logger) extends UserCodeGenerator {
+
+      /**
+       * The configured display separator.
+       */
+      public string $separator = ' ';
+
+      /**
+       * The number of significant characters per display group.
+       */
+      public int $groupSize = 4;
+
+      /**
+       * {@inheritdoc}
+       */
+      public function formatUserCode(string $rawCode): string {
+        return implode($this->separator, str_split($rawCode, $this->groupSize));
+      }
+
+    };
+    $generator->separator = $separator;
+    $generator->groupSize = $group_size;
+    $service = new DeviceCodeService($repository, $generator, $settings, $this->container->get('datetime.time'), $logger);
+    $issued = $service->generateDeviceAuthorization($client);
+    $this->assertStringContainsString($separator, $issued['user_code']);
+    $this->assertTrue($generator->validateCodeFormat($issued['user_code']));
+    $this->assertLessThanOrEqual(32, mb_strlen($issued['user_code'], 'UTF-8'));
+    if ($group_size === 1) {
+      $this->assertGreaterThan(32, strlen($issued['user_code']));
+    }
+    $form_object = new DeviceVerificationForm(
+      $repository, $service, $generator, new UserSession(['uid' => 7]),
+      $logger->get('simple_oauth_device_flow'), $this->container->get('flood'), $settings,
+    );
+    $stack = $this->container->get('request_stack');
+    $stack->push(Request::create('https://example.org/oauth/device', 'GET', ['user_code' => $issued['user_code']]));
+    try {
+      $built = $form_object->buildForm([], new FormState());
+      $this->assertSame($issued['user_code'], $built['user_code']['#default_value']);
+    }
+    finally {
+      $stack->pop();
+    }
+    $form = [];
+    foreach ([$issued['user_code'], str_replace($separator, '', $issued['user_code'])] as $input) {
+      $state = (new FormState())->setValue('user_code', strtolower($input));
+      $form_object->validateForm($form, $state);
+      $this->assertSame([], $state->getErrors(), 'Issued custom formatting remains verifiable.');
+      $this->assertSame($issued['device_code'], $state->getTemporaryValue('device_code_entity')->id());
+    }
+    // Exact historical output also survives replacing the formatter itself.
+    $this->container->get('current_user')->setAccount(new UserSession(['uid' => 7]));
+    $this->config('simple_oauth_device_flow.settings')->set('user_code_length', 6)->set('user_code_charset', 'AB')->save();
+    $state = (new FormState())->setValue('user_code', $issued['user_code']);
+    DeviceVerificationForm::create($this->container)->validateForm($form, $state);
+    $this->assertSame([], $state->getErrors());
+    $this->assertSame($issued['device_code'], $state->getTemporaryValue('device_code_entity')->id());
+  }
+
+  /**
+   * Provides formatter layouts accepted by the existing normalization API.
+   *
+   * @return array<string, array{string, int}>
+   *   Separators and significant display group sizes.
+   */
+  public static function customFormatterProvider(): array {
+    return [
+      'space separator' => [' ', 4],
+      'four-byte separator' => ["\u{1F539}", 1],
+    ];
+  }
+
+  /**
+   * Tests raw-generation extensions cannot bypass unsafe effective settings.
+   */
+  public function testGeneratorRawExtensionPolicy(): void {
+    $this->installDeviceFixtures();
+    $this->config('simple_oauth_device_flow.settings')->set('user_code_length', 6)->set('user_code_charset', 'AB')->save();
+    $generator = new class($this->container->get('config.factory'), $this->container->get('simple_oauth_device_flow.user_code_lookup'), $this->container->get('simple_oauth_device_flow.logger_factory')) extends UserCodeGenerator {
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function generateRawUserCode(): string {
+        throw new \LogicException('Unsafe settings must be rejected before this hook.');
+      }
+
+    };
+    $this->expectException(\UnexpectedValueException::class);
+    $generator->generateUserCode();
+  }
+
+  /**
+   * Tests service issuance validates before calling generator replacements.
+   */
+  public function testLifecycleRejectsUnsafeGeneratorSettings(): void {
+    $this->installDeviceFixtures();
+    $client = $this->createDeviceClient('extension-policy-client');
+    $this->config('simple_oauth_device_flow.settings')->set('user_code_length', 6)->set('user_code_charset', 'AB')->save();
+    $generator = $this->createMock(UserCodeGenerator::class);
+    $generator->expects($this->never())->method('generateUserCode');
+    $repository = $this->container->get('simple_oauth_device_flow.device_code_repository');
+    $service = new DeviceCodeService(
+      $repository, $generator, $this->container->get('simple_oauth_device_flow.settings'),
+      $this->container->get('datetime.time'), $this->container->get('simple_oauth_device_flow.logger_factory'),
+    );
+    try {
+      $service->generateDeviceAuthorization($client);
+      $this->fail('Unsafe settings must stop issuance before any generator replacement.');
+    }
+    catch (\RuntimeException) {
+      $this->assertSame(0, (int) $repository->getStorage()->getQuery()->accessCheck(FALSE)->count()->execute());
+    }
+  }
+
+  /**
+   * Tests malformed subclass output cannot issue a shorter pending code.
+   */
+  public function testGeneratorRejectsMalformedOutput(): void {
+    $this->installDeviceFixtures();
+    $client = $this->createDeviceClient('malformed-output-client');
+    $generator = new class($this->container->get('config.factory'), $this->container->get('simple_oauth_device_flow.user_code_lookup'), $this->container->get('simple_oauth_device_flow.logger_factory')) extends UserCodeGenerator {
+
+      /**
+       * The number of raw generation attempts.
+       */
+      public int $calls = 0;
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function generateRawUserCode(): string {
+        $this->calls++;
+        return 'BCDF';
+      }
+
+    };
+    $repository = $this->container->get('simple_oauth_device_flow.device_code_repository');
+    $service = new DeviceCodeService(
+      $repository, $generator, $this->container->get('simple_oauth_device_flow.settings'),
+      $this->container->get('datetime.time'), $this->container->get('simple_oauth_device_flow.logger_factory'),
+    );
+    try {
+      $service->generateDeviceAuthorization($client);
+      $this->fail('Malformed generator output must not create a pending code.');
+    }
+    catch (\RuntimeException) {
+      $this->assertSame(UserCodeGenerator::MAX_GENERATION_ATTEMPTS, $generator->calls);
+      $this->assertSame(0, (int) $repository->getStorage()->getQuery()->accessCheck(FALSE)->count()->execute());
+    }
   }
 
   /**
@@ -1386,8 +1603,13 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     $entity->setClient($client);
     $this->container->get('request_stack')->push(Request::create('https://example.org/oauth/device'));
     $verification = $this->createMock(DeviceVerificationOperationsInterface::class);
-    $verification->expects($this->exactly(2))->method('getDeviceCodeEntityByUserCode')
-      ->with($data['user_code'])->willReturn($entity);
+    // Each validation checks both exact layouts to detect ambiguity.
+    $candidates = [];
+    $verification->expects($this->exactly(4))->method('getDeviceCodeEntityByUserCode')
+      ->willReturnCallback(static function (string $candidate) use ($entity, $data, &$candidates): ?DeviceCode {
+        $candidates[] = $candidate;
+        return $candidate === $data['user_code'] ? $entity : NULL;
+      });
     $verification->expects($this->exactly(2))->method('isDeviceCodeRevoked')
       ->with($data['device_code'])->willReturn(FALSE);
     $verification->expects($this->once())->method('getDeviceCodeEntityByDeviceCode')
@@ -1418,6 +1640,8 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     $state->setRebuild(FALSE);
     $form_object->validateForm($form, $state);
     $this->assertSame([], $state->getErrors());
+    $raw = str_replace('-', '', $data['user_code']);
+    $this->assertSame([$raw, $data['user_code'], $raw, $data['user_code']], $candidates);
     $form_object->submitForm($form, $state);
     $this->assertSame('simple_oauth_device_flow.device_verification_form', $state->getRedirect()->getRouteName());
     $this->container->get('request_stack')->pop();
@@ -1456,7 +1680,7 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     $this->installConfig(['simple_oauth_device_flow']);
     $repository = $this->createMock(DeviceVerificationRepositoryInterface::class);
     $this->assertInstanceOf(DeviceCodeRepositoryInterface::class, $repository);
-    $repository->expects($this->once())->method('getDeviceCodeEntityByUserCode')->willReturn(NULL);
+    $repository->expects($this->exactly(2))->method('getDeviceCodeEntityByUserCode')->willReturn(NULL);
     $form_object = new DeviceVerificationForm(
       $repository, $this->container->get('simple_oauth_device_flow.device_code_service'),
       $this->container->get('simple_oauth_device_flow.user_code_generator'),
@@ -1946,6 +2170,463 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     $storage = $this->container->get('entity_type.manager')->getStorage('user');
     foreach ([7, 8] as $id) {
       $storage->create(['uid' => $id, 'name' => 'device-user-' . $id, 'status' => 1])->save();
+    }
+  }
+
+  /**
+   * Tests the same issuance policy through schema, raw storage and overrides.
+   *
+   * @param array $changes
+   *   Complete changes to packaged settings.
+   * @param bool $valid
+   *   Whether issuance is permitted.
+   *
+   * @dataProvider generationPolicyProvider
+   */
+  #[DataProvider('generationPolicyProvider')]
+  public function testGenerationPolicyBoundaries(array $changes, bool $valid): void {
+    $this->installDeviceFixtures();
+    $client = $this->createDeviceClient('policy-client');
+    $name = 'simple_oauth_device_flow.settings';
+    $defaults = $this->config($name)->getRawData();
+    $data = $changes + $defaults;
+    $typed = $this->container->get('config.typed')->createFromNameAndData($name, $data);
+    $this->assertSame($valid, $typed->validate()->count() === 0, 'Typed schema enforces the issuance policy.');
+    $storage = $this->container->get('config.storage');
+    $storage->write($name, $data);
+    $factory = $this->container->get('config.factory');
+    $factory->reset($name);
+    $this->assertIssuancePolicy($client, $valid);
+    $this->assertSame($data, $storage->read($name), 'Runtime validation never rewrites configuration.');
+    // Actual settings.php-style overrides must pass the same runtime boundary.
+    $storage->write($name, $defaults);
+    $overrides = $GLOBALS['config'] ?? [];
+    $GLOBALS['config'][$name] = $changes;
+    try {
+      $factory->reset($name);
+      $this->assertIssuancePolicy($client, $valid);
+      $this->assertSame($defaults, $storage->read($name));
+    }
+    finally {
+      $GLOBALS['config'] = $overrides;
+      $factory->reset($name);
+    }
+  }
+
+  /**
+   * Provides exact policy boundaries and malformed effective settings.
+   *
+   * @return array<string, array{array, bool}>
+   *   Settings changes and expected issuance decision.
+   */
+  public static function generationPolicyProvider(): array {
+    $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    return [
+      'packaged default strength' => [[], TRUE],
+      'tiny space' => [['user_code_length' => 6, 'user_code_charset' => 'AB'], FALSE],
+      'tiny budget still needs floor' => [
+        [
+          'user_code_length' => 6,
+          'user_code_charset' => 'AB',
+          'device_code_lifetime' => 1,
+          'max_authorization_attempts' => 1,
+        ],
+        FALSE,
+      ],
+      'sufficient nondefault' => [['user_code_length' => 11, 'user_code_charset' => '0123456789'], TRUE],
+      'exact budget' => [
+        [
+          'user_code_charset' => $alphabet,
+          'max_authorization_attempts' => 256,
+          'device_code_lifetime' => 3600,
+        ],
+        TRUE,
+      ],
+      'one attempt beyond budget' => [['user_code_charset' => $alphabet, 'max_authorization_attempts' => 257], FALSE],
+      'second window' => [
+        [
+          'user_code_charset' => $alphabet,
+          'max_authorization_attempts' => 128,
+          'device_code_lifetime' => 3601,
+        ],
+        TRUE,
+      ],
+      'window rounding' => [
+        [
+          'user_code_charset' => $alphabet,
+          'max_authorization_attempts' => 256,
+          'device_code_lifetime' => 3601,
+        ],
+        FALSE,
+      ],
+      'default five attempts' => [['max_authorization_attempts' => 5], TRUE],
+      'default six attempts' => [['max_authorization_attempts' => 6], FALSE],
+      'large product' => [['max_authorization_attempts' => PHP_INT_MAX, 'device_code_lifetime' => PHP_INT_MAX], FALSE],
+      'long lifetime' => [['device_code_lifetime' => 86400], FALSE],
+      'zero lifetime' => [['device_code_lifetime' => 0], FALSE],
+      'negative attempts' => [['max_authorization_attempts' => -1], FALSE],
+      'zero attempts' => [['max_authorization_attempts' => 0], FALSE],
+      'string lifetime' => [['device_code_lifetime' => '1800'], FALSE],
+      'null lifetime' => [['device_code_lifetime' => NULL], FALSE],
+      'array lifetime' => [['device_code_lifetime' => []], FALSE],
+      'boolean attempts' => [['max_authorization_attempts' => TRUE], FALSE],
+      'fractional length' => [['user_code_length' => 8.5], FALSE],
+      'length bounds' => [['user_code_length' => 13], FALSE],
+      'duplicate alphabet' => [['user_code_charset' => 'BCDFGHJKLMNPQRSTVWXZB'], FALSE],
+      'lowercase alphabet' => [['user_code_charset' => 'abcdefghijklmnopqrstuvwxyz'], FALSE],
+      'array alphabet' => [['user_code_charset' => []], FALSE],
+      'oversized alphabet' => [['user_code_charset' => str_repeat('A', 10000)], FALSE],
+      'empty charset legacy fallback' => [['user_code_charset' => ''], TRUE],
+      'legacy excludes all fallback' => [
+        [
+          'user_code_charset' => '',
+          'user_code_excluded_chars' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+        ],
+        TRUE,
+      ],
+      'legacy weak exclusion' => [
+        [
+          'user_code_charset' => '',
+          'user_code_excluded_chars' => 'CDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+        ],
+        FALSE,
+      ],
+      'malformed exclusion' => [['user_code_charset' => '', 'user_code_excluded_chars' => []], FALSE],
+    ];
+  }
+
+  /**
+   * Asserts generator and service enforcement without partial persistence.
+   *
+   * @param \League\OAuth2\Server\Entities\ClientEntityInterface $client
+   *   The registered client.
+   * @param bool $valid
+   *   Whether generation is allowed.
+   */
+  private function assertIssuancePolicy(ClientEntityInterface $client, bool $valid): void {
+    $factory = $this->container->get('config.factory');
+    $repository = $this->container->get('simple_oauth_device_flow.device_code_repository');
+    $logger = $this->container->get('simple_oauth_device_flow.logger_factory');
+    // Exercise the original three-argument constructor and normal DI.
+    $generators = [
+      $this->container->get('simple_oauth_device_flow.user_code_generator'),
+      new UserCodeGenerator($factory, $repository, $logger),
+    ];
+    foreach ($generators as $generator) {
+      $rejected = FALSE;
+      try {
+        $code = $generator->generateUserCode();
+        $this->assertMatchesRegularExpression('/^[A-Z0-9]+(?:-[A-Z0-9]+)?$/D', $code);
+      }
+      catch (\UnexpectedValueException) {
+        $rejected = TRUE;
+      }
+      $this->assertSame(!$valid, $rejected);
+    }
+    $services = [
+      $this->container->get('simple_oauth_device_flow.device_code_service'),
+      new DeviceCodeService($repository, $generators[1], new DeviceFlowSettingsService($factory), $this->container->get('datetime.time'), $logger),
+    ];
+    foreach ($services as $service) {
+      $before = (int) $repository->getStorage()->getQuery()->accessCheck(FALSE)->count()->execute();
+      $rejected = FALSE;
+      try {
+        $service->generateDeviceAuthorization($client);
+      }
+      catch (\RuntimeException) {
+        $rejected = TRUE;
+      }
+      $this->assertSame(!$valid, $rejected);
+      $after = (int) $repository->getStorage()->getQuery()->accessCheck(FALSE)->count()->execute();
+      $this->assertSame($before + ($valid ? 1 : 0), $after);
+    }
+  }
+
+  /**
+   * Tests invalid raw settings stop the actual endpoint before persistence.
+   */
+  public function testUnsafeIssuanceNeverPersists(): void {
+    $this->installDeviceFixtures();
+    $this->createDeviceClient('unsafe-policy-client');
+    $name = 'simple_oauth_device_flow.settings';
+    $active = $this->container->get('config.storage');
+    $defaults = $active->read($name);
+    $weak = ['user_code_length' => 6, 'user_code_charset' => 'AB'];
+    $active->write($name, $weak + $defaults);
+    $factory = $this->container->get('config.factory');
+    $factory->reset($name);
+    $generator = $this->container->get('simple_oauth_device_flow.user_code_generator');
+    $this->assertTrue($generator->validateCodeFormat('AAAAAA'), 'Context-free format validation retains its original contract.');
+    $request = Request::create('https://example.org/oauth/device_authorization', 'POST', ['client_id' => 'unsafe-policy-client']);
+    $response = DeviceAuthorizationController::create($this->container)->authorize($request);
+    $this->assertSame(500, $response->getStatusCode());
+    $this->assertSame('server_error', json_decode($response->getContent(), TRUE)['error']);
+    $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_device_code');
+    $this->assertSame(0, (int) $storage->getQuery()->accessCheck(FALSE)->count()->execute());
+    // Overrides have the same endpoint behavior, with valid active defaults.
+    $active->write($name, $defaults);
+    $overrides = $GLOBALS['config'] ?? [];
+    $GLOBALS['config'][$name] = $weak;
+    try {
+      $factory->reset($name);
+      $response = DeviceAuthorizationController::create($this->container)->authorize($request);
+      $this->assertSame(500, $response->getStatusCode());
+      $this->assertSame(0, (int) $storage->getQuery()->accessCheck(FALSE)->count()->execute());
+    }
+    finally {
+      $GLOBALS['config'] = $overrides;
+      $factory->reset($name);
+    }
+  }
+
+  /**
+   * Tests the real settings form rejects cross-field weak issuance settings.
+   */
+  public function testGenerationSettingsFormPolicy(): void {
+    $this->installConfig(['simple_oauth_device_flow']);
+    $initial = $this->config('simple_oauth_device_flow.settings')->getRawData();
+    $values = $initial + ['verification_uri_complete_enabled' => TRUE];
+    $values['user_code_charset'] = 'AB';
+    $values['user_code_length'] = 6;
+    $state = (new FormState())->setValues($values);
+    $this->container->get('form_builder')->submitForm(DeviceFlowSettingsForm::class, $state);
+    $this->assertArrayHasKey('user_code_charset', $state->getErrors());
+    $this->assertSame($initial, $this->config('simple_oauth_device_flow.settings')->getRawData());
+    $state->clearErrors();
+    $values['user_code_charset'] = '0123456789';
+    $values['user_code_length'] = 11;
+    $state = (new FormState())->setValues($values);
+    $this->container->get('form_builder')->submitForm(DeviceFlowSettingsForm::class, $state);
+    $this->assertSame([], $state->getErrors());
+    $this->assertSame(11, $this->config('simple_oauth_device_flow.settings')->get('user_code_length'));
+  }
+
+  /**
+   * Tests full config imports validate the incoming snapshot, not old settings.
+   */
+  public function testGenerationPolicyFullImport(): void {
+    $this->installConfig(['simple_oauth_device_flow']);
+    $this->config('system.site')->set('uuid', 'fa72695c-c46d-4bee-99b6-2593ab36d6de')->save();
+    $this->config('core.extension')->set('module', array_fill_keys(array_keys($this->container->get('module_handler')->getModuleList()), 0))->set('theme', [])->save();
+    $name = 'simple_oauth_device_flow.settings';
+    $active = $this->container->get('config.storage');
+    $before = $active->read($name);
+    foreach ([
+      ['user_code_length' => 6, 'user_code_charset' => 'AB'],
+      ['device_code_lifetime' => PHP_INT_MAX, 'max_authorization_attempts' => PHP_INT_MAX],
+      ['user_code_charset' => 'ABAB'],
+      ['device_code_lifetime' => 0],
+      ['device_code_lifetime' => []],
+      ['max_authorization_attempts' => TRUE],
+      ['user_code_charset' => []],
+      [
+        'user_code_length' => 11,
+        'user_code_charset' => '0123456789',
+        'device_code_lifetime' => 7200,
+        'max_authorization_attempts' => 10,
+      ],
+      [],
+    ] as $changes) {
+      if ($changes === []) {
+        // Incoming absence defaults must not inherit unsafe old active values.
+        $active->write($name, ['max_authorization_attempts' => PHP_INT_MAX, 'user_code_charset' => 'AB'] + $before);
+      }
+      $source = new MemoryStorage();
+      foreach ($active->readMultiple($active->listAll()) as $key => $data) {
+        $source->write($key, $data);
+      }
+      $source->write($name, $changes + $before);
+      $comparer = new StorageComparer($source, $active);
+      $importer = new ConfigImporter(
+        $comparer->createChangelist(), $this->container->get('event_dispatcher'),
+        $this->container->get('config.manager'), $this->container->get('lock.persistent'),
+        $this->container->get('config.typed'), $this->container->get('module_handler'),
+        $this->container->get('module_installer'), $this->container->get('theme_handler'),
+        $this->container->get('string_translation'), $this->container->get('extension.list.module'),
+        $this->container->get('extension.list.theme'),
+      );
+      $valid = $changes === [] || ($changes['user_code_length'] ?? 0) === 11;
+      try {
+        $importer->import();
+        $this->assertTrue($valid, 'Unsafe incoming settings must stop the full import.');
+      }
+      catch (ConfigImporterException $exception) {
+        $this->assertFalse($valid);
+        $this->assertStringContainsString('Invalid device code generation settings', $exception->getMessage());
+        $this->assertSame($before, $active->read($name));
+      }
+      if ($valid) {
+        $this->assertEquals($changes + $before, $active->read($name));
+      }
+    }
+  }
+
+  /**
+   * Tests raw scope shape validation and precedence on both constructors.
+   */
+  public function testScopeParameterShapesAndPrecedence(): void {
+    $this->installDeviceFixtures();
+    $this->createDeviceClient('scope-shape-client');
+    $scope = $this->container->get('entity_type.manager')->getStorage('oauth2_scope')->create([
+      'name' => 'shape:read',
+      'description' => 'Read',
+    ]);
+    $scope->save();
+    $controllers = [
+      DeviceAuthorizationController::create($this->container),
+      new DeviceAuthorizationController(
+        $this->container->get('psr7.http_message_factory'),
+        $this->container->get('simple_oauth.repositories.client'),
+        $this->container->get('simple_oauth_device_flow.device_code_service'),
+        $this->container->get('logger.channel.simple_oauth_device_flow'),
+        $this->container->get('config.factory'), $this->container->get('path.validator'),
+      ),
+    ];
+    $storage = $this->container->get('entity_type.manager')->getStorage('oauth2_device_code');
+    foreach ($controllers as $controller) {
+      foreach (['query', 'request', 'attributes'] as $bag) {
+        foreach ([[], ['shape:read'], new \stdClass(), NULL, 1, 1.5, FALSE] as $invalid) {
+          $request = Request::create('https://example.org/oauth/device_authorization', 'POST', ['client_id' => 'scope-shape-client']);
+          if ($bag === 'attributes') {
+            $request->attributes->set('scope', $invalid);
+          }
+          else {
+            // Internal callers can construct raw bags containing object values.
+            $request->{$bag} = new InputBag(['scope' => $invalid] + $request->{$bag}->all());
+          }
+          $before = (int) $storage->getQuery()->accessCheck(FALSE)->count()->execute();
+          $response = $controller->authorize($request);
+          $this->assertSame(400, $response->getStatusCode(), $bag . ' must reject nonstring scope.');
+          $this->assertSame('invalid_request', json_decode($response->getContent(), TRUE)['error']);
+          $this->assertSame($before, (int) $storage->getQuery()->accessCheck(FALSE)->count()->execute());
+        }
+      }
+      foreach ([['scope' => 'shape:read'], ['scope' => ''], []] as $highest) {
+        $request = Request::create('https://example.org/oauth/device_authorization', 'POST', ['client_id' => 'scope-shape-client']);
+        $request->attributes->add($highest);
+        if ($highest !== []) {
+          $request->query->set('scope', ['bad']);
+          $request->request->set('scope', ['bad']);
+        }
+        $response = $controller->authorize($request);
+        $this->assertSame(200, $response->getStatusCode());
+        $data = json_decode($response->getContent(), TRUE);
+        $entity = $storage->load($data['device_code']);
+        $this->assertCount(($highest['scope'] ?? '') === '' ? 0 : 1, $entity->getScopes());
+      }
+      $request = Request::create('https://example.org/oauth/device_authorization', 'POST', [
+        'client_id' => 'scope-shape-client',
+        'scope' => ['bad'],
+      ]);
+      $request->query->set('scope', 'shape:read');
+      $this->assertSame(200, $controller->authorize($request)->getStatusCode());
+    }
+  }
+
+  /**
+   * Tests bounded pending lookup across policy changes and ambiguous layouts.
+   */
+  public function testPendingLookupIgnoresGenerationPolicy(): void {
+    $this->installDeviceFixtures();
+    $client = $this->createDeviceClient('continuity-client');
+    $service = $this->container->get('simple_oauth_device_flow.device_code_service');
+    $issued = $service->generateDeviceAuthorization($client);
+    $repository = $this->container->get('simple_oauth_device_flow.device_code_repository');
+    $this->container->get('current_user')->setAccount(new UserSession(['uid' => 7]));
+    $form = [];
+    $config = $this->config('simple_oauth_device_flow.settings');
+    foreach ([
+      [
+        'user_code_length' => 11,
+        'user_code_charset' => '0123456789',
+        'user_code_format' => 'XXXXXXXXXXX',
+        'device_code_lifetime' => 7200,
+        'max_authorization_attempts' => 10,
+      ],
+      [
+        'user_code_length' => 6,
+        'user_code_charset' => 'AB',
+        'device_code_lifetime' => -1,
+        'max_authorization_attempts' => [],
+      ],
+    ] as $changes) {
+      foreach ($changes as $key => $value) {
+        $config->set($key, $value);
+      }
+      // Raw storage avoids schema coercion of the deliberately malformed limit.
+      $this->container->get('config.storage')->write('simple_oauth_device_flow.settings', $config->getRawData());
+      $this->container->get('config.factory')->reset('simple_oauth_device_flow.settings');
+      foreach ([
+        $issued['user_code'],
+        strtolower(str_replace('-', '', $issued['user_code'])),
+        str_replace('-', '/', $issued['user_code']),
+      ] as $input) {
+        $state = (new FormState())->setValue('user_code', $input);
+        DeviceVerificationForm::create($this->container)->validateForm($form, $state);
+        $this->assertSame([], $state->getErrors());
+        $this->assertSame($issued['device_code'], $state->getTemporaryValue('device_code_entity')->id());
+      }
+    }
+    $storage = $repository->getStorage();
+    $original = $storage->load($issued['device_code']);
+    $raw = str_replace('-', '', $original->getUserCode());
+    $duplicate = $original->createDuplicate();
+    $duplicate->setIdentifier('ambiguous-layout');
+    $duplicate->setUserCode($raw);
+    $duplicate->save();
+    $state = (new FormState())->setValue('user_code', $raw);
+    DeviceVerificationForm::create($this->container)->validateForm($form, $state);
+    $this->assertArrayHasKey('user_code', $state->getErrors());
+    $state->clearErrors();
+    $duplicate->delete();
+    // A historic raw code remains authoritative, with a bounded dash variant.
+    $original->setUserCode($raw);
+    $original->save();
+    $state = (new FormState())->setValue('user_code', strtolower($issued['user_code']));
+    DeviceVerificationForm::create($this->container)->validateForm($form, $state);
+    $this->assertSame([], $state->getErrors());
+    $this->assertSame($issued['device_code'], $state->getTemporaryValue('device_code_entity')->id());
+    foreach (['ABABAB', str_repeat('Z', 32)] as $historic_code) {
+      $historic = $original->createDuplicate();
+      $historic->setIdentifier('historic-' . strlen($historic_code));
+      $historic->setUserCode($historic_code);
+      $historic->save();
+      $state = (new FormState())->setValue('user_code', strtolower($historic_code));
+      DeviceVerificationForm::create($this->container)->validateForm($form, $state);
+      $this->assertSame([], $state->getErrors());
+      $this->assertSame($historic->id(), $state->getTemporaryValue('device_code_entity')->id());
+    }
+  }
+
+  /**
+   * Tests malformed or huge raw verification input never reaches storage.
+   */
+  public function testVerificationInputBoundsBeforeLookup(): void {
+    $this->installDeviceFixtures();
+    $lookup = $this->createMock(DeviceVerificationOperationsInterface::class);
+    $lookup->expects($this->never())->method('getDeviceCodeEntityByUserCode');
+    $form_object = new DeviceVerificationForm(
+      $lookup, $this->container->get('simple_oauth_device_flow.device_code_service'),
+      $this->container->get('simple_oauth_device_flow.user_code_generator'),
+      new UserSession(['uid' => 7]), $this->createMock(LoggerInterface::class),
+      $this->container->get('flood'), $this->container->get('simple_oauth_device_flow.settings'),
+    );
+    foreach ([
+      str_repeat(' ', 100000) . 'BCDF-GHJK',
+      str_repeat('A', 33),
+      str_repeat("\u{1F539}", 33),
+      '',
+      '---',
+      '   ',
+      [],
+      NULL,
+    ] as $input) {
+      $this->container->get('flood')->clear('simple_oauth_device_flow.verification', '7');
+      $state = (new FormState())->setValue('user_code', $input);
+      $form = [];
+      $form_object->validateForm($form, $state);
+      $this->assertArrayHasKey('user_code', $state->getErrors());
+      $state->clearErrors();
     }
   }
 

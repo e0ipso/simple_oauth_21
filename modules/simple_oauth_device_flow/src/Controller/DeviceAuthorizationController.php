@@ -181,7 +181,12 @@ final class DeviceAuthorizationController extends ControllerBase {
       }
 
       // Extract optional scope parameter.
-      $scope = $request->attributes->get('scope', $request->query->get('scope', $request->request->get('scope', '')));
+      // Select from raw bags by precedence, without scalar getters.
+      $scope_parameters = $request->attributes->all() + $request->query->all() + $request->request->all();
+      $scope = array_key_exists('scope', $scope_parameters) ? $scope_parameters['scope'] : '';
+      if (!is_string($scope)) {
+        throw OAuthServerException::invalidRequest('scope');
+      }
 
       // Reject invalid imported settings before issuing device credentials.
       $verification_uri = $this->deviceFlowSettings->getAbsoluteVerificationUri();
