@@ -112,6 +112,27 @@ class ServerMetadataService implements CacheableDependencyInterface {
     // Remove empty optional fields per RFC 8414.
     $metadata = $this->filterEmptyFields($metadata);
 
+    // Project known collections as JSON arrays without changing their sources.
+    foreach ([
+      'response_types_supported',
+      'response_modes_supported',
+      'grant_types_supported',
+      'scopes_supported',
+      'token_endpoint_auth_methods_supported',
+      'token_endpoint_auth_signing_alg_values_supported',
+      'code_challenge_methods_supported',
+      'claims_supported',
+      'subject_types_supported',
+      'id_token_signing_alg_values_supported',
+      'ui_locales_supported',
+      'additional_claims_supported',
+      'additional_signing_algorithms',
+    ] as $field) {
+      if (isset($metadata[$field]) && is_array($metadata[$field])) {
+        $metadata[$field] = array_values($metadata[$field]);
+      }
+    }
+
     $this->generationCacheability = CacheableMetadata::createFromObject($config)
       ->addCacheableDependency($this->scopeDiscovery)
       ->addCacheableDependency($this->claimsAuthDiscovery);

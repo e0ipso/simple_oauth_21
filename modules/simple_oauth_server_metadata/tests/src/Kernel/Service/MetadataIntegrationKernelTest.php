@@ -26,6 +26,7 @@ use Drupal\simple_oauth_server_metadata\Event\ResourceMetadataEvent;
 use Drupal\simple_oauth_server_metadata\Event\ResourceMetadataEvents;
 use Drupal\simple_oauth_server_metadata\Form\ServerMetadataSettingsForm;
 use Drupal\simple_oauth_server_metadata\Service\ClaimsAuthDiscoveryService;
+use Drupal\simple_oauth_server_metadata\Service\GrantTypeDiscoveryService;
 use Drupal\simple_oauth_server_metadata\Service\ResourceMetadataService;
 use Drupal\simple_oauth_server_metadata\Service\ScopeDiscoveryService;
 use Drupal\user\Entity\Role;
@@ -36,6 +37,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
 
 /**
  * Tests discovery invalidation and token management with real Drupal services.
@@ -112,6 +114,10 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
           foreach (['service_documentation', 'resource_documentation'] as $field) {
             $values['simple_oauth_server_metadata.settings'][$field] .= $variant;
           }
+          $values['simple_oauth_server_metadata.settings']['ui_locales_supported'] = [
+            7 => $variant === 'first' ? 'fr' : 'de',
+            3 => 'en',
+          ];
         }
         return $values;
       }
@@ -169,6 +175,9 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
         'simple_oauth_server_metadata.settings' => [
           'service_documentation' => 'https://docs.example/' . $generation,
           'resource_documentation' => 'https://docs.example/' . $generation,
+          'ui_locales_supported' => [2 => 'fr', 5 => 'en'],
+          'additional_claims_supported' => [2 => '0', 5 => 'custom'],
+          'additional_signing_algorithms' => [2 => 'ES256', 5 => 'RS384'],
         ],
         'simple_oauth.settings' => ['disable_openid_connect' => $generation === 1],
         'simple_oauth_pkce.settings' => [
@@ -178,6 +187,9 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
         ],
       };
       $factory->reset();
+      $source = serialize($factory->get($config_name)->getRawData());
+      $stored_source = serialize($this->container->get('config.storage')->read($config_name));
+      $override_source = serialize($override->values);
       $claims->getClaimsSupported();
       $claims->getCodeChallengeMethodsSupported();
       if ($config_name !== 'simple_oauth_server_metadata.settings') {
@@ -210,6 +222,19 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
         }
         if ($config_name === 'simple_oauth_server_metadata.settings') {
           $this->assertSame('https://docs.example/' . $generation, $metadata[$name === 'resource' ? 'resource_documentation' : 'service_documentation']);
+          if ($name !== 'resource') {
+            $decoded = json_decode($response->getContent());
+            $this->assertSame(['fr', 'en'], $decoded->ui_locales_supported);
+            $this->assertSame([2 => 'fr', 5 => 'en'], $factory->get($config_name)->get('ui_locales_supported'));
+            if ($name === 'server') {
+              $this->assertSame(['0', 'custom'], $decoded->additional_claims_supported);
+              $this->assertSame(['ES256', 'RS384'], $decoded->additional_signing_algorithms);
+            }
+            else {
+              $this->assertContains('0', $decoded->claims_supported);
+              $this->assertSame(['RS256', 'ES256', 'RS384'], $decoded->id_token_signing_alg_values_supported);
+            }
+          }
         }
         elseif ($config_name === 'simple_oauth_pkce.settings') {
           $this->assertSame($generation === 1 ? ['plain'] : ['S256'], $metadata['code_challenge_methods_supported']);
@@ -227,6 +252,9 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
           $this->assertContains('extension:resource', $cacheability->getCacheTags());
         }
       }
+      $this->assertSame($source, serialize($factory->get($config_name)->getRawData()));
+      $this->assertSame($stored_source, serialize($this->container->get('config.storage')->read($config_name)));
+      $this->assertSame($override_source, serialize($override->values));
     }
     if ($config_name === 'simple_oauth_server_metadata.settings') {
       $override->dependencies[$config_name] = (new CacheableMetadata())->setCacheContexts(['url.query_args:variant']);
@@ -242,6 +270,9 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
             $metadata = json_decode($response->getContent(), TRUE);
             $this->assertSame('https://docs.example/context/' . $variant, $metadata['resource_documentation'] ?? $metadata['service_documentation']);
             $this->assertContains('url.query_args:variant', $response->getCacheableMetadata()->getCacheContexts());
+            if (!isset($metadata['resource'])) {
+              $this->assertSame([$variant === 'first' ? 'fr' : 'de', 'en'], json_decode($response->getContent())->ui_locales_supported);
+            }
           }
           $keys[] = $this->container->get('cache_contexts_manager')->convertTokensToKeys($response->getCacheableMetadata()->getCacheContexts())->getKeys();
         }
@@ -344,6 +375,249 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
       $this->assertArrayHasKey(array_key_first($invalid), $state->getErrors());
       $this->assertSame(['code'], $this->config('simple_oauth_server_metadata.settings')->get('response_types_supported'));
       $this->assertSame(['query'], $this->config('simple_oauth_server_metadata.settings')->get('response_modes_supported'));
+    }
+  }
+
+  /**
+   * Tests textarea parsing through the real form build, validation and save.
+   */
+  public function testTextareaListSubmission(): void {
+    $builder = $this->container->get('form_builder');
+    $state = (new FormState())->setValues([
+      'ui_locales_supported' => " en \n\n fr \n \n en ",
+      'additional_claims_supported' => " custom \n\n 0 \n \n custom ",
+      'additional_signing_algorithms' => " ES256 \n\n RS384 \n \n ES256 ",
+    ]);
+    $builder->submitForm(ServerMetadataSettingsForm::class, $state);
+    $this->assertSame([], $state->getErrors());
+    $expected = [
+      'ui_locales_supported' => ['en', 'fr', 'en'],
+      'additional_claims_supported' => ['custom', '0', 'custom'],
+      'additional_signing_algorithms' => ['ES256', 'RS384', 'ES256'],
+    ];
+    $config = $this->config('simple_oauth_server_metadata.settings');
+    $form = $builder->getForm(ServerMetadataSettingsForm::class);
+    foreach ($expected as $field => $values) {
+      $this->assertSame($values, $state->getValue($field));
+      $this->assertSame($values, $config->get($field));
+      $this->assertSame(implode("\n", $values), $form['capabilities'][$field]['#value']);
+    }
+    $server = json_decode(ServerMetadataController::create($this->container)->__invoke()->getContent());
+    $openid = json_decode(OpenIdConfigurationController::create($this->container)->configuration()->getContent());
+    $this->assertSame($expected['ui_locales_supported'], $server->ui_locales_supported);
+    $this->assertSame($expected['ui_locales_supported'], $openid->ui_locales_supported);
+    $this->assertSame($expected['additional_claims_supported'], $server->additional_claims_supported);
+    $this->assertSame(1, count(array_keys($openid->claims_supported, 'custom', TRUE)));
+    $this->assertContains('0', $openid->claims_supported);
+    $this->assertSame(['RS256', 'ES256', 'RS384', 'ES256'], $openid->id_token_signing_alg_values_supported);
+  }
+
+  /**
+   * Tests a single zero claim survives actual form validation and submission.
+   */
+  public function testTextareaZeroClaimSubmission(): void {
+    $state = (new FormState())->setValues(['additional_claims_supported' => '0']);
+    $this->container->get('form_builder')->submitForm(ServerMetadataSettingsForm::class, $state);
+    $this->assertSame([], $state->getErrors());
+    $this->assertSame(['0'], $state->getValue('additional_claims_supported'));
+    $this->assertSame(['0'], $this->config('simple_oauth_server_metadata.settings')->get('additional_claims_supported'));
+  }
+
+  /**
+   * Tests omitted external values and explicitly empty textareas separately.
+   */
+  public function testTextareaPartialAndEmptySubmissions(): void {
+    $values = [
+      'ui_locales_supported' => ['fr', 'en'],
+      'additional_claims_supported' => ['custom', '0'],
+      'additional_signing_algorithms' => ['ES256', 'RS384'],
+    ];
+    $config = $this->config('simple_oauth_server_metadata.settings');
+    foreach ($values as $field => $value) {
+      $config->set($field, $value);
+    }
+    $config->set('response_types_supported', ['id_token'])->save();
+    $builder = $this->container->get('form_builder');
+    $form = $builder->getForm(ServerMetadataSettingsForm::class);
+    $object = ServerMetadataSettingsForm::create($this->container);
+    // External callers may validate and submit only the provided values.
+    $state = (new FormState())->setValues([
+      'service_documentation' => 'https://updated.example/docs',
+      'response_types_supported' => NULL,
+    ]);
+    $object->validateForm($form, $state);
+    $this->assertSame([], $state->getErrors());
+    foreach ($values as $field => $value) {
+      $this->assertArrayNotHasKey($field, $state->getValues());
+    }
+    $object->submitForm($form, $state);
+    $config = $this->config($config->getName());
+    foreach ($values as $field => $value) {
+      $this->assertSame($value, $config->get($field));
+    }
+    $this->assertSame(['id_token'], $config->get('response_types_supported'));
+    $this->assertSame('https://updated.example/docs', $config->get('service_documentation'));
+
+    $state = (new FormState())->setValues(['service_documentation' => 'https://partial.example/docs']);
+    $builder->submitForm(ServerMetadataSettingsForm::class, $state);
+    $this->assertSame([], $state->getErrors());
+    foreach ($values as $field => $value) {
+      $this->assertSame($value, $this->config($config->getName())->get($field));
+    }
+    $state = (new FormState())->setValues([
+      'ui_locales_supported' => '',
+      'additional_claims_supported' => " \n\n ",
+      'additional_signing_algorithms' => '',
+    ]);
+    $builder->submitForm(ServerMetadataSettingsForm::class, $state);
+    $this->assertSame([], $state->getErrors());
+    foreach ($values as $field => $value) {
+      $this->assertSame([], $state->getValue($field));
+      $this->assertNull($this->config($config->getName())->get($field));
+    }
+  }
+
+  /**
+   * Tests locale and signing algorithm validation still rejects invalid input.
+   *
+   * @param string $field
+   *   The textarea field to submit.
+   * @param string $value
+   *   The invalid textarea contents.
+   */
+  #[DataProvider('invalidTextareaProvider')]
+  public function testTextareaValidation(string $field, string $value): void {
+    $storage = $this->container->get('config.storage');
+    $before = serialize($storage->read('simple_oauth_server_metadata.settings'));
+    $state = (new FormState())->setValues([$field => $value]);
+    $this->container->get('form_builder')->submitForm(ServerMetadataSettingsForm::class, $state);
+    $this->assertArrayHasKey($field, $state->getErrors());
+    $this->assertSame($before, serialize($storage->read('simple_oauth_server_metadata.settings')));
+  }
+
+  /**
+   * Lists invalid locales and algorithms, including nonblank zero strings.
+   *
+   * @return array<string, array{string, string}>
+   *   Invalid textarea submissions.
+   */
+  public static function invalidTextareaProvider(): array {
+    return [
+      'locale syntax' => ['ui_locales_supported', "en\n\nen_US"],
+      'locale zero' => ['ui_locales_supported', '0'],
+      'algorithm syntax' => ['additional_signing_algorithms', "RS256\n\nnone"],
+      'algorithm zero' => ['additional_signing_algorithms', '0'],
+    ];
+  }
+
+  /**
+   * Tests saved sparse lists project as JSON arrays without changing storage.
+   */
+  public function testSparseConfiguredLists(): void {
+    $values = [
+      'ui_locales_supported' => [2 => 'fr', 5 => 'en', 8 => 'fr'],
+      'additional_claims_supported' => [2 => 'custom', 5 => '0', 8 => 'custom'],
+      'additional_signing_algorithms' => [2 => 'ES256', 5 => 'RS384', 8 => 'ES256'],
+    ];
+    $config = $this->config('simple_oauth_server_metadata.settings');
+    foreach ($values as $field => $value) {
+      $config->set($field, $value);
+    }
+    $config->save();
+    $storage = $this->container->get('config.storage');
+    $before = serialize($storage->read($config->getName()));
+    $factory = $this->container->get('config.factory');
+    $source = serialize($factory->get($config->getName())->getRawData());
+    $server = ServerMetadataController::create($this->container);
+    $openid = OpenIdConfigurationController::create($this->container);
+    for ($generation = 0; $generation < 2; $generation++) {
+      $response = $server();
+      $metadata = json_decode($response->getContent());
+      foreach ($values as $field => $value) {
+        $this->assertSame(array_values($value), $metadata->$field);
+      }
+      $this->assertContains('config:' . $config->getName(), $response->getCacheableMetadata()->getCacheTags());
+      $response = $openid->configuration();
+      $metadata = json_decode($response->getContent());
+      $this->assertSame(['fr', 'en', 'fr'], $metadata->ui_locales_supported);
+      $this->assertSame(['RS256', 'ES256', 'RS384', 'ES256'], $metadata->id_token_signing_alg_values_supported);
+      $this->assertSame(['custom', '0'], array_slice($metadata->claims_supported, -2));
+      $this->assertContains('config:' . $config->getName(), $response->getCacheableMetadata()->getCacheTags());
+      $preview = $this->container->get('simple_oauth_server_metadata.server_metadata')->getServerMetadata([
+        'ui_locales_supported' => [8 => 'de', 3 => 'en'],
+      ]);
+      $this->assertSame(['de', 'en'], $preview['ui_locales_supported']);
+      $this->assertSame($source, serialize($factory->get($config->getName())->getRawData()));
+      $this->assertSame($before, serialize($storage->read($config->getName())));
+    }
+  }
+
+  /**
+   * Tests sparse discovery collaborator results retain list order and contents.
+   */
+  public function testSparseDiscoveryLists(): void {
+    $grant_values = [
+      'getResponseTypesSupported' => ['response_types_supported', [2 => 'code']],
+      'getResponseModesSupported' => ['response_modes_supported', [2 => 'query', 5 => 'fragment', 8 => 'form_post']],
+      'getGrantTypesSupported' => ['grant_types_supported', [2 => 'authorization_code', 5 => 'refresh_token']],
+    ];
+    $claim_values = [
+      'getClaimsSupported' => ['claims_supported', [2 => 'sub', 5 => 'custom']],
+      'getSubjectTypesSupported' => ['subject_types_supported', [2 => 'public']],
+      'getIdTokenSigningAlgValuesSupported' => ['id_token_signing_alg_values_supported', [2 => 'RS256']],
+      'getTokenEndpointAuthMethodsSupported' => [
+        'token_endpoint_auth_methods_supported',
+        [2 => 'client_secret_post', 5 => 'client_secret_basic'],
+      ],
+      'getTokenEndpointAuthSigningAlgValuesSupported' => [
+        'token_endpoint_auth_signing_alg_values_supported',
+        [2 => 'RS256'],
+      ],
+      'getCodeChallengeMethodsSupported' => ['code_challenge_methods_supported', [2 => 'S256', 5 => 'plain']],
+      'getClaimsLocalesSupported' => ['claims_locales_supported', [2 => 'fr', 5 => 'en']],
+    ];
+    $grant = $this->createMock(GrantTypeDiscoveryService::class);
+    foreach ($grant_values as $method => [$field, $value]) {
+      $grant->method($method)->willReturn($value);
+    }
+    $factory = $this->container->get('config.factory');
+    $claims = $this->getMockBuilder(ClaimsAuthDiscoveryService::class)
+      ->setConstructorArgs([$factory])
+      ->onlyMethods(array_keys($claim_values))
+      ->getMock();
+    foreach ($claim_values as $method => [$field, $value]) {
+      $claims->method($method)->willReturn($value);
+    }
+    $scope = $this->createMock(ScopeDiscoveryService::class);
+    $scope->method('getScopesSupported')->willReturn([2 => 'profile', 5 => 'openid', 8 => 'profile']);
+    $scope->method('getCacheTags')->willReturn(['external:scope']);
+    $scope->method('getCacheContexts')->willReturn(['url.query_args:scope']);
+    $scope->method('getCacheMaxAge')->willReturn(120);
+    $this->container->set('simple_oauth_server_metadata.grant_type_discovery', $grant);
+    $this->container->set('simple_oauth_server_metadata.claims_auth_discovery', $claims);
+    $this->container->set('simple_oauth_server_metadata.scope_discovery', $scope);
+    $server = ServerMetadataController::create($this->container);
+    $openid = OpenIdConfigurationController::create($this->container);
+    for ($generation = 0; $generation < 2; $generation++) {
+      foreach (['server' => $server(), 'openid' => $openid->configuration()] as $name => $response) {
+        $metadata = json_decode($response->getContent());
+        foreach ($grant_values + $claim_values as [$field, $value]) {
+          if ($field === 'claims_locales_supported' && $name === 'server') {
+            continue;
+          }
+          if ($field === 'claims_supported' && $name === 'openid') {
+            $this->assertIsArray($metadata->$field);
+            $this->assertSame(array_values($value), array_slice($metadata->$field, 0, 2));
+          }
+          else {
+            $this->assertSame(array_values($value), $metadata->$field);
+          }
+        }
+        $this->assertSame($name === 'server' ? ['profile', 'openid', 'profile'] : ['profile', 'openid'], $metadata->scopes_supported);
+        $this->assertSame(120, $response->getCacheableMetadata()->getCacheMaxAge());
+        $this->assertContains('external:scope', $response->getCacheableMetadata()->getCacheTags());
+        $this->assertContains('url.query_args:scope', $response->getCacheableMetadata()->getCacheContexts());
+      }
     }
   }
 
@@ -623,6 +897,94 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
     $this->assertContains('extension:baseline', $third->getCacheableMetadata()->getCacheTags());
     $this->assertContains('url.site', $third->getCacheableMetadata()->getCacheContexts());
     $this->assertSame(['header', 'body', 'query'], json_decode($third->getContent(), TRUE)['bearer_methods_supported']);
+  }
+
+  /**
+   * Tests event extension values survive filtering in cacheable JSON responses.
+   */
+  public function testResourceExtensionValues(): void {
+    $values = [
+      'custom_false' => FALSE,
+      'custom_zero' => 0,
+      'custom_float_zero' => 0.0,
+      'custom_string_zero' => '0',
+      'custom_true' => TRUE,
+      'custom_number' => 42,
+      'custom_object' => ['enabled' => FALSE, 'count' => 0, 'empty' => NULL, 'items' => [2 => 'a', 5 => 'b']],
+      'custom_empty_object' => new \stdClass(),
+    ];
+    $dispatcher = $this->container->get('event_dispatcher');
+    $calls = 0;
+    $seen = [];
+    $dispatcher->addListener(ResourceMetadataEvents::BUILD, static function (ResourceMetadataEvent $event) use ($values, &$calls): void {
+      $calls++;
+      $event->metadata['authorization_servers'] = [2 => 'https://second.example', 5 => 'https://first.example'];
+      $event->metadata['bearer_methods_supported'] = [2 => 'query', 5 => 'header'];
+      foreach ($values + ['absent_null' => NULL, 'absent_string' => '', 'absent_array' => []] as $field => $value) {
+        $event->addMetadataField($field, $value);
+      }
+      $event->addCacheableDependency((new CacheableMetadata())->setCacheTags(['extension:' . $calls])->setCacheContexts(['url.query_args:extension'])->setCacheMaxAge($calls === 1 ? 0 : 120));
+    }, 100);
+    $dispatcher->addListener(ResourceMetadataEvents::BUILD, static function (ResourceMetadataEvent $event) use (&$seen): void {
+      $seen = $event->metadata;
+    }, -100);
+    $service = new class ($this->container->get('config.factory'), $this->container->get('simple_oauth_server_metadata.endpoint_discovery'), $dispatcher) extends ResourceMetadataService {
+
+      /**
+       * The subscriber-provided metadata received by the protected filter.
+       */
+      public array $beforeFilter = [];
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function filterEmptyFields(array $metadata): array {
+        $this->beforeFilter = $metadata;
+        $metadata = parent::filterEmptyFields($metadata);
+        // Extending filters can also supply known list values.
+        $metadata['bearer_methods_supported'] = [2 => 'query', 5 => 'header'];
+        return $metadata;
+      }
+
+    };
+    $controller = new ResourceMetadataController($service);
+    foreach ([0, 120] as $generation => $max_age) {
+      $response = $controller();
+      $metadata = json_decode($response->getContent());
+      $expected_keys = array_diff(array_keys($seen), ['absent_null', 'absent_string', 'absent_array']);
+      $this->assertSame(array_values($expected_keys), array_keys(get_object_vars($metadata)));
+      foreach ($values as $field => $value) {
+        // JSON preserves numeric zero's meaning, but not its float precision.
+        $this->assertSame(json_encode($value), json_encode($metadata->$field));
+      }
+      $this->assertSame(['https://second.example', 'https://first.example'], $metadata->authorization_servers);
+      $this->assertSame(['query', 'header'], $metadata->bearer_methods_supported);
+      $this->assertSame([2 => 'query', 5 => 'header'], $seen['bearer_methods_supported']);
+      $this->assertSame($seen, $service->beforeFilter);
+      $this->assertSame($max_age, $response->getCacheableMetadata()->getCacheMaxAge());
+      $this->assertContains('extension:' . ($generation + 1), $response->getCacheableMetadata()->getCacheTags());
+      $this->assertNotContains('extension:' . $generation, $response->getCacheableMetadata()->getCacheTags());
+      $this->assertContains('url.query_args:extension', $response->getCacheableMetadata()->getCacheContexts());
+      $this->assertContains('config:simple_oauth_server_metadata.settings', $response->getCacheableMetadata()->getCacheTags());
+    }
+    $this->assertSame(2, $calls);
+  }
+
+  /**
+   * Tests required empty resource fields remain available for validation.
+   */
+  public function testResourceExtensionRequiredFields(): void {
+    $this->container->get('event_dispatcher')->addListener(ResourceMetadataEvents::BUILD, static function (ResourceMetadataEvent $event): void {
+      $event->metadata['resource'] = '';
+      $event->metadata['authorization_servers'] = [];
+    });
+    $service = $this->container->get('simple_oauth_server_metadata.resource_metadata');
+    $metadata = $service->getResourceMetadata();
+    $this->assertSame('', $metadata['resource']);
+    $this->assertSame([], $metadata['authorization_servers']);
+    $this->assertFalse($service->validateMetadata($metadata));
+    $this->expectException(ServiceUnavailableHttpException::class);
+    ResourceMetadataController::create($this->container)->__invoke();
   }
 
   /**
