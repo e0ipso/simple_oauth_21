@@ -7,6 +7,8 @@ namespace Drupal\simple_oauth_client_registration\Service;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Database\Transaction;
 use Drupal\Component\Utility\Crypt;
+use Drupal\Core\Url;
+use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -33,6 +35,46 @@ final class RegistrationTokenService {
    */
   public function startTransaction(): Transaction {
     return $this->database->startTransaction();
+  }
+
+  /**
+   * Prepares first-issuance credentials for an explicit registration response.
+   *
+   * This is a lifecycle operation, including for the legacy normalizer context.
+   * Repeated projection must reuse the returned DTO. Stored hashes cannot be
+   * recovered, and existing records are never rotated or removed here.
+   *
+   * @param string $client_id
+   *   The client identifier.
+   * @param string|null $client_secret
+   *   An optional newly issued secret, never read from storage.
+   *
+   * @return \Drupal\simple_oauth_client_registration\Dto\ClientRegistration
+   *   The prepared credential envelope, suitable for repeatable projection.
+   *
+   * @throws \LogicException
+   *   If a registration record already exists. Supply its original prepared
+   *   credentials instead; its plaintext token cannot be recovered.
+   * @throws \Throwable
+   *   If preparation fails; any token insertion is rolled back.
+   */
+  public function prepareRegistrationResponse(string $client_id, ?string $client_secret = NULL): ClientRegistration {
+    if ($this->hasRegistrationAccessToken($client_id)) {
+      throw new \LogicException('Registration credentials already exist; supply the original prepared response');
+    }
+
+    $transaction = $this->startTransaction();
+    try {
+      $token = $this->generateRegistrationAccessToken($client_id);
+      $uri = Url::fromRoute('simple_oauth_client_registration.manage', [
+        'client_id' => $client_id,
+      ], ['absolute' => TRUE])->toString();
+      return (new ClientRegistration())->withResponseFields($client_id, $client_secret, $token, $uri, time());
+    }
+    catch (\Throwable $e) {
+      $transaction->rollBack();
+      throw $e;
+    }
   }
 
   /**

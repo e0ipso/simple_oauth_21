@@ -10,6 +10,7 @@ use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Form\FormState;
 use Drupal\Core\Form\ConfigTarget;
 use Drupal\Core\Routing\UrlGeneratorInterface;
+use Drupal\Core\Routing\UrlGenerator;
 use Drupal\Core\Session\UserSession;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\simple_oauth\Entity\Oauth2Scope;
@@ -19,6 +20,9 @@ use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
 use Drupal\simple_oauth_client_registration\Form\ClientRegistrationSettingsForm;
 use Drupal\simple_oauth_client_registration\Normalizer\ClientRegistrationNormalizer;
 use Drupal\simple_oauth_client_registration\Service\ClientRegistrationService;
+use Drupal\simple_oauth_client_registration\Service\TokenEndpointAuthMethodResolverInterface;
+use GuzzleHttp\Psr7\ServerRequest;
+use League\OAuth2\Server\Exception\OAuthServerException;
 use Drupal\user\Entity\Role;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
@@ -152,6 +156,212 @@ final class ClientRegistrationLifecycleTest extends KernelTestBase {
     $this->assertSame('response-only', $context['client_secret']);
     $this->assertSame(0, $context['client_secret_expires_at']);
     $this->assertTrue($service->validateRegistrationToken($client_id, $context['registration_access_token']));
+  }
+
+  /**
+   * Tests prepared projection repeats without token writes or scope changes.
+   */
+  public function testPreparedRegistrationProjection(): void {
+    $service = $this->registration();
+    $response = $service->registerClient(new ClientRegistration(redirectUris: ['https://example.org/callback']));
+    $consumer = $this->consumer($response['client_id']);
+    $serializer = $this->container->get('serializer');
+    $prepared = ClientRegistration::fromArray($response);
+    $database = $this->container->get('database');
+    $rows = $database->select('simple_oauth_client_registration_tokens')->fields('simple_oauth_client_registration_tokens')->execute()->fetchAll();
+    $context = [
+      'include_registration_response' => TRUE,
+      'prepared_registration_response' => $prepared,
+    ];
+    $expected = $response;
+    // The serializer preserves its established omission of registered scopes.
+    unset($expected['scope']);
+    for ($i = 0; $i < 3; $i++) {
+      $this->assertEquals($expected, $serializer->normalize($consumer, 'json', $context));
+      $this->assertEquals($expected, $serializer->normalize($consumer, 'json', ['prepared_registration_response' => $prepared]));
+      $this->assertArrayNotHasKey('client_secret', $serializer->normalize($consumer, 'json'));
+      $this->assertEquals($rows, $database->select('simple_oauth_client_registration_tokens')->fields('simple_oauth_client_registration_tokens')->execute()->fetchAll());
+      $this->assertTrue($service->validateRegistrationToken($response['client_id'], $response['registration_access_token']));
+    }
+    // DTO projection itself remains an immutable response snapshot.
+    $this->assertEquals($response, $serializer->normalize($prepared, 'json'));
+  }
+
+  /**
+   * Tests incompatible prepared credentials fail without altering token rows.
+   */
+  public function testInvalidPreparedRegistration(): void {
+    $service = $this->registration();
+    $response = $service->registerClient(new ClientRegistration(redirectUris: ['https://example.org/callback']));
+    $consumer = $this->consumer($response['client_id']);
+    foreach ([
+      ClientRegistration::fromArray(array_replace($response, ['client_id' => 'other-client'])),
+      new ClientRegistration(clientId: $response['client_id']),
+      $response,
+      NULL,
+    ] as $prepared) {
+      try {
+        $this->container->get('serializer')->normalize($consumer, 'json', [
+          'include_registration_response' => TRUE,
+          'prepared_registration_response' => $prepared,
+        ]);
+        $this->fail('Invalid prepared context must be rejected.');
+      }
+      catch (\InvalidArgumentException) {
+        $this->assertTrue($service->validateRegistrationToken($response['client_id'], $response['registration_access_token']));
+      }
+    }
+  }
+
+  /**
+   * Tests legacy first issuance and safe handling of all existing token rows.
+   */
+  public function testLegacyRegistrationIssuance(): void {
+    $service = $this->registration();
+    $consumer = $service->createConsumer(new ClientRegistration(redirectUris: ['https://example.org/callback']));
+    $normalizer = new ClientRegistrationNormalizer(
+      $this->container->get('simple_oauth_client_registration.service.token'),
+      $this->container->get('file_url_generator'),
+    );
+    $database = $this->container->get('database');
+    $normalizer->normalize($consumer);
+    $this->assertSame(0, (int) $database->select('simple_oauth_client_registration_tokens')->countQuery()->execute()->fetchField());
+    $response = $normalizer->normalize($consumer, 'json', [
+      'include_registration_response' => TRUE,
+      'client_secret' => 'newly-issued-secret',
+    ]);
+    $this->assertSame('newly-issued-secret', $response['client_secret']);
+    $this->assertTrue($service->validateRegistrationToken($consumer->getClientId(), $response['registration_access_token']));
+    foreach ([time() + 12345, time() - 12345] as $expiry) {
+      $database->update('simple_oauth_client_registration_tokens')->fields(['expires' => $expiry])->execute();
+      $before = $database->select('simple_oauth_client_registration_tokens')->fields('simple_oauth_client_registration_tokens')->execute()->fetchAll();
+      try {
+        $normalizer->normalize($consumer, 'json', ['include_registration_response' => TRUE]);
+        $this->fail('Legacy normalization must not recover or replace a token.');
+      }
+      catch (\LogicException $e) {
+        $this->assertSame('Registration credentials already exist; supply the original prepared response', $e->getMessage());
+      }
+      $this->assertEquals($before, $database->select('simple_oauth_client_registration_tokens')->fields('simple_oauth_client_registration_tokens')->execute()->fetchAll());
+      // Even an expired prepared response can be projected without cleanup.
+      $normalizer->normalize($consumer, 'json', ['prepared_registration_response' => ClientRegistration::fromArray($response)]);
+      $this->assertEquals($before, $database->select('simple_oauth_client_registration_tokens')->fields('simple_oauth_client_registration_tokens')->execute()->fetchAll());
+    }
+  }
+
+  /**
+   * Tests legacy issuance also rolls back if the pure mapper fails afterward.
+   */
+  public function testLegacyProjectionRollback(): void {
+    $resolver = $this->createMock(TokenEndpointAuthMethodResolverInterface::class);
+    $resolver->method('resolve')->willThrowException(new \RuntimeException('Projection failed'));
+    $this->container->set('simple_oauth_client_registration.auth_method_resolver', $resolver);
+    $consumer = $this->registration()->createConsumer(new ClientRegistration(redirectUris: ['https://example.org/callback']));
+    try {
+      $this->container->get('serializer')->normalize($consumer, 'json', ['include_registration_response' => TRUE]);
+      $this->fail('Projection must fail.');
+    }
+    catch (\RuntimeException $e) {
+      $this->assertSame('Projection failed', $e->getMessage());
+    }
+    $this->assertSame(0, (int) $this->container->get('database')->select('simple_oauth_client_registration_tokens')->countQuery()->execute()->fetchField());
+    $this->assertCount(1, $this->container->get('entity_type.manager')->getStorage('consumer')->loadMultiple());
+  }
+
+  /**
+   * Tests effective methods through the installed client authentication flow.
+   */
+  public function testEffectiveAuthenticationMethods(): void {
+    $service = $this->registration();
+    $serializer = $this->container->get('serializer');
+    foreach ([NULL, 'none', 'client_secret_basic', 'client_secret_post', 'client_secret_jwt', 'private_key_jwt'] as $requested) {
+      $input = ['redirect_uris' => ['https://example.org/callback']];
+      if ($requested !== NULL) {
+        $input['token_endpoint_auth_method'] = $requested;
+      }
+      $response = $service->registerClient($serializer->denormalize($input, ClientRegistration::class));
+      $client_id = $response['client_id'];
+      $consumer = $this->consumer($client_id);
+      $effective = $requested === 'none' ? 'none' : 'client_secret_basic';
+      $this->assertSame($effective, $response['token_endpoint_auth_method']);
+      $this->assertSame($effective, $service->getClientMetadata($client_id)['token_endpoint_auth_method']);
+      $updated = $service->updateClientMetadata($client_id, new ClientRegistration(clientName: 'Updated', tokenEndpointAuthMethod: 'private_key_jwt'));
+      $this->assertSame($effective, $updated['token_endpoint_auth_method']);
+      $this->assertArrayNotHasKey('client_secret', $updated);
+      $this->assertArrayNotHasKey('client_secret', $service->getClientMetadata($client_id));
+      $this->assertSame($effective, $serializer->normalize($this->consumer($client_id), 'json')['token_endpoint_auth_method']);
+
+      // Run the installed grant's client-auth stage against its real repository
+      // and password checker. No token/key fixture obscures authentication.
+      $grant = $this->container->get('plugin.manager.oauth2_grant.processor')->createInstance('refresh_token')->getGrantType($consumer);
+      $grant->setClientRepository($this->container->get('simple_oauth.repositories.client'));
+      $authenticate = new \ReflectionMethod($grant, 'validateClient');
+      if ($effective === 'none') {
+        $this->assertArrayNotHasKey('client_secret', $response);
+        $request = (new ServerRequest('POST', 'https://example.org/oauth/token'))->withParsedBody(['client_id' => $client_id]);
+        $this->assertSame($client_id, $authenticate->invoke($grant, $request)->getIdentifier());
+        continue;
+      }
+      $secret = $response['client_secret'];
+      $basic = new ServerRequest('POST', 'https://example.org/oauth/token', ['Authorization' => 'Basic ' . base64_encode($client_id . ':' . $secret)]);
+      $this->assertSame($client_id, $authenticate->invoke($grant, $basic)->getIdentifier());
+      $post = (new ServerRequest('POST', 'https://example.org/oauth/token'))->withParsedBody([
+        'client_id' => $client_id,
+        'client_secret' => $secret,
+      ]);
+      $this->assertSame($client_id, $authenticate->invoke($grant, $post)->getIdentifier());
+      try {
+        $authenticate->invoke($grant, $basic->withHeader('Authorization', 'Basic ' . base64_encode($client_id . ':wrong-secret')));
+        $this->fail('An incorrect shared secret must fail authentication.');
+      }
+      catch (OAuthServerException $e) {
+        $this->assertSame('invalid_client', $e->getErrorType());
+      }
+    }
+  }
+
+  /**
+   * Tests a custom resolver controls projections without storing a method.
+   */
+  public function testCustomAuthenticationResolver(): void {
+    $resolver = $this->createMock(TokenEndpointAuthMethodResolverInterface::class);
+    // A post-capable integration can select post instead of built-in Basic.
+    $resolver->method('resolve')->willReturn('client_secret_post');
+    $this->container->set('simple_oauth_client_registration.auth_method_resolver', $resolver);
+    $service = $this->registration();
+    $response = $service->registerClient(new ClientRegistration(redirectUris: ['https://example.org/callback']));
+    $this->assertSame('client_secret_post', $response['token_endpoint_auth_method']);
+    $this->assertSame('client_secret_post', $service->getClientMetadata($response['client_id'])['token_endpoint_auth_method']);
+    $this->assertSame('client_secret_post', $service->updateClientMetadata($response['client_id'], new ClientRegistration(clientName: 'Custom'))['token_endpoint_auth_method']);
+    $this->assertSame('client_secret_post', $this->container->get('serializer')->normalize($this->consumer($response['client_id']))['token_endpoint_auth_method']);
+    // The old service constructor still selects the built-in supported profile.
+    $legacy = new ClientRegistrationService(
+      $this->container->get('entity_type.manager'),
+      $this->container->get('config.factory'),
+      $this->container->get('logger.channel.simple_oauth_client_registration'),
+      $this->container->get('simple_oauth_client_registration.service.token'),
+      $this->container->get('file_url_generator'),
+      $this->container->get('simple_oauth.oauth2_scope.provider'),
+    );
+    $this->assertSame('client_secret_basic', $legacy->getClientMetadata($response['client_id'])['token_endpoint_auth_method']);
+  }
+
+  /**
+   * Tests a mapper failure rolls back entity and token writes during creation.
+   */
+  public function testResponseMapperRollback(): void {
+    $resolver = $this->createMock(TokenEndpointAuthMethodResolverInterface::class);
+    $resolver->method('resolve')->willThrowException(new \RuntimeException('Method resolution failed'));
+    $this->container->set('simple_oauth_client_registration.auth_method_resolver', $resolver);
+    try {
+      $this->registration()->registerClient(new ClientRegistration(redirectUris: ['https://example.org/callback']));
+      $this->fail('Method resolution must fail.');
+    }
+    catch (\RuntimeException $e) {
+      $this->assertSame('Method resolution failed', $e->getMessage());
+    }
+    $this->assertCount(0, $this->container->get('entity_type.manager')->getStorage('consumer')->loadMultiple());
+    $this->assertSame(0, (int) $this->container->get('database')->select('simple_oauth_client_registration_tokens')->countQuery()->execute()->fetchField());
   }
 
   /**
@@ -389,7 +599,45 @@ final class ClientRegistrationLifecycleTest extends KernelTestBase {
   }
 
   /**
-   * Tests uninstall only clears the module's exact endpoint when resolvable.
+   * Tests the install hook preserves absent, blank and explicit settings.
+   */
+  public function testInstallEndpointPortability(): void {
+    $this->container->get('module_handler')->loadInclude('simple_oauth_client_registration', 'install');
+    $name = 'simple_oauth_server_metadata.settings';
+    $this->assertTrue($this->config($name)->isNew());
+    simple_oauth_client_registration_install(FALSE);
+    $this->assertTrue($this->config($name)->isNew());
+    foreach (['', 'https://external.example.org/oauth/register', 'https://example.org/oauth/register'] as $endpoint) {
+      $this->config($name)->set('registration_endpoint', $endpoint)->save();
+      $before = $this->container->get('config.storage')->read($name);
+      simple_oauth_client_registration_install(FALSE);
+      $this->assertSame($before, $this->container->get('config.storage')->read($name));
+    }
+
+    $this->config($name)->set('registration_endpoint', '')->save();
+    $before = $this->container->get('config.storage')->read($name);
+    $this->container->get('router.builder')->rebuild();
+    $generator = new UrlGenerator(
+      $this->container->get('router.route_provider'),
+      $this->container->get('path_processor_manager'),
+      $this->container->get('route_processor_manager'),
+      $this->container->get('request_stack'),
+    );
+    $context = $this->container->get('router.request_context');
+    $generator->setContext($context);
+    $this->container->set('url_generator', $generator);
+    $discovery = $this->container->get('simple_oauth_server_metadata.endpoint_discovery');
+    foreach ([['first.example.org', '/old'], ['moved.example.org', '/new/base']] as [$host, $base_path]) {
+      $context->setScheme('https');
+      $context->setHost($host);
+      $context->setBaseUrl($base_path);
+      $this->assertSame('https://' . $host . $base_path . '/oauth/register', $discovery->getRegistrationEndpoint());
+      $this->assertSame($before, $this->container->get('config.storage')->read($name));
+    }
+  }
+
+  /**
+   * Tests uninstall preserves settings whose ownership cannot be proved.
    */
   public function testUninstallOwnership(): void {
     $this->container->get('module_handler')->loadInclude('simple_oauth_client_registration', 'install');
@@ -406,7 +654,7 @@ final class ClientRegistrationLifecycleTest extends KernelTestBase {
     simple_oauth_client_registration_uninstall(TRUE);
     $this->assertSame('https://example.org/oauth/register', $this->config($name)->get('registration_endpoint'));
     simple_oauth_client_registration_uninstall(FALSE);
-    $this->assertSame('', $this->config($name)->get('registration_endpoint'));
+    $this->assertSame('https://example.org/oauth/register', $this->config($name)->get('registration_endpoint'));
   }
 
   /**
