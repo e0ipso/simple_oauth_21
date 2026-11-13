@@ -20,6 +20,7 @@ use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\simple_oauth_native_apps\Service\ConfigurationValidator;
 use Drupal\simple_oauth_native_apps\Service\ConsumerPolicyResolver;
 use Drupal\simple_oauth_native_apps\Service\NativeClientDetector;
+use Drupal\simple_oauth_native_apps\Service\RedirectPolicyValue;
 
 /**
  * Alters consumer forms to include native app settings.
@@ -210,7 +211,7 @@ final class ConsumerNativeAppsFormAlter {
       '#type' => 'select',
       '#title' => $this->t('Allow custom URI schemes override'),
       '#description' => $this->t('Override whether to allow custom URI schemes (e.g., myapp://callback) for this consumer. Leave empty to use global setting (@global).', [
-        '@global' => $this->getReadableValue($global_config->get('allow.custom_uri_schemes')),
+        '@global' => $this->getReadableValue(RedirectPolicyValue::normalize($global_config->get('allow.custom_uri_schemes'))),
       ]),
       '#options' => [
         '' => $this->t('- Use global setting -'),
@@ -226,7 +227,7 @@ final class ConsumerNativeAppsFormAlter {
       '#type' => 'select',
       '#title' => $this->t('Allow loopback redirects override'),
       '#description' => $this->t('Override whether to allow loopback IP redirects for this consumer. Leave empty to use global setting (@global).', [
-        '@global' => $this->getReadableValue($global_config->get('allow.loopback_redirects')),
+        '@global' => $this->getReadableValue(RedirectPolicyValue::normalize($global_config->get('allow.loopback_redirects'))),
       ]),
       '#options' => [
         '' => $this->t('- Use global setting -'),
@@ -352,6 +353,13 @@ final class ConsumerNativeAppsFormAlter {
       }
       catch (\UnexpectedValueException) {
         $form_state->setErrorByName('native_apps', $this->t('Native policy ownership conflicts with existing configuration or the binding is invalid. Reconcile the records before saving; ownership confirmation cannot replace a foreign binding.'));
+      }
+    }
+
+    // Consumer enums do not declare the legacy global Boolean strings.
+    foreach (['allow_custom_schemes_override', 'allow_loopback_override'] as $key) {
+      if (!in_array($values[$key], ['', 'auto-detect', 'native', 'web'], TRUE)) {
+        $form_state->setErrorByName('native_apps][' . $key, $this->t('Invalid consumer redirect policy. Choose inheritance, auto-detect, native, or web.'));
       }
     }
 

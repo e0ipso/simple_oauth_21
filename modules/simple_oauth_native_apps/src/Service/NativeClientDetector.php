@@ -32,6 +32,13 @@ class NativeClientDetector {
   protected array $detectionCache = [];
 
   /**
+   * Configuration used by cached client type descriptions.
+   *
+   * @var array|null
+   */
+  private ?array $typeCacheSettings = NULL;
+
+  /**
    * Submitted overrides scoped to an unsaved form entity, never persisted here.
    *
    * @var \WeakMap<\Drupal\consumers\Entity\Consumer, array>
@@ -91,6 +98,27 @@ class NativeClientDetector {
   ];
 
   /**
+   * The effective native security policy.
+   *
+   * @var \Drupal\simple_oauth_native_apps\Service\NativeSecurityPolicy
+   */
+  private readonly NativeSecurityPolicy $securityPolicy;
+
+  /**
+   * The native indicator scoring and URI classifier.
+   *
+   * @var \Drupal\simple_oauth_native_apps\Service\NativeClientClassifier
+   */
+  private readonly NativeClientClassifier $classifier;
+
+  /**
+   * The stable detector descriptions and recommendations.
+   *
+   * @var \Drupal\simple_oauth_native_apps\Service\NativeClientDescription
+   */
+  private readonly NativeClientDescription $description;
+
+  /**
    * Constructs a NativeClientDetector object.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
@@ -99,13 +127,25 @@ class NativeClientDetector {
    *   The logger channel factory or an existing channel.
    * @param \Drupal\simple_oauth_native_apps\Service\ConsumerPolicyResolver|null $policy_resolver
    *   The policy boundary, or NULL for original constructor compatibility.
+   * @param \Drupal\simple_oauth_native_apps\Service\NativeSecurityPolicy|null $security_policy
+   *   The effective policy, optional for original callers.
+   * @param \Drupal\simple_oauth_native_apps\Service\NativeClientClassifier|null $classifier
+   *   The URI classifier, optional for original callers.
+   * @param \Drupal\simple_oauth_native_apps\Service\NativeClientDescription|null $description
+   *   The descriptions, optional for original callers.
    */
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
     LoggerChannelFactoryInterface|LoggerInterface $logger_factory,
     ?ConsumerPolicyResolver $policy_resolver = NULL,
+    ?NativeSecurityPolicy $security_policy = NULL,
+    ?NativeClientClassifier $classifier = NULL,
+    ?NativeClientDescription $description = NULL,
   ) {
     $this->policyResolver = $policy_resolver ?? new ConsumerPolicyResolver($configFactory);
+    $this->securityPolicy = $security_policy ?? new NativeSecurityPolicy();
+    $this->classifier = $classifier ?? new NativeClientClassifier();
+    $this->description = $description ?? new NativeClientDescription();
     $this->submittedOverrides = new \WeakMap();
     $this->logger = $logger_factory instanceof LoggerInterface
       ? $logger_factory
@@ -194,21 +234,7 @@ class NativeClientDetector {
    *   TRUE if native patterns detected.
    */
   public function detectNativeFromRedirectUris(array $redirectUris): bool {
-    if (empty($redirectUris)) {
-      return FALSE;
-    }
-
-    $native_count = 0;
-    $total_count = count($redirectUris);
-
-    foreach ($redirectUris as $uri) {
-      if ($this->isNativeRedirectUri($uri)) {
-        $native_count++;
-      }
-    }
-
-    // Return TRUE if majority of URIs are native.
-    return ($native_count / $total_count) >= 0.5;
+    return $this->classifier->detectNativeFromRedirectUris($redirectUris, $this->isNativeRedirectUri(...));
   }
 
   /**
@@ -264,39 +290,15 @@ class NativeClientDetector {
    *   Effective native security controls.
    */
   private function resolveEffectivePolicy(?Consumer $client): array {
-    $config = $this->configFactory->get('simple_oauth_native_apps.settings');
-    $enabled = (bool) $config->get('enforce_native_security');
-    $enhanced = $client !== NULL ? $this->getConsumerEnhancedPkceOverride($client) : NULL;
-    if (($enhanced === NULL || $enhanced === '') && $client?->hasField('native_app_enhanced_pkce')) {
-      $enhanced = match ($client->get('native_app_enhanced_pkce')->value) {
-        'native' => 'enhanced',
-        'web' => 'not-enhanced',
-        default => NULL,
-      };
-    }
-    if ($enhanced === NULL || $enhanced === '') {
-      $enhanced = $config->get('native.enhanced_pkce') ?? 'auto-detect';
-    }
-    $requires_enhanced = match ($enhanced) {
-      'enhanced' => TRUE,
-      'not-enhanced' => FALSE,
-      default => $client !== NULL ? $this->isNativeClient($client) : TRUE,
-    };
-    $webview = NULL;
-    if ($client !== NULL) {
-      $webview = $this->getConsumerOverride($client, 'webview_detection_override');
-    }
-    if ($webview === NULL || $webview === '') {
-      $webview = $config->get('webview.detection') ?? 'warn';
-    }
-
-    return [
-      'enabled' => $enabled,
-      'enhanced_pkce' => $enabled && $requires_enhanced,
-      'custom_schemes' => $this->resolveCustomUriSchemesAllowed($config, $client),
-      'loopback' => $this->resolveLoopbackRedirectsAllowed($config, $client),
-      'webview' => $enabled ? $webview : 'off',
-    ];
+    return $this->securityPolicy->resolveEffectivePolicy(
+      $this->configFactory->get('simple_oauth_native_apps.settings'),
+      $client,
+      $this->getConsumerEnhancedPkceOverride(...),
+      fn(Consumer $consumer): ?string => $this->getConsumerOverride($consumer, 'webview_detection_override'),
+      $this->isNativeClient(...),
+      $this->resolveCustomUriSchemesAllowed(...),
+      $this->resolveLoopbackRedirectsAllowed(...),
+    );
   }
 
   /**
@@ -324,18 +326,11 @@ class NativeClientDetector {
    *   TRUE if custom URI schemes are allowed.
    */
   protected function resolveCustomUriSchemesAllowed($config, ?Consumer $client = NULL): bool {
-    $global_setting = $config->get('allow.custom_uri_schemes') ?? 'auto-detect';
-
-    // Check for consumer override if client provided.
-    if ($client) {
-      $consumer_override = $this->getConsumerCustomUriSchemesOverride($client);
-      if ($consumer_override) {
-        return $this->resolveBooleanFromEnum($consumer_override, $client);
-      }
-    }
-
-    // Use global setting.
-    return $this->resolveBooleanFromEnum($global_setting, $client);
+    return $this->securityPolicy->resolveRedirectPermission(
+      $config->get('allow.custom_uri_schemes') ?? 'auto-detect',
+      $client !== NULL ? $this->getConsumerCustomUriSchemesOverride($client) : NULL,
+      fn(string $value): bool => $this->resolveBooleanFromEnum($value, $client),
+    );
   }
 
   /**
@@ -350,18 +345,11 @@ class NativeClientDetector {
    *   TRUE if loopback redirects are allowed.
    */
   protected function resolveLoopbackRedirectsAllowed($config, ?Consumer $client = NULL): bool {
-    $global_setting = $config->get('allow.loopback_redirects') ?? 'auto-detect';
-
-    // Check for consumer override if client provided.
-    if ($client) {
-      $consumer_override = $this->getConsumerLoopbackRedirectsOverride($client);
-      if ($consumer_override) {
-        return $this->resolveBooleanFromEnum($consumer_override, $client);
-      }
-    }
-
-    // Use global setting.
-    return $this->resolveBooleanFromEnum($global_setting, $client);
+    return $this->securityPolicy->resolveRedirectPermission(
+      $config->get('allow.loopback_redirects') ?? 'auto-detect',
+      $client !== NULL ? $this->getConsumerLoopbackRedirectsOverride($client) : NULL,
+      fn(string $value): bool => $this->resolveBooleanFromEnum($value, $client),
+    );
   }
 
   /**
@@ -402,18 +390,10 @@ class NativeClientDetector {
    *   The resolved boolean value.
    */
   protected function resolveBooleanFromEnum(string $enum_value, ?Consumer $client = NULL): bool {
-    switch ($enum_value) {
-      case 'native':
-        return TRUE;
-
-      case 'web':
-        return FALSE;
-
-      case 'auto-detect':
-      default:
-        // Auto-detect based on client type.
-        return $client ? $this->isNativeClient($client) : TRUE;
-    }
+    return $this->securityPolicy->resolveBoolean(
+      $enum_value,
+      fn(): bool => $client ? $this->isNativeClient($client) : TRUE,
+    );
   }
 
   /**
@@ -439,50 +419,7 @@ class NativeClientDetector {
    *   Array of classification reasons.
    */
   public function getClassificationReasons(Consumer $client): array {
-    $reasons = [];
-
-    // Check manual override.
-    if ($client->hasField('native_app_override')) {
-      $override = $client->get('native_app_override')->value;
-      // Only add reason if explicitly set (not empty or 'auto-detect')
-      if ($override === 'native') {
-        $reasons[] = 'Manual override: marked as native';
-      }
-      elseif ($override === 'web') {
-        $reasons[] = 'Manual override: marked as web';
-      }
-      // If empty or 'auto-detect', no manual override reason.
-    }
-
-    // Analyze redirect URIs.
-    $uri_analysis = $this->analyzeRedirectUris($client);
-
-    if ($uri_analysis > 0.7) {
-      $reasons[] = 'Strong native URI patterns detected';
-    }
-    elseif ($uri_analysis > 0.3) {
-      $reasons[] = 'Some native URI patterns detected';
-    }
-    else {
-      $reasons[] = 'Web-based URI patterns detected';
-    }
-
-    // Analyze client configuration.
-    $is_confidential = $client->get('confidential')->value ?? TRUE;
-    if (!$is_confidential) {
-      $reasons[] = 'Public client (typical for native apps)';
-    }
-    else {
-      $reasons[] = 'Confidential client (typical for web apps)';
-    }
-
-    // Analyze third-party status.
-    $is_third_party = $client->get('third_party')->value ?? FALSE;
-    if ($is_third_party) {
-      $reasons[] = 'Third-party client';
-    }
-
-    return $reasons;
+    return $this->description->getClassificationReasons($client, $this->analyzeRedirectUris(...));
   }
 
   /**
@@ -545,21 +482,11 @@ class NativeClientDetector {
    *   Score between 0.0 and 1.0.
    */
   protected function calculateAlgorithmicScore(Consumer $client): float {
-    $score = 0.0;
-
-    // Redirect URI analysis (40% weight)
-    $redirect_score = $this->analyzeRedirectUris($client);
-    $score += $redirect_score * 0.4;
-
-    // Grant type analysis (30% weight)
-    $grant_score = $this->analyzeGrantTypes($client);
-    $score += $grant_score * 0.3;
-
-    // Client configuration (30% weight)
-    $config_score = $this->analyzeClientConfig($client);
-    $score += $config_score * 0.3;
-
-    return min($score, 1.0);
+    return $this->classifier->calculateAlgorithmicScore(
+      $this->analyzeRedirectUris($client),
+      $this->analyzeGrantTypes($client),
+      $this->analyzeClientConfig($client),
+    );
   }
 
   /**
@@ -572,42 +499,11 @@ class NativeClientDetector {
    *   Score between 0.0 and 1.0.
    */
   protected function analyzeRedirectUris(Consumer $client): float {
-    $redirect_uris = $this->getRedirectUris($client);
-
-    if (empty($redirect_uris)) {
-      return 0.0;
-    }
-
-    $native_score = 0.0;
-    $web_score = 0.0;
-
-    foreach ($redirect_uris as $uri) {
-      if ($this->isNativeRedirectUri($uri)) {
-        $native_score += 1.0;
-      }
-      elseif ($this->isWebRedirectUri($uri)) {
-        $web_score += 1.0;
-      }
-      // Unrecognized patterns get neutral score.
-    }
-
-    // Calculate ratio favoring native URIs.
-    if ($native_score > 0 && $web_score === 0.0) {
-      // All native URIs.
-      return 1.0;
-    }
-    elseif ($native_score === 0.0 && $web_score > 0) {
-      // All web URIs.
-      return 0.0;
-    }
-    elseif ($native_score + $web_score === 0.0) {
-      // Unrecognized patterns, neutral.
-      return 0.5;
-    }
-    else {
-      // Mixed patterns, calculate ratio.
-      return $native_score / ($native_score + $web_score);
-    }
+    return $this->classifier->analyzeRedirectUris(
+      $this->getRedirectUris($client),
+      $this->isNativeRedirectUri(...),
+      $this->isWebRedirectUri(...),
+    );
   }
 
   /**
@@ -620,26 +516,7 @@ class NativeClientDetector {
    *   Score between 0.0 and 1.0.
    */
   protected function analyzeGrantTypes(Consumer $client): float {
-    $score = 0.0;
-
-    // Check if client uses authorization code flow (typical for native)
-    // Note: Simple OAuth doesn't store grant types per client by default,
-    // so we use general indicators.
-    // Public clients are more likely to be native.
-    $is_confidential = $client->get('confidential')->value ?? TRUE;
-    if (!$is_confidential) {
-      // Public clients are often native.
-      $score += 0.6;
-    }
-
-    // Check if PKCE is enabled/used (would need additional tracking)
-    // For now, assume modern setup encourages PKCE for public clients.
-    if (!$is_confidential) {
-      // Assume PKCE usage for public clients.
-      $score += 0.4;
-    }
-
-    return min($score, 1.0);
+    return $this->classifier->analyzeGrantTypes($client);
   }
 
   /**
@@ -652,27 +529,7 @@ class NativeClientDetector {
    *   Score between 0.0 and 1.0.
    */
   protected function analyzeClientConfig(Consumer $client): float {
-    $score = 0.0;
-
-    // Public client indicator (native apps typically can't keep secrets)
-    $is_confidential = $client->get('confidential')->value ?? TRUE;
-    if (!$is_confidential) {
-      $score += 0.5;
-    }
-
-    // Third-party indicator (many native apps are third-party)
-    $is_third_party = $client->get('third_party')->value ?? FALSE;
-    if ($is_third_party) {
-      $score += 0.3;
-    }
-
-    // Client name patterns (heuristic)
-    $label = $client->label();
-    if ($label && $this->hasNativeAppNamePattern($label)) {
-      $score += 0.2;
-    }
-
-    return min($score, 1.0);
+    return $this->classifier->analyzeClientConfig($client, $this->hasNativeAppNamePattern(...));
   }
 
   /**
@@ -685,21 +542,8 @@ class NativeClientDetector {
    *   TRUE if the URI matches native patterns.
    */
   protected function isNativeRedirectUri(string $uri): bool {
-    // Check custom schemes.
-    foreach ($this->nativeUriPatterns as $pattern) {
-      if (preg_match($pattern, $uri)) {
-        return TRUE;
-      }
-    }
-
-    // Check loopback interfaces.
-    foreach ($this->loopbackPatterns as $pattern) {
-      if (preg_match($pattern, $uri)) {
-        return TRUE;
-      }
-    }
-
-    return FALSE;
+    return $this->classifier->matchesPatterns($uri, $this->nativeUriPatterns)
+      || $this->classifier->matchesPatterns($uri, $this->loopbackPatterns);
   }
 
   /**
@@ -712,13 +556,7 @@ class NativeClientDetector {
    *   TRUE if the URI matches web patterns.
    */
   protected function isWebRedirectUri(string $uri): bool {
-    foreach ($this->webUriPatterns as $pattern) {
-      if (preg_match($pattern, $uri)) {
-        return TRUE;
-      }
-    }
-
-    return FALSE;
+    return $this->classifier->matchesPatterns($uri, $this->webUriPatterns);
   }
 
   /**
@@ -731,19 +569,7 @@ class NativeClientDetector {
    *   TRUE if name suggests native app.
    */
   protected function hasNativeAppNamePattern(string $name): bool {
-    $native_keywords = [
-      'mobile', 'app', 'ios', 'android', 'desktop', 'native',
-      'mobile app', 'desktop app', 'phone', 'tablet',
-    ];
-
-    $name_lower = strtolower($name);
-    foreach ($native_keywords as $keyword) {
-      if (strpos($name_lower, $keyword) !== FALSE) {
-        return TRUE;
-      }
-    }
-
-    return FALSE;
+    return $this->classifier->hasNativeAppNamePattern($name);
   }
 
   /**
@@ -787,6 +613,17 @@ class NativeClientDetector {
       ];
     }
 
+    // Descriptions depend on current policy as well as redirect URI identity.
+    $settings = $this->configFactory->get('simple_oauth_native_apps.settings')->get();
+    if ($this->typeCacheSettings !== NULL && $this->typeCacheSettings !== $settings) {
+      foreach (array_keys($this->detectionCache) as $key) {
+        if (str_starts_with($key, 'native_client_detector:type:')) {
+          unset($this->detectionCache[$key]);
+        }
+      }
+    }
+    $this->typeCacheSettings = $settings;
+
     $cid = 'native_client_detector:type:' . md5(serialize($redirect_uris));
 
     if (isset($this->detectionCache[$cid])) {
@@ -829,25 +666,14 @@ class NativeClientDetector {
    *   The detected client type.
    */
   protected function classifyRedirectUri(string $uri): string {
-    // Priority order: Terminal -> Mobile -> Desktop -> Web.
-    if ($this->isTerminalRedirectUri($uri)) {
-      return 'terminal';
-    }
-
-    if ($this->isMobileRedirectUri($uri)) {
-      return 'mobile';
-    }
-
-    if ($this->isDesktopRedirectUri($uri)) {
-      return 'desktop';
-    }
-
-    if ($this->isWebRedirectUri($uri)) {
-      return 'web';
-    }
-
-    // Handle edge cases.
-    return $this->handleEdgeCases($uri);
+    return $this->classifier->classifyRedirectUri(
+      $uri,
+      $this->isTerminalRedirectUri(...),
+      $this->isMobileRedirectUri(...),
+      $this->isDesktopRedirectUri(...),
+      $this->isWebRedirectUri(...),
+      $this->handleEdgeCases(...),
+    );
   }
 
   /**
@@ -860,13 +686,7 @@ class NativeClientDetector {
    *   TRUE if terminal application URI.
    */
   protected function isTerminalRedirectUri(string $uri): bool {
-    $terminal_patterns = [
-      '/^https?:\/\/127\.0\.0\.1:(\d+|0)\//',
-      '/^https?:\/\/\[::1\]:(\d+|0)\//',
-      '/^https?:\/\/localhost:(\d+|0)\//',
-    ];
-
-    return $this->matchesPatterns($uri, $terminal_patterns);
+    return $this->classifier->isTerminalRedirectUri($uri, $this->matchesPatterns(...));
   }
 
   /**
@@ -879,12 +699,7 @@ class NativeClientDetector {
    *   TRUE if mobile application URI.
    */
   protected function isMobileRedirectUri(string $uri): bool {
-    $scheme = parse_url($uri, PHP_URL_SCHEME);
-    $host = parse_url($uri, PHP_URL_HOST);
-    return $this->isNativeRedirectUri($uri)
-      && is_string($scheme)
-      && !in_array(strtolower($scheme), ['http', 'https'], TRUE)
-      && !in_array($host, ['127.0.0.1', 'localhost', '[::1]'], TRUE);
+    return $this->classifier->isMobileRedirectUri($uri, $this->isNativeRedirectUri(...));
   }
 
   /**
@@ -897,9 +712,9 @@ class NativeClientDetector {
    *   TRUE if desktop application URI.
    */
   protected function isDesktopRedirectUri(string $uri): bool {
-    return $this->isNativeRedirectUri($uri)
-      && !$this->isTerminalRedirectUri($uri)
-      && !$this->isMobileRedirectUri($uri);
+    return $this->classifier->isDesktopRedirectUri(
+      $uri, $this->isNativeRedirectUri(...), $this->isTerminalRedirectUri(...), $this->isMobileRedirectUri(...),
+    );
   }
 
   /**
@@ -914,12 +729,7 @@ class NativeClientDetector {
    *   TRUE if URI matches any pattern.
    */
   protected function matchesPatterns(string $uri, array $patterns): bool {
-    foreach ($patterns as $pattern) {
-      if (preg_match($pattern, $uri)) {
-        return TRUE;
-      }
-    }
-    return FALSE;
+    return $this->classifier->matchesPatterns($uri, $patterns);
   }
 
   /**
@@ -932,19 +742,7 @@ class NativeClientDetector {
    *   The client type.
    */
   protected function handleEdgeCases(string $uri): string {
-    // Handle localhost without port (development web app)
-    if (preg_match('/^https?:\/\/localhost\/$/', $uri)) {
-      return 'web';
-    }
-
-    // Handle missing protocol.
-    if (preg_match('/^localhost:\d+\//', $uri)) {
-      // Assume terminal if localhost with port.
-      return 'terminal';
-    }
-
-    // Default to web for unknown patterns.
-    return 'web';
+    return $this->classifier->handleEdgeCases($uri);
   }
 
   /**
@@ -959,44 +757,7 @@ class NativeClientDetector {
    *   Final detection result.
    */
   protected function resolveClientType(array $detected_types, array $redirect_uris): array {
-    $unique_types = array_unique($detected_types);
-
-    // Single type - high confidence.
-    if (count($unique_types) === 1) {
-      return [
-        'type' => $unique_types[0],
-        'confidence' => 'high',
-        'details' => $this->getTypeDetails($unique_types[0]),
-      ];
-    }
-
-    // Mixed types - apply priority rules.
-    if (in_array('terminal', $unique_types)) {
-      return [
-        'type' => 'terminal',
-        'confidence' => 'medium',
-        'details' => $this->getTypeDetails('terminal'),
-        'mixed_types' => $unique_types,
-      ];
-    }
-
-    if (in_array('mobile', $unique_types) || in_array('desktop', $unique_types)) {
-      $native_type = in_array('mobile', $unique_types) ? 'mobile' : 'desktop';
-      return [
-        'type' => $native_type,
-        'confidence' => 'medium',
-        'details' => $this->getTypeDetails($native_type),
-        'mixed_types' => $unique_types,
-      ];
-    }
-
-    // Default to web.
-    return [
-      'type' => 'web',
-      'confidence' => 'low',
-      'details' => $this->getTypeDetails('web'),
-      'mixed_types' => $unique_types,
-    ];
+    return $this->classifier->resolveClientType($detected_types, $this->getTypeDetails(...));
   }
 
   /**
@@ -1010,32 +771,12 @@ class NativeClientDetector {
    */
   protected function getTypeDetails(string $type): array {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
-
-    return match ($type) {
-      'terminal' => [
-        'confidential' => FALSE,
-        'pkce_required' => TRUE,
-        'custom_schemes_allowed' => FALSE,
-        'loopback_required' => TRUE,
-        'enhanced_pkce' => $config->get('native.enhanced_pkce'),
-        'description' => 'Terminal/CLI application using loopback redirects',
-      ],
-      'mobile', 'desktop' => [
-        'confidential' => FALSE,
-        'pkce_required' => TRUE,
-        'custom_schemes_allowed' => $this->resolveCustomUriSchemesAllowed($config, NULL),
-        'loopback_allowed' => $this->resolveLoopbackRedirectsAllowed($config, NULL),
-        'enhanced_pkce' => $config->get('native.enhanced_pkce'),
-        'description' => ucfirst($type) . ' native application',
-      ],
-      default => [
-        'confidential' => NULL,
-        'pkce_required' => FALSE,
-        'https_required' => TRUE,
-        'enhanced_pkce' => FALSE,
-        'description' => 'Web application',
-      ],
-    };
+    return $this->description->getTypeDetails(
+      $type,
+      $config->get('native.enhanced_pkce'),
+      fn(): bool => $this->resolveCustomUriSchemesAllowed($config, NULL),
+      fn(): bool => $this->resolveLoopbackRedirectsAllowed($config, NULL),
+    );
   }
 
   /**
@@ -1043,6 +784,7 @@ class NativeClientDetector {
    */
   public function clearCache(): void {
     $this->detectionCache = [];
+    $this->typeCacheSettings = NULL;
   }
 
   /**

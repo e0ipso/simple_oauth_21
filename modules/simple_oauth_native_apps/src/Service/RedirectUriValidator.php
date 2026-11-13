@@ -175,7 +175,7 @@ class RedirectUriValidator {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
     $custom_schemes_setting = $allowed === NULL
-      ? ($config->get('allow.custom_uri_schemes') ?? 'auto-detect')
+      ? RedirectPolicyValue::normalize($config->get('allow.custom_uri_schemes') ?? 'auto-detect')
       : ($allowed ? 'native' : 'web');
 
     // Handle 'auto-detect', 'native', 'web' enum values.
@@ -252,7 +252,7 @@ class RedirectUriValidator {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
     $loopback_setting = $allowed === NULL
-      ? ($config->get('allow.loopback_redirects') ?? 'auto-detect')
+      ? RedirectPolicyValue::normalize($config->get('allow.loopback_redirects') ?? 'auto-detect')
       : ($allowed ? 'native' : 'web');
 
     // Handle 'auto-detect', 'native', 'web' enum values.
@@ -812,7 +812,8 @@ class RedirectUriValidator {
 
     // Handle HTTP/HTTPS schemes.
     if (in_array($scheme, ['http', 'https'])) {
-      if (!$config->get('allow.loopback_redirects')) {
+      $permission = RedirectPolicyValue::normalize($config->get('allow.loopback_redirects') ?? 'auto-detect');
+      if (!in_array($permission, ['native', 'auto-detect'], TRUE)) {
         return 'Loopback redirects are disabled';
       }
       if (!$this->validateLoopbackInterface($uri)) {
@@ -823,7 +824,8 @@ class RedirectUriValidator {
     }
 
     // Handle custom schemes.
-    if (!$config->get('allow.custom_uri_schemes')) {
+    $permission = RedirectPolicyValue::normalize($config->get('allow.custom_uri_schemes') ?? 'auto-detect');
+    if (!in_array($permission, ['native', 'auto-detect'], TRUE)) {
       return 'Custom URI schemes are disabled';
     }
 
