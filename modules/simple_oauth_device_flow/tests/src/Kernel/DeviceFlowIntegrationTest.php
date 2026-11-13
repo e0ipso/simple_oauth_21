@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\simple_oauth_device_flow\Kernel;
 
 // cspell:ignore BCDFGHJKLMNPQRSTVWXZB CDEFGHIJKLMNOPQRSTUVWXYZ ABABAB
+use Drupal\Tests\simple_oauth_device_flow\Kernel\Fixture\MaintainedLifecycleInterface;
 use Drupal\Core\Config\ConfigImporter;
 use Drupal\Core\Config\ConfigImporterException;
 use Drupal\Core\Config\MemoryStorage;
@@ -1473,10 +1474,7 @@ final class DeviceFlowIntegrationTest extends KernelTestBase {
     $this->assertInstanceOf(DeviceCodeLifecycleOperationsInterface::class, $repository);
     $this->assertInstanceOf(DeviceCodeLifecycleRepositoryInterface::class, $repository);
     $lifecycle = $combined
-      ? $this->createMockForIntersectionOfInterfaces([
-        DeviceCodeLifecycleOperationsInterface::class,
-        DeviceCodeMaintenanceInterface::class,
-      ])
+      ? $this->createMock(MaintainedLifecycleInterface::class)
       : $this->createMock(DeviceCodeLifecycleOperationsInterface::class);
     $this->assertFalse(method_exists($lifecycle, 'getStorage'));
     $this->assertNotInstanceOf(DeviceCodeLifecycleRepositoryInterface::class, $lifecycle);

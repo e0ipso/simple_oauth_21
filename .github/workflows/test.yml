@@ -39,7 +39,8 @@ jobs:
             phpstan: '^1.12'
             phpstan-drupal: '^1.2.12'
             deprecation-rules: '^1.2'
-            drush: '^12 || ^13'
+            # Keep Drupal 10 tooling on its Symfony 6 command API.
+            drush: '^12'
             db-version: '10.9'
           - drupal-core: '11-dev'
             core-requirement: '11.x-dev'
