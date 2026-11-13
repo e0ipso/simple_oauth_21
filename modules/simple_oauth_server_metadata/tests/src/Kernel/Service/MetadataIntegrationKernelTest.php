@@ -348,6 +348,74 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
   }
 
   /**
+   * Tests unavailable optional modules preserve explicit endpoint overrides.
+   */
+  public function testUnavailableEndpointFormPersistence(): void {
+    $builder = $this->container->get('form_builder');
+    $form = $builder->getForm(ServerMetadataSettingsForm::class);
+    $this->assertArrayNotHasKey('device_authorization_endpoint', $form['endpoints']);
+    $overrides = [
+      'registration_endpoint' => 'https://external.example/Register',
+      'device_authorization_endpoint' => 'https://external.example/Device',
+    ];
+    $state = (new FormState())->setValues(['service_documentation' => 'https://updated.example/docs']);
+    $builder->submitForm(ServerMetadataSettingsForm::class, $state);
+    $this->assertSame([], $state->getErrors());
+    $responses = [
+      ServerMetadataController::create($this->container)->__invoke(),
+      OpenIdConfigurationController::create($this->container)->configuration(),
+    ];
+    foreach ($responses as $response) {
+      $metadata = json_decode($response->getContent(), TRUE);
+      foreach ($overrides as $field => $value) {
+        $this->assertArrayNotHasKey($field, $metadata);
+      }
+    }
+    foreach ($overrides as $field => $value) {
+      $this->config('simple_oauth_server_metadata.settings')->set($field, $value)->save();
+    }
+    // The device field is absent when its module is unavailable.
+    $state = (new FormState())->setValues(['service_documentation' => 'https://partial.example/docs']);
+    $builder->submitForm(ServerMetadataSettingsForm::class, $state);
+    $this->assertSame([], $state->getErrors());
+    foreach ($overrides as $field => $value) {
+      $this->assertSame($value, $this->config('simple_oauth_server_metadata.settings')->get($field));
+    }
+    $responses = [
+      ServerMetadataController::create($this->container)->__invoke(),
+      OpenIdConfigurationController::create($this->container)->configuration(),
+    ];
+    foreach ($responses as $response) {
+      $metadata = json_decode($response->getContent(), TRUE);
+      foreach ($overrides as $field => $value) {
+        $this->assertSame($value, $metadata[$field]);
+      }
+    }
+  }
+
+  /**
+   * Tests direct form submissions distinguish omitted and NULL endpoints.
+   */
+  public function testPartialEndpointSubmissionCompatibility(): void {
+    $config = $this->config('simple_oauth_server_metadata.settings');
+    $config->set('registration_endpoint', 'https://saved.example/Register')
+      ->set('device_authorization_endpoint', 'https://saved.example/Device')
+      ->set('response_types_supported', ['id_token'])
+      ->save();
+    $object = ServerMetadataSettingsForm::create($this->container);
+    $form = $this->container->get('form_builder')->getForm(ServerMetadataSettingsForm::class);
+    $state = (new FormState())->setValues([
+      'device_authorization_endpoint' => NULL,
+      'response_types_supported' => NULL,
+    ]);
+    $object->submitForm($form, $state);
+    $config = $this->config($config->getName());
+    $this->assertSame('https://saved.example/Register', $config->get('registration_endpoint'));
+    $this->assertNull($config->get('device_authorization_endpoint'));
+    $this->assertSame(['id_token'], $config->get('response_types_supported'));
+  }
+
+  /**
    * Tests absolute discovery URLs vary by the current site origin in caches.
    */
   public function testDiscoveryVariesBySiteOrigin(): void {
