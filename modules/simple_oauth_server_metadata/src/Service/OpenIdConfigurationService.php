@@ -7,14 +7,15 @@ namespace Drupal\simple_oauth_server_metadata\Service;
 use Drupal\Core\Cache\CacheableDependencyInterface;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Url;
 use Drupal\simple_oauth_server_metadata\Trait\MetadataCacheabilityTrait;
+use Drupal\simple_oauth_server_metadata\Trait\MetadataUrlTrait;
 
 /**
  * Service for generating OpenID Connect Discovery metadata.
  */
 class OpenIdConfigurationService implements CacheableDependencyInterface {
 
+  use MetadataUrlTrait;
   use MetadataCacheabilityTrait {
     getCacheTags as private getMetadataCacheTags;
     getCacheContexts as private getMetadataCacheContexts;
@@ -131,7 +132,7 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
         $value = $discovered_endpoints[$field] ?? NULL;
       }
       if (!empty($value)) {
-        $metadata[$field] = str_ends_with($field, '_endpoint') ? $this->ensureAbsoluteUrl($value) : $value;
+        $metadata[$field] = $this->ensureAbsoluteUrl($value);
       }
     }
 
@@ -178,27 +179,6 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
       ->addCacheableDependency($this->claimsAuthDiscoveryService);
 
     return $metadata;
-  }
-
-  /**
-   * Converts configured relative URLs to absolute URLs.
-   *
-   * @param string $url
-   *   The configured URL.
-   *
-   * @return string
-   *   The absolute URL, or the original value when conversion is unavailable.
-   */
-  protected function ensureAbsoluteUrl(string $url): string {
-    if (str_starts_with($url, '/')) {
-      try {
-        return Url::fromUserInput($url)->setAbsolute()->toString();
-      }
-      catch (\Exception) {
-        return $url;
-      }
-    }
-    return $url;
   }
 
   /**

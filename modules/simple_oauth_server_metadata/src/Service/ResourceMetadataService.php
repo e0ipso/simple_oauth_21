@@ -7,8 +7,8 @@ namespace Drupal\simple_oauth_server_metadata\Service;
 use Drupal\Core\Cache\CacheableDependencyInterface;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Url;
 use Drupal\simple_oauth_server_metadata\Trait\MetadataCacheabilityTrait;
+use Drupal\simple_oauth_server_metadata\Trait\MetadataUrlTrait;
 use Drupal\simple_oauth_server_metadata\Event\ResourceMetadataEvent;
 use Drupal\simple_oauth_server_metadata\Event\ResourceMetadataEvents;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -19,6 +19,7 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 class ResourceMetadataService implements CacheableDependencyInterface {
 
   use MetadataCacheabilityTrait;
+  use MetadataUrlTrait;
 
   /**
    * Constructs a ResourceMetadataService object.
@@ -135,36 +136,6 @@ class ResourceMetadataService implements CacheableDependencyInterface {
         $metadata[$field] = $value;
       }
     }
-  }
-
-  /**
-   * Ensures a URL is absolute.
-   *
-   * @param string $url
-   *   The URL to check.
-   *
-   * @return string
-   *   The absolute URL.
-   */
-  protected function ensureAbsoluteUrl(string $url): string {
-    // If URL already contains scheme, it's absolute.
-    if (preg_match('/^https?:\/\//', $url)) {
-      return $url;
-    }
-
-    // If URL starts with /, it's a relative path - convert to absolute.
-    if (strpos($url, '/') === 0) {
-      try {
-        return Url::fromUserInput($url)->setAbsolute()->toString();
-      }
-      catch (\Exception $e) {
-        // If URL conversion fails, return as-is.
-        return $url;
-      }
-    }
-
-    // Return as-is for other cases.
-    return $url;
   }
 
   /**
