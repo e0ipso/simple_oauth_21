@@ -68,11 +68,22 @@ final class ConsumerPolicyImportSubscriber implements EventSubscriberInterface {
    */
   public function validateImport(ConfigImporterEvent $event): void {
     $importer = $event->getConfigImporter();
-    $changed = array_filter(array_merge($event->getChangelist('create'), $event->getChangelist('update')), static fn ($name) => str_starts_with($name, ConsumerPolicyResolver::PREFIX));
+    $changed_names = array_merge($event->getChangelist('create'), $event->getChangelist('update'));
+    $source = $importer->getStorageComparer()->getSourceStorage();
+    $settings_name = 'simple_oauth_native_apps.settings';
+    if (in_array($settings_name, $changed_names, TRUE)) {
+      $settings = $source->read($settings_name);
+      $typed = $this->typedConfigManager->createFromNameAndData($settings_name, $settings);
+      foreach ($typed as $key => $value) {
+        if (in_array($key, ['detection_sensitivity', 'cache_detection_results', 'allow_plain_pkce'], TRUE) && count($value->validate()) !== 0) {
+          $importer->logError((string) $this->t('Native settings @key is invalid. Use a number from 0 to 1 for detection_sensitivity and boolean values for cache_detection_results and allow_plain_pkce.', ['@key' => $key]));
+        }
+      }
+    }
+    $changed = array_filter($changed_names, static fn ($name) => str_starts_with($name, ConsumerPolicyResolver::PREFIX));
     if ($changed === []) {
       return;
     }
-    $source = $importer->getStorageComparer()->getSourceStorage();
     $records = $source->readMultiple($source->listAll(ConsumerPolicyResolver::PREFIX));
     $storage = $this->entityTypeManager->getStorage('consumer');
     foreach ($changed as $name) {

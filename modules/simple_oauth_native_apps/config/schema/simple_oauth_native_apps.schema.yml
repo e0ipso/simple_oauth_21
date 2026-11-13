@@ -14,6 +14,34 @@ simple_oauth_native_apps.settings:
   type: config_object
   label: 'Simple OAuth Native Apps Settings'
   mapping:
+    detection_sensitivity:
+      type: simple_oauth_native_apps.detection_sensitivity
+      label: 'Native detection sensitivity'
+      description: 'Native score threshold from 0 to 1 inclusive; omitted values use 0.7'
+      requiredKey: false
+      constraints:
+        NotNull: ~
+        Range:
+          min: 0
+          max: 1
+    cache_detection_results:
+      type: boolean
+      label: 'Cache native detection scores'
+      description: 'Cache saved consumer scores within the current request; omitted values disable caching'
+      requiredKey: false
+      constraints:
+        NotNull: ~
+        Choice:
+          choices: [true, false]
+    allow_plain_pkce:
+      type: boolean
+      label: 'Advertise plain PKCE support'
+      description: 'Include plain in supported metadata methods; does not relax native or global PKCE enforcement; omitted values advertise S256 only'
+      requiredKey: false
+      constraints:
+        NotNull: ~
+        Choice:
+          choices: [true, false]
     enforce_native_security:
       type: boolean
       label: 'Enforce native app security'
@@ -106,6 +134,12 @@ simple_oauth_native_apps.settings:
           type: boolean
           label: 'Log detection decisions'
           description: 'Log native app and WebView detection decisions'
+
+# Preserve the numeric representation used before this setting had schema.
+simple_oauth_native_apps.detection_sensitivity:
+  type: float
+  label: 'Native detection threshold number'
+  class: '\Drupal\simple_oauth_native_apps\TypedData\DetectionSensitivity'
 
 simple_oauth_native_apps.consumer.*:
   type: config_object

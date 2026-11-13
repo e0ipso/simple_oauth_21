@@ -217,6 +217,34 @@ final class ConfigurationValidator {
     $logging_errors = $this->validateLoggingConfig($config);
     $errors = array_merge($errors, $logging_errors);
 
+    $errors = array_merge($errors, $this->validateRuntimeSettings($config));
+
+    return $errors;
+  }
+
+  /**
+   * Validates optional detection and metadata controls without changing them.
+   *
+   * @param array $config
+   *   Configuration containing zero or more optional runtime settings.
+   *
+   * @return array
+   *   Key-specific errors without including supplied values.
+   */
+  private function validateRuntimeSettings(array $config): array {
+    $errors = [];
+    if (array_key_exists('detection_sensitivity', $config)) {
+      $value = $config['detection_sensitivity'];
+      // Match the numeric values accepted by Drupal's float schema type.
+      if (!is_numeric($value) || filter_var($value, FILTER_VALIDATE_FLOAT) === FALSE || !is_finite((float) $value) || $value < 0 || $value > 1) {
+        $errors[] = $this->t('The detection_sensitivity setting must be a number from 0 to 1 inclusive.');
+      }
+    }
+    foreach (['cache_detection_results', 'allow_plain_pkce'] as $key) {
+      if (array_key_exists($key, $config) && !is_bool($config[$key])) {
+        $errors[] = $this->t('The @key setting must be a boolean value.', ['@key' => $key]);
+      }
+    }
     return $errors;
   }
 

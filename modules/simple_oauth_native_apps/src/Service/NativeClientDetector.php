@@ -32,6 +32,13 @@ class NativeClientDetector {
   protected array $detectionCache = [];
 
   /**
+   * Fingerprints for the single current score slot of each saved consumer ID.
+   *
+   * @var array<string, string>
+   */
+  private array $scoreCacheFingerprints = [];
+
+  /**
    * Configuration used by cached client type descriptions.
    *
    * @var array|null
@@ -434,12 +441,18 @@ class NativeClientDetector {
   protected function calculateNativeScore(Consumer $client): float {
     $config = $this->configFactory->get('simple_oauth_native_apps.settings');
 
-    // Check cache first if enabled.
-    if ($config->get('cache_detection_results')) {
-      $cache_key = 'native_detection_' . $client->id();
-      if (isset($this->detectionCache[$cache_key])) {
+    // Unsaved entities must never share a score slot, even with an assigned ID.
+    $client_id = (string) $client->id();
+    $cache_key = 'native_detection_' . $client_id;
+    $fingerprint = NULL;
+    if ((bool) $config->get('cache_detection_results') && !$client->isNew() && $client_id !== '') {
+      $fingerprint = $this->getDetectionCacheFingerprint($client);
+      if (($this->scoreCacheFingerprints[$cache_key] ?? NULL) === $fingerprint && isset($this->detectionCache[$cache_key])) {
         return $this->detectionCache[$cache_key];
       }
+    }
+    else {
+      unset($this->detectionCache[$cache_key], $this->scoreCacheFingerprints[$cache_key]);
     }
 
     $score = 0.0;
@@ -465,11 +478,41 @@ class NativeClientDetector {
     }
 
     // Cache result if enabled.
-    if ($config->get('cache_detection_results')) {
+    if ($fingerprint !== NULL) {
       $this->detectionCache[$cache_key] = $score;
+      $this->scoreCacheFingerprints[$cache_key] = $fingerprint;
     }
 
     return $score;
+  }
+
+  /**
+   * Identifies the current entity inputs, settings and URI scoring patterns.
+   *
+   * All field data, including UUID and extension fields, participates. Only a
+   * digest is retained in request-local memory, never entity or secret values.
+   * A changed snapshot replaces the previous score for that numeric ID.
+   *
+   * Subclasses reading external state in analysis hooks must extend this
+   * fingerprint, call clearClientCache()/clearCache() when that state changes,
+   * or disable score caching. Analysis hooks still dispatch through the facade.
+   *
+   * @param \Drupal\consumers\Entity\Consumer $client
+   *   The saved consumer snapshot being classified.
+   *
+   * @return string
+   *   The opaque identity of the current scoring inputs.
+   */
+  protected function getDetectionCacheFingerprint(Consumer $client): string {
+    return hash('sha256', serialize([
+      $client::class,
+      $client->language()->getId(),
+      $client->toArray(),
+      $this->configFactory->get('simple_oauth_native_apps.settings')->get(),
+      $this->nativeUriPatterns,
+      $this->loopbackPatterns,
+      $this->webUriPatterns,
+    ]));
   }
 
   /**
@@ -784,6 +827,7 @@ class NativeClientDetector {
    */
   public function clearCache(): void {
     $this->detectionCache = [];
+    $this->scoreCacheFingerprints = [];
     $this->typeCacheSettings = NULL;
   }
 
@@ -795,7 +839,7 @@ class NativeClientDetector {
    */
   public function clearClientCache(Consumer $client): void {
     $cache_key = 'native_detection_' . $client->id();
-    unset($this->detectionCache[$cache_key], $this->submittedOverrides[$client]);
+    unset($this->detectionCache[$cache_key], $this->scoreCacheFingerprints[$cache_key], $this->submittedOverrides[$client]);
   }
 
 }

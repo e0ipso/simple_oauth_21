@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\simple_oauth_native_apps\Kernel;
 
 use Drupal\Core\Validation\ConstraintValidatorFactory;
+use Drupal\Core\TypedData\Type\FloatInterface;
 use Symfony\Component\Validator\Validation;
 use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Config\ConfigFactoryOverrideInterface;
@@ -21,6 +22,7 @@ use Drupal\Core\StringTranslation\TranslationManager;
 use Drupal\Core\StringTranslation\Translator\TranslatorInterface;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\Tests\SchemaCheckTestTrait;
 use Drupal\simple_oauth_native_apps\Form\ConsumerNativeAppsFormAlter;
 use Drupal\simple_oauth_native_apps\Form\NativeAppsSettingsForm;
 use Drupal\simple_oauth_native_apps\Service\NativeClientClassifier;
@@ -45,6 +47,8 @@ use Drupal\simple_oauth_native_apps\Plugin\Validation\Constraint\NativeAppRedire
  */
 #[Group('simple_oauth_native_apps')]
 final class ServiceIntegrationTest extends KernelTestBase {
+
+  use SchemaCheckTestTrait;
 
   /**
    * {@inheritdoc}
@@ -71,6 +75,342 @@ final class ServiceIntegrationTest extends KernelTestBase {
     $this->installEntitySchema('file');
     $this->installEntitySchema('consumer');
     $this->installConfig(['simple_oauth', 'simple_oauth_native_apps']);
+  }
+
+  /**
+   * Tests cached scores and policy follow every default classifier input.
+   */
+  public function testDetectionCacheEntityInputs(): void {
+    $this->installEntitySchema('oauth2_token');
+    $settings = $this->config('simple_oauth_native_apps.settings');
+    $settings->set('cache_detection_results', TRUE)->save();
+    $detector = $this->container->get('simple_oauth_native_apps.native_client_detector');
+    $native = Consumer::create(['label' => 'Native', 'native_app_override' => 'native']);
+    $web = Consumer::create(['label' => 'Web', 'native_app_override' => 'web']);
+    // Different unsaved consumers must not share the NULL-ID score slot.
+    $this->assertTrue($detector->requiresEnhancedPkce($native));
+    $this->assertFalse($detector->requiresEnhancedPkce($web));
+    $native->set('native_app_override', 'web');
+    $this->assertFalse($detector->requiresEnhancedPkce($native));
+    $native->save();
+    $defaults = [
+      'label' => 'Browser',
+      'native_app_override' => 'auto-detect',
+      'redirect' => [['value' => 'org.example:/callback']],
+      'confidential' => FALSE,
+      'third_party' => FALSE,
+    ];
+    foreach ([
+      ['redirect', [['value' => 'https://example.org/callback']], 0.7, TRUE, FALSE],
+      ['native_app_override', 'web', 0.7, TRUE, FALSE],
+      ['confidential', TRUE, 0.7, TRUE, FALSE],
+      ['third_party', TRUE, 0.9, FALSE, TRUE],
+      ['label', 'Mobile app', 0.9, FALSE, TRUE],
+    ] as [$field, $value, $threshold, $before, $after]) {
+      foreach ($defaults as $key => $default) {
+        $native->set($key, $default);
+      }
+      $settings->set('detection_sensitivity', $threshold)->save();
+      $this->assertSame($before, $detector->requiresEnhancedPkce($native), $field);
+      $score = $detector->getDetectionConfidence($native);
+      $native->set($field, $value);
+      $this->assertNotSame($score, $detector->getDetectionConfidence($native), $field);
+      $this->assertSame($after, $detector->requiresEnhancedPkce($native), $field);
+    }
+    $native->set('native_app_override', 'native');
+    $native->save();
+    $storage = $this->container->get('entity_type.manager')->getStorage('consumer');
+    $storage->resetCache([$native->id()]);
+    $loaded = $storage->load($native->id());
+    $this->assertNotSame($native, $loaded);
+    $this->assertTrue($detector->requiresEnhancedPkce($native));
+    $loaded->set('native_app_override', 'web');
+    $this->assertFalse($detector->requiresEnhancedPkce($loaded));
+    $this->assertTrue($detector->requiresEnhancedPkce($native));
+    $clone = clone $loaded;
+    $clone->set('native_app_override', 'native');
+    $this->assertTrue($detector->requiresEnhancedPkce($clone));
+    $this->assertFalse($detector->requiresEnhancedPkce($loaded));
+    // A recreated owner with the same numeric ID must not inherit a score.
+    $clone->set('uuid', '7bcb6cea-3c47-45ab-8c36-c571393c049f');
+    $clone->set('native_app_override', 'web');
+    $this->assertFalse($detector->requiresEnhancedPkce($clone));
+    $native->set('native_app_override', 'web');
+    $native->enforceIsNew();
+    $this->assertFalse($detector->requiresEnhancedPkce($native));
+  }
+
+  /**
+   * Tests bounded score replacement, extension dispatch and explicit clears.
+   */
+  public function testDetectionCacheLifetimeAndExtensions(): void {
+    $settings = $this->config('simple_oauth_native_apps.settings');
+    $settings->set('cache_detection_results', TRUE)->save();
+    $factory = $this->container->get('config.factory');
+    $detector = new class($factory, $this->container->get('logger.factory')) extends NativeClientDetector {
+
+      /**
+       * Number of uncached analysis calls.
+       *
+       * @var int
+       */
+      public int $calls = 0;
+
+      /**
+       * External state explicitly included in this extension's fingerprint.
+       *
+       * @var bool
+       */
+      public bool $externalNative = FALSE;
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function analyzeRedirectUris(Consumer $client): float {
+        $this->calls++;
+        return parent::analyzeRedirectUris($client);
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function analyzeGrantTypes(Consumer $client): float {
+        return $this->externalNative || $client->getClientId() === 'extension-native' || $client->uuid() === '7bcb6cea-3c47-45ab-8c36-c571393c049f'
+          ? 1.0 : parent::analyzeGrantTypes($client);
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function getDetectionCacheFingerprint(Consumer $client): string {
+        return parent::getDetectionCacheFingerprint($client) . (int) $this->externalNative;
+      }
+
+      /**
+       * Changes the protected URI patterns used by inherited analysis hooks.
+       *
+       * @param array $native
+       *   Native URI patterns.
+       * @param array $loopback
+       *   Loopback URI patterns.
+       * @param array $web
+       *   Web URI patterns.
+       */
+      public function setScoringPatterns(array $native, array $loopback, array $web): void {
+        $this->nativeUriPatterns = $native;
+        $this->loopbackPatterns = $loopback;
+        $this->webUriPatterns = $web;
+      }
+
+      /**
+       * Counts score slots independently of the existing type cache.
+       *
+       * @return int
+       *   The number of cached consumer scores.
+       */
+      public function scoreCount(): int {
+        return count(array_filter(array_keys($this->detectionCache), static fn(string $key): bool => str_starts_with($key, 'native_detection_')));
+      }
+
+    };
+    $client = Consumer::create([
+      'label' => 'Browser',
+      'client_id' => 'browser',
+      'confidential' => TRUE,
+      'third_party' => FALSE,
+      'redirect' => [['value' => 'https://example.org/callback']],
+    ]);
+    $client->save();
+    $this->assertSame(0.0, $detector->getDetectionConfidence($client));
+    $this->assertSame(0.0, $detector->getDetectionConfidence(clone $client));
+    $this->assertSame(1, $detector->calls);
+    $this->assertSame(1, $detector->scoreCount());
+    // An existing field read only by the extension must invalidate the score.
+    $client->set('client_id', 'extension-native');
+    $this->assertSame(0.3, $detector->getDetectionConfidence($client));
+    $detector->setScoringPatterns(['/^https:/'], [], []);
+    $this->assertTrue($detector->requiresEnhancedPkce($client));
+    $detector->setScoringPatterns([], ['/^https:/'], []);
+    $this->assertTrue($detector->requiresEnhancedPkce($client));
+    $detector->setScoringPatterns([], [], ['/^https:/']);
+    $this->assertFalse($detector->requiresEnhancedPkce($client));
+    $detector->setScoringPatterns([], [], []);
+    $this->assertSame(0.5, $detector->getDetectionConfidence($client));
+    $client->set('client_id', 'browser');
+    $this->assertSame(0.2, $detector->getDetectionConfidence($client));
+    $detector->setScoringPatterns(['/^https:/'], [], []);
+    $foreign = clone $client;
+    $foreign->set('uuid', '7bcb6cea-3c47-45ab-8c36-c571393c049f');
+    $this->assertFalse($detector->requiresEnhancedPkce($client));
+    $this->assertTrue($detector->requiresEnhancedPkce($foreign));
+    $this->assertFalse($detector->requiresEnhancedPkce($client));
+    $detector->setScoringPatterns([], [], []);
+    $detector->externalNative = TRUE;
+    $this->assertSame(0.5, $detector->getDetectionConfidence($client));
+    $settings->set('detection_sensitivity', 0.4)->save();
+    $this->assertTrue($detector->requiresEnhancedPkce($client));
+    $this->assertSame(1, $detector->scoreCount());
+    $calls = $detector->calls;
+    $detector->clearClientCache($client);
+    $this->assertSame(0, $detector->scoreCount());
+    $this->assertTrue($detector->requiresEnhancedPkce($client));
+    $this->assertSame($calls + 1, $detector->calls);
+    $detector->clearCache();
+    $this->assertSame(0, $detector->scoreCount());
+    $this->assertTrue($detector->requiresEnhancedPkce($client));
+    $settings->set('cache_detection_results', FALSE)->save();
+    $calls = $detector->calls;
+    $this->assertTrue($detector->isNativeClient($client));
+    $this->assertTrue($detector->isNativeClient($client));
+    $this->assertSame($calls + 2, $detector->calls);
+    $this->assertSame(0, $detector->scoreCount());
+    $settings->set('cache_detection_results', TRUE)->save();
+    $this->assertTrue($detector->requiresEnhancedPkce($client));
+    $this->assertSame(1, $detector->scoreCount());
+    $settings->clear('cache_detection_results')->save();
+    $calls = $detector->calls;
+    $detector->getDetectionConfidence($client);
+    $detector->getDetectionConfidence($client);
+    $this->assertSame($calls + 2, $detector->calls);
+    $settings->set('cache_detection_results', TRUE)->save();
+    $detector->getDetectionConfidence($client);
+    $pending = clone $client;
+    $detector->setSubmittedOverrides($pending, ['enhanced_pkce_override' => 'not-enhanced']);
+    $this->assertFalse($detector->requiresEnhancedPkce($pending));
+    $this->assertTrue($detector->requiresEnhancedPkce($client));
+    $detector->clearClientCache($pending);
+    $this->assertTrue($detector->requiresEnhancedPkce($pending));
+    $unsaved = $client->createDuplicate();
+    $calls = $detector->calls;
+    $detector->getDetectionConfidence($unsaved);
+    $detector->getDetectionConfidence($unsaved);
+    $this->assertSame($calls + 2, $detector->calls);
+    $this->assertSame(1, $detector->scoreCount());
+  }
+
+  /**
+   * Tests optional schema, validator boundaries and unchanged runtime defaults.
+   */
+  public function testOptionalRuntimeSettingsSchema(): void {
+    $name = 'simple_oauth_native_apps.settings';
+    $raw = $this->container->get('config.storage')->read($name);
+    $manager = $this->container->get('config.typed');
+    $validator = $this->container->get('simple_oauth_native_apps.configuration_validator');
+    $this->assertSame([], $validator->validateConfiguration($raw));
+    $this->assertCount(0, $manager->createFromNameAndData($name, $raw)->validate());
+    foreach (['detection_sensitivity', 'cache_detection_results', 'allow_plain_pkce'] as $key) {
+      $this->assertArrayNotHasKey($key, $raw);
+    }
+    foreach ([0, 0.0, 0.7, 1, 1.0, '0.5'] as $value) {
+      $data = $raw + ['detection_sensitivity' => $value, 'cache_detection_results' => TRUE, 'allow_plain_pkce' => FALSE];
+      $typed = $manager->createFromNameAndData($name, $data);
+      $this->assertInstanceOf(FloatInterface::class, $typed->get('detection_sensitivity'));
+      $this->assertSame('boolean', $typed->get('cache_detection_results')->getDataDefinition()->getDataType());
+      $this->assertSame('boolean', $typed->get('allow_plain_pkce')->getDataDefinition()->getDataType());
+      $this->assertCount(0, $typed->validate());
+      $this->assertSame([], $validator->validateConfiguration($data));
+      $this->assertConfigSchema($manager, $name, $data);
+      $this->assertSame($data, $typed->getValue());
+    }
+    foreach ([
+      'detection_sensitivity' => [-0.01, 1.01, 'invalid-sensitive-input', '1e-9999', '0e9999', [], NULL, TRUE, INF, NAN],
+      'cache_detection_results' => ['false', '1', 0, [], NULL],
+      'allow_plain_pkce' => ['false', '0', 1, [], NULL],
+    ] as $key => $values) {
+      foreach ($values as $value) {
+        $data = $raw + [$key => $value];
+        $violations = $manager->createFromNameAndData($name, $data)->validate();
+        $paths = [];
+        foreach ($violations as $violation) {
+          $paths[] = $violation->getPropertyPath();
+        }
+        $this->assertContains($key, $paths);
+        $errors = array_map('strval', $validator->validateConfiguration($data));
+        $this->assertNotSame([], $errors);
+        $this->assertStringContainsString($key, implode(' ', $errors));
+        $this->assertStringNotContainsString('invalid-sensitive-input', implode(' ', $errors));
+      }
+    }
+    $detector = $this->container->get('simple_oauth_native_apps.native_client_detector');
+    $client = Consumer::create(['label' => 'Browser', 'native_app_override' => 'web']);
+    $this->assertFalse($detector->isNativeClient($client));
+    $provider = $this->container->get('simple_oauth_native_apps.metadata_provider');
+    $this->assertSame(['S256'], $provider->getMetadata()['code_challenge_methods_supported']);
+    $this->assertSame($raw, $this->container->get('config.storage')->read($name));
+  }
+
+  /**
+   * Tests imports and unrelated form saves preserve optional settings.
+   */
+  public function testOptionalRuntimeSettingsImportAndForm(): void {
+    $name = 'simple_oauth_native_apps.settings';
+    foreach ([
+      [],
+      [
+        'detection_sensitivity' => 0,
+        'cache_detection_results' => FALSE,
+        'allow_plain_pkce' => FALSE,
+      ],
+      [
+        'detection_sensitivity' => 1,
+        'cache_detection_results' => TRUE,
+        'allow_plain_pkce' => TRUE,
+      ],
+      [
+        'detection_sensitivity' => '0.5',
+        'cache_detection_results' => TRUE,
+        'allow_plain_pkce' => FALSE,
+      ],
+    ] as $controls) {
+      $source = $this->policyImportSource();
+      $data = $source->read($name);
+      foreach (['detection_sensitivity', 'cache_detection_results', 'allow_plain_pkce'] as $key) {
+        unset($data[$key]);
+      }
+      $data += $controls;
+      $source->write($name, $data);
+      $this->policyImporter($source)->import();
+      $actual = $this->container->get('config.storage')->read($name);
+      ksort($data);
+      ksort($actual);
+      $this->assertSame($data, $actual);
+      $values = $this->nativeSettingsValues('auto-detect');
+      $values['require_exact_redirect_match'] = $data['require_exact_redirect_match'];
+      $values['webview']['custom_message'] = 'Unrelated change';
+      $state = (new FormState())->setValues($values);
+      $this->container->get('form_builder')->submitForm(NativeAppsSettingsForm::class, $state);
+      $this->assertSame([], $state->getErrors());
+      $data['webview']['custom_message'] = 'Unrelated change';
+      $actual = $this->container->get('config.storage')->read($name);
+      ksort($actual);
+      $this->assertSame($data, $actual);
+      $provider = $this->container->get('simple_oauth_native_apps.metadata_provider');
+      $this->assertSame(($controls['allow_plain_pkce'] ?? FALSE) ? ['S256', 'plain'] : ['S256'], $provider->getMetadata()['code_challenge_methods_supported']);
+      $this->assertTrue($provider->getMetadata()['pkce_s256_enforced']);
+    }
+    foreach ([
+      'detection_sensitivity' => [-0.01, 1.01, 'invalid-sensitive-input', '1e-9999', '0e9999', [], NULL, TRUE],
+      'cache_detection_results' => ['false', 1, [], NULL],
+      'allow_plain_pkce' => ['true', 0, [], NULL],
+    ] as $key => $values) {
+      foreach ($values as $value) {
+        $source = $this->policyImportSource();
+        $before = $this->container->get('config.storage')->read($name);
+        $source->write($name, array_replace($before, [$key => $value]));
+        $this->assertPolicyImportRejected($source, $key);
+        $this->assertSame($before, $this->container->get('config.storage')->read($name));
+      }
+    }
+    // Values written outside validation must be rejected before form casting.
+    $storage = $this->container->get('config.storage');
+    $raw = $storage->read($name);
+    $raw['allow_plain_pkce'] = 'false';
+    $storage->write($name, $raw);
+    $this->container->get('config.factory')->reset($name);
+    $state = (new FormState())->setValues($this->nativeSettingsValues('auto-detect'));
+    $this->container->get('form_builder')->submitForm(NativeAppsSettingsForm::class, $state);
+    $this->assertNotSame([], $state->getErrors());
+    $this->assertSame($raw, $storage->read($name));
   }
 
   /**
@@ -537,17 +877,28 @@ final class ServiceIntegrationTest extends KernelTestBase {
     });
     $factory->addOverride($override);
     $provider = $this->container->get('simple_oauth_native_apps.metadata_provider');
+    $raw = $this->container->get('config.storage')->read('simple_oauth_native_apps.settings');
+    $detector = $this->container->get('simple_oauth_native_apps.native_client_detector');
+    $client = Consumer::create(['label' => 'Browser', 'native_app_override' => 'web']);
     foreach ([
       [FALSE, ['user.permissions'], ['native_override:first'], 0],
       [TRUE, ['languages:language_interface'], ['native_override:second'], 120],
       [TRUE, [], [], -1],
     ] as [$enabled, $contexts, $tags, $max_age]) {
-      $values = ['enforce_native_security' => $enabled];
+      $values = [
+        'enforce_native_security' => $enabled,
+        'allow_plain_pkce' => !$enabled,
+        'cache_detection_results' => $enabled,
+        'detection_sensitivity' => $enabled ? 1.0 : 0.0,
+      ];
       $cacheability = (new CacheableMetadata())
         ->setCacheContexts($contexts)->setCacheTags($tags)->setCacheMaxAge($max_age);
       $factory->reset();
       for ($iteration = 0; $iteration < 2; $iteration++) {
         $metadata = $provider->getMetadata();
+        $this->assertSame(!$enabled, $detector->isNativeClient($client));
+        $this->assertSame($raw, $this->container->get('config.storage')->read('simple_oauth_native_apps.settings'));
+        $this->assertSame($enabled ? ['S256'] : ['S256', 'plain'], $metadata['code_challenge_methods_supported']);
         $this->assertSame($enabled, $metadata['enhanced_native_security']);
         $this->assertSame($enabled, $metadata['native_apps_pkce_required']);
         $response = new CacheableJsonResponse($metadata);
