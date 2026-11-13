@@ -105,10 +105,19 @@ final class OAuth21ComplianceServiceTest extends UnitTestCase {
   }
 
   /**
-   * Tests native compliance follows the effective master switch.
+   * Tests native compliance follows the master switch and legacy permissions.
    */
   public function testNativeComplianceMasterSwitch(): void {
-    foreach ([TRUE, FALSE, NULL] as $enabled) {
+    foreach ([
+      [TRUE, 'auto-detect', 'native', TRUE],
+      [FALSE, 'auto-detect', 'native', FALSE],
+      [NULL, 'auto-detect', 'native', FALSE],
+      [TRUE, '1', '1', TRUE],
+      [TRUE, '0', '1', FALSE],
+      [TRUE, '1', '0', FALSE],
+      [TRUE, 'web', 'native', FALSE],
+      [FALSE, '1', '1', FALSE],
+    ] as [$enabled, $custom, $loopback, $expected]) {
       $modules = $this->createMock(ModuleHandlerInterface::class);
       $modules->method('moduleExists')->willReturnCallback(
         static fn(string $name): bool => $name === 'simple_oauth_native_apps'
@@ -120,8 +129,8 @@ final class OAuth21ComplianceServiceTest extends UnitTestCase {
       $config->method('getCacheMaxAge')->willReturn(-1);
       $config->method('get')->willReturnMap([
         ['enforce_native_security', $enabled],
-        ['allow.custom_uri_schemes', 'auto-detect'],
-        ['allow.loopback_redirects', 'native'],
+        ['allow.custom_uri_schemes', $custom],
+        ['allow.loopback_redirects', $loopback],
       ]);
       $factory = $this->createMock(ConfigFactoryInterface::class);
       $factory->method('get')->willReturn($config);
@@ -129,7 +138,7 @@ final class OAuth21ComplianceServiceTest extends UnitTestCase {
       $routes->method('getRouteByName')->willThrowException(new RouteNotFoundException());
       $service = new OAuth21ComplianceService($modules, $factory, $routes);
       self::assertSame([
-        'status' => $enabled === TRUE ? 'configured' : 'needs_attention',
+        'status' => $expected ? 'configured' : 'needs_attention',
         'module' => 'simple_oauth_native_apps',
         'enabled' => TRUE,
         'recommendation' => 'Native app security features are enabled',

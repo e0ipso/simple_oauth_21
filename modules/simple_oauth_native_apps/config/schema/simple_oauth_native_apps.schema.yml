@@ -57,7 +57,7 @@ simple_oauth_native_apps.settings:
           type: string
           label: 'Allow custom URI schemes'
           # cspell:ignore myapp
-          description: 'Allow custom URI schemes for native app redirects (e.g., myapp://callback)'
+          description: 'Allow custom URI schemes for native app redirects (e.g., myapp://callback); legacy strings 1 and 0 mean native and web'
           required: true
           constraints:
             Choice:
@@ -66,7 +66,7 @@ simple_oauth_native_apps.settings:
         loopback_redirects:
           type: string
           label: 'Allow loopback redirects'
-          description: 'Allow loopback IP redirects for native applications (RFC 8252)'
+          description: 'Allow loopback IP redirects for native applications (RFC 8252); legacy strings 1 and 0 mean native and web'
           required: true
           constraints:
             Choice:

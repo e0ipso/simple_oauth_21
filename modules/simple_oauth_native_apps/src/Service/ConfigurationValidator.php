@@ -122,10 +122,9 @@ final class ConfigurationValidator {
   public function validateRedirectUriConfig(array $config): array {
     $errors = [];
 
-    $valid_policies = ['auto-detect', 'native', 'web'];
     foreach (['custom_uri_schemes', 'loopback_redirects'] as $setting) {
-      if (array_key_exists($setting, $config['allow'] ?? []) && !in_array($config['allow'][$setting], $valid_policies, TRUE)) {
-        $errors[] = $this->t('Invalid redirect policy for @setting. Must be one of: auto-detect, native, web.', [
+      if (array_key_exists($setting, $config['allow'] ?? []) && RedirectPolicyValue::normalize($config['allow'][$setting]) === NULL) {
+        $errors[] = $this->t('Invalid redirect policy for @setting. Must be one of: auto-detect, native, web, 1, 0.', [
           '@setting' => $setting,
         ]);
       }
@@ -134,8 +133,8 @@ final class ConfigurationValidator {
     // Check for logical conflicts.
     // Consider 'web' as not allowing the feature, 'native' and 'auto-detect'
     // as allowing it.
-    $custom_uri_disabled = isset($config['allow']['custom_uri_schemes']) && $config['allow']['custom_uri_schemes'] === 'web';
-    $loopback_disabled = isset($config['allow']['loopback_redirects']) && $config['allow']['loopback_redirects'] === 'web';
+    $custom_uri_disabled = isset($config['allow']['custom_uri_schemes']) && RedirectPolicyValue::normalize($config['allow']['custom_uri_schemes']) === 'web';
+    $loopback_disabled = isset($config['allow']['loopback_redirects']) && RedirectPolicyValue::normalize($config['allow']['loopback_redirects']) === 'web';
 
     if (
       !empty($config['require_exact_redirect_match'])

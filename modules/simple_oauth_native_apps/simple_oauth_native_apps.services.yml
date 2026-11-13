@@ -52,12 +52,24 @@ services:
       - '@simple_oauth_native_apps.consumer_policy_resolver'
       - '@database'
 
+  simple_oauth_native_apps.security_policy:
+    class: Drupal\simple_oauth_native_apps\Service\NativeSecurityPolicy
+
+  simple_oauth_native_apps.client_classifier:
+    class: Drupal\simple_oauth_native_apps\Service\NativeClientClassifier
+
+  simple_oauth_native_apps.client_description:
+    class: Drupal\simple_oauth_native_apps\Service\NativeClientDescription
+
   simple_oauth_native_apps.native_client_detector:
     class: Drupal\simple_oauth_native_apps\Service\NativeClientDetector
     arguments:
       - '@config.factory'
       - '@logger.factory'
       - '@simple_oauth_native_apps.consumer_policy_resolver'
+      - '@simple_oauth_native_apps.security_policy'
+      - '@simple_oauth_native_apps.client_classifier'
+      - '@simple_oauth_native_apps.client_description'
 
   simple_oauth_native_apps.pkce_enhancement:
     class: Drupal\simple_oauth_native_apps\Service\PKCEEnhancementService

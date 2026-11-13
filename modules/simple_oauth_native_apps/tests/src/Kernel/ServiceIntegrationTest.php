@@ -22,6 +22,11 @@ use Drupal\Core\StringTranslation\Translator\TranslatorInterface;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\simple_oauth_native_apps\Form\ConsumerNativeAppsFormAlter;
+use Drupal\simple_oauth_native_apps\Form\NativeAppsSettingsForm;
+use Drupal\simple_oauth_native_apps\Service\NativeClientClassifier;
+use Drupal\simple_oauth_native_apps\Service\NativeClientDescription;
+use Drupal\simple_oauth_native_apps\Service\NativeSecurityPolicy;
+use Drupal\simple_oauth_native_apps\Service\RedirectPolicyValue;
 use Drupal\simple_oauth_native_apps\Service\ConsumerPolicyResolver;
 use Drupal\simple_oauth_native_apps\Service\ConfigurationValidator;
 use Drupal\simple_oauth_native_apps\Service\MetadataProvider;
@@ -66,6 +71,452 @@ final class ServiceIntegrationTest extends KernelTestBase {
     $this->installEntitySchema('file');
     $this->installEntitySchema('consumer');
     $this->installConfig(['simple_oauth', 'simple_oauth_native_apps']);
+  }
+
+  /**
+   * Tests declared global legacy values across schema and runtime boundaries.
+   */
+  public function testLegacyGlobalRedirectPermissions(): void {
+    $factory = $this->container->get('config.factory');
+    $detectors = [
+      $this->container->get('simple_oauth_native_apps.native_client_detector'),
+      new NativeClientDetector($factory, $this->container->get('logger.factory')),
+    ];
+    $validators = [
+      $this->container->get('simple_oauth_native_apps.redirect_uri_validator'),
+      new RedirectUriValidator($factory, $this->container->get('logger.channel.simple_oauth_native_apps')),
+    ];
+    $native = Consumer::create(['label' => 'Native policy', 'native_app_override' => 'native']);
+    $native->save();
+    $web = Consumer::create(['label' => 'Web policy', 'native_app_override' => 'web']);
+    $web->save();
+    $standalone = Validation::createValidatorBuilder()
+      ->setConstraintValidatorFactory(new ConstraintValidatorFactory($this->container->get('class_resolver')))
+      ->getValidator();
+    $config = $this->config('simple_oauth_native_apps.settings');
+    foreach (['1', '0', 'auto-detect', 'native', 'web'] as $value) {
+      $config->set('allow.custom_uri_schemes', $value)->set('allow.loopback_redirects', $value)
+        ->set('require_exact_redirect_match', FALSE)->save();
+      $raw = $this->container->get('config.storage')->read($config->getName());
+      $typed = $this->container->get('config.typed')->createFromNameAndData($config->getName(), $raw);
+      $this->assertCount(0, $typed->validate(), $value);
+      $this->assertSame([], $this->container->get('simple_oauth_native_apps.configuration_validator')->validateConfiguration($raw), $value);
+      $global_allowed = in_array($value, ['auto-detect', 'native', '1'], TRUE);
+      foreach ($detectors as $detector) {
+        foreach ([NULL, $native, $web] as $client) {
+          $allowed = $value === 'auto-detect' ? $client !== $web : $global_allowed;
+          $policy = $detector->getEffectivePolicy($client);
+          $this->assertSame($allowed, $policy['custom_schemes'], $value);
+          $this->assertSame($allowed, $policy['loopback'], $value);
+          if ($client !== NULL) {
+            foreach ($validators as $validator) {
+              $this->assertSame($allowed, $validator->validateConsumerRedirectUri('myapp:/callback', $client), $value);
+              $this->assertSame($allowed, $validator->validateConsumerRedirectUri('http://127.0.0.1:40000/callback', $client), $value);
+              $this->assertTrue($validator->validateConsumerRedirectUri('https://example.org/callback', $client));
+            }
+          }
+        }
+        $details = $detector->detectClientType(['myapp:/callback'])['details'];
+        $this->assertSame($global_allowed, $details['custom_schemes_allowed'], $value);
+        $this->assertSame($global_allowed, $details['loopback_allowed'], $value);
+      }
+      foreach ($validators as $validator) {
+        $this->assertSame($global_allowed, $validator->validateCustomScheme('myapp:/callback'), $value);
+        $this->assertSame($global_allowed, $validator->validateLoopbackInterface('http://[::1]:40000/callback'), $value);
+        foreach (['myapp:/callback', 'http://127.0.0.1:40000/callback'] as $uri) {
+          $this->assertSame($global_allowed, $validator->validateRedirectUri($uri), $value);
+          $this->assertSame($global_allowed, $validator->getValidationError($uri) === NULL, $value);
+          $this->assertSame($global_allowed, count($standalone->validate($uri, new NativeAppRedirectUri())) === 0, $value);
+        }
+        $this->assertFalse($validator->validateLoopbackInterface('http://localhost:40000/callback'));
+        $this->assertFalse($validator->validateCustomScheme('javascript:/callback'));
+      }
+      $provider = $this->container->get('simple_oauth_native_apps.metadata_provider');
+      for ($i = 0; $i < 2; $i++) {
+        $metadata = $provider->getMetadata();
+        $this->assertSame($global_allowed, $metadata['custom_uri_schemes_supported'], $value);
+        $this->assertSame($global_allowed, $metadata['loopback_redirects_supported'], $value);
+      }
+      $entity_form = $this->createMock(EntityFormInterface::class);
+      $entity_form->method('getEntity')->willReturn($native);
+      $form_state = (new FormState())->setFormObject($entity_form);
+      $form = [];
+      $this->container->get('simple_oauth_native_apps.consumer_form_alter')->alterForm($form, $form_state, 'consumer_edit_form');
+      $label = match ($value) {
+        '1', 'native' => 'Native',
+        '0', 'web' => 'Web',
+        default => 'Auto-detect',
+      };
+      foreach (['allow_custom_schemes_override', 'allow_loopback_override'] as $key) {
+        $this->assertStringContainsString('global setting (' . $label . ')', (string) $form['native_apps'][$key]['#description']);
+      }
+      $this->assertSame($raw, $this->container->get('config.storage')->read($config->getName()));
+    }
+    $config->set('allow.custom_uri_schemes', '0')->set('allow.loopback_redirects', '0')->save();
+    $detector = $detectors[0];
+    $name = ConsumerPolicyResolver::PREFIX . $native->id();
+    $this->config($name)->set('allow_custom_schemes_override', 'native')->set('allow_loopback_override', 'native')->save();
+    $this->assertTrue($detector->getEffectivePolicy($native)['custom_schemes']);
+    $this->assertTrue($detector->getEffectivePolicy($native)['loopback']);
+    $this->config($name)->set('allow_custom_schemes_override', '')->set('allow_loopback_override', '')->save();
+    $this->assertFalse($detector->getEffectivePolicy($native)['custom_schemes']);
+    $this->assertFalse($detector->getEffectivePolicy($native)['loopback']);
+    $pending = clone $native;
+    $detector->setSubmittedOverrides($pending, ['allow_custom_schemes_override' => 'native']);
+    $this->assertTrue($detector->getEffectivePolicy($pending)['custom_schemes']);
+    $this->assertFalse($detector->getEffectivePolicy($native)['custom_schemes']);
+    $detector->clearClientCache($pending);
+    $this->assertFalse($detector->getEffectivePolicy($pending)['custom_schemes']);
+    $config->set('enforce_native_security', FALSE)->save();
+    $this->assertTrue($validators[0]->validateConsumerRedirectUri('myapp:/callback', $native));
+    $this->assertFalse($detector->getEffectivePolicy($native)['enhanced_pkce']);
+    $this->assertSame('off', $detector->getEffectivePolicy($native)['webview']);
+  }
+
+  /**
+   * Tests real form defaults, legacy submissions and non-destructive saves.
+   */
+  public function testLegacySettingsForm(): void {
+    $builder = $this->container->get('form_builder');
+    $config = $this->config('simple_oauth_native_apps.settings');
+    foreach (['auto-detect', 'native', 'web', '1', '0'] as $stored) {
+      $canonical = match ($stored) {
+        '1' => 'native',
+        '0' => 'web',
+        default => $stored,
+      };
+      $config->set('allow.custom_uri_schemes', $stored)->set('allow.loopback_redirects', $stored)
+        ->set('require_exact_redirect_match', FALSE)->save();
+      $form = $builder->getForm(NativeAppsSettingsForm::class);
+      foreach (['custom_uri_schemes', 'loopback_redirects'] as $key) {
+        $this->assertSame($canonical, $form['allow'][$key]['#default_value'], $stored);
+        $this->assertSame($canonical, $form['allow'][$key]['#value'], $stored);
+      }
+      $raw = $this->container->get('config.storage')->read($config->getName());
+      $values = $this->nativeSettingsValues($stored);
+      $values['webview']['custom_message'] = 'Unrelated edit';
+      $state = (new FormState())->setValues($values);
+      $builder->submitForm(NativeAppsSettingsForm::class, $state);
+      $this->assertSame([], $state->getErrors(), $stored);
+      $raw['webview']['custom_message'] = 'Unrelated edit';
+      $this->assertSame($raw, $this->container->get('config.storage')->read($config->getName()), $stored);
+      // A canonical selection with the same meaning also retains legacy bytes.
+      $state = (new FormState())->setValues($this->nativeSettingsValues($canonical));
+      $builder->submitForm(NativeAppsSettingsForm::class, $state);
+      $this->assertSame([], $state->getErrors(), $stored);
+      $this->assertSame($stored, $config->get('allow.custom_uri_schemes'));
+      $this->assertSame($stored, $config->get('allow.loopback_redirects'));
+      $changed = $canonical === 'web' ? '1' : '0';
+      $state = (new FormState())->setValues($this->nativeSettingsValues($changed));
+      $builder->submitForm(NativeAppsSettingsForm::class, $state);
+      $this->assertSame([], $state->getErrors(), $stored);
+      $expected = $changed === '1' ? 'native' : 'web';
+      $this->assertSame($expected, $config->get('allow.custom_uri_schemes'));
+      $this->assertSame($expected, $config->get('allow.loopback_redirects'));
+    }
+    $before = $this->container->get('config.storage')->read($config->getName());
+    $state = (new FormState())->setValues($this->nativeSettingsValues('invalid'));
+    $builder->submitForm(NativeAppsSettingsForm::class, $state);
+    $this->assertNotSame([], $state->getErrors());
+    $this->assertSame($before, $this->container->get('config.storage')->read($config->getName()));
+  }
+
+  /**
+   * Supplies complete settings input to the actual Form API submission path.
+   *
+   * @param string $permission
+   *   The submitted global redirect permission.
+   *
+   * @return array
+   *   Settings form input.
+   */
+  private function nativeSettingsValues(string $permission): array {
+    return [
+      'security' => ['enforce_native_security' => TRUE],
+      'webview' => [
+        'detection' => 'block',
+        'custom_message' => '',
+        'advanced' => ['whitelist' => '', 'patterns' => ''],
+      ],
+      'require_exact_redirect_match' => FALSE,
+      'allow' => ['custom_uri_schemes' => $permission, 'loopback_redirects' => $permission],
+      'native' => ['enhanced_pkce' => 'auto-detect', 'enforce' => 'S256'],
+    ];
+  }
+
+  /**
+   * Tests invalid values reject without extending unrelated enum domains.
+   */
+  public function testLegacyValidationBoundaries(): void {
+    $config = $this->config('simple_oauth_native_apps.settings');
+    $manager = $this->container->get('config.typed');
+    $validator = $this->container->get('simple_oauth_native_apps.configuration_validator');
+    foreach (['invalid', '', 'true', 'false', '01', '0 ', TRUE, FALSE, 1, 0, []] as $invalid) {
+      $this->assertNull(RedirectPolicyValue::normalize($invalid));
+      $data = $config->getRawData();
+      $data['allow'] = ['custom_uri_schemes' => $invalid, 'loopback_redirects' => $invalid];
+      $this->assertNotSame([], $validator->validateRedirectUriConfig($data));
+    }
+    foreach (['invalid', '', 'true', 'false', '01', '0 '] as $invalid) {
+      $data = $config->getRawData();
+      $data['allow'] = ['custom_uri_schemes' => $invalid, 'loopback_redirects' => $invalid];
+      $this->assertGreaterThan(0, count($manager->createFromNameAndData($config->getName(), $data)->get('allow')->validate()));
+    }
+    $consumer = Consumer::create(['label' => 'Enum validation']);
+    $consumer->save();
+    foreach (['1', '0'] as $value) {
+      $data = $config->getRawData();
+      $data['native']['enhanced_pkce'] = $value;
+      $this->assertGreaterThan(0, count($manager->createFromNameAndData($config->getName(), $data)->get('native')->validate()));
+      $this->assertNotSame([], $validator->validatePkceConfig($data));
+      $typed = $manager->createFromNameAndData(ConsumerPolicyResolver::PREFIX . '1', [
+        'allow_custom_schemes_override' => $value,
+        'allow_loopback_override' => $value,
+      ]);
+      $this->assertCount(2, $typed->validate());
+      foreach (['allow_custom_schemes_override', 'allow_loopback_override'] as $key) {
+        $state = $this->policyFormState($consumer, [$key => $value]);
+        $this->container->get('simple_oauth_native_apps.consumer_form_alter')->validateConsumerNativeAppsSettings([], $state);
+        $this->assertArrayHasKey('native_apps][' . $key, $state->getErrors());
+        $state->clearErrors();
+      }
+    }
+    $canonical = [
+      'require_exact_redirect_match' => TRUE,
+      'allow' => ['custom_uri_schemes' => 'web', 'loopback_redirects' => 'web'],
+    ];
+    $legacy = [
+      'require_exact_redirect_match' => TRUE,
+      'allow' => ['custom_uri_schemes' => '0', 'loopback_redirects' => '0'],
+    ];
+    $this->assertEquals($validator->validateRedirectUriConfig($canonical), $validator->validateRedirectUriConfig($legacy));
+  }
+
+  /**
+   * Tests protected hooks and patterns still govern nested collaborator calls.
+   */
+  public function testDetectorExtensionDispatch(): void {
+    $factory = $this->container->get('config.factory');
+    $logger = $this->container->get('logger.factory');
+    $client = Consumer::create(['label' => 'Browser', 'confidential' => TRUE, 'third_party' => FALSE]);
+    $detector = new class($factory, $logger) extends NativeClientDetector {
+
+      /**
+       * {@inheritdoc}
+       */
+      protected array $nativeUriPatterns = ['/^https:\/\/native\.example\//'];
+
+      /**
+       * {@inheritdoc}
+       */
+      protected array $loopbackPatterns = [];
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function getRedirectUris(Consumer $client): array {
+        return ['https://native.example/callback'];
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function analyzeGrantTypes(Consumer $client): float {
+        return 0.9;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function hasNativeAppNamePattern(string $name): bool {
+        return TRUE;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function resolveCustomUriSchemesAllowed($config, ?Consumer $client = NULL): bool {
+        return FALSE;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function resolveBooleanFromEnum(string $enum_value, ?Consumer $client = NULL): bool {
+        return FALSE;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function getTypeDetails(string $type): array {
+        return parent::getTypeDetails($type) + ['extension' => $type];
+      }
+
+    };
+    $this->assertEqualsWithDelta(0.73, $detector->getDetectionConfidence($client), 0.00001);
+    $this->assertTrue($detector->isNativeClient($client));
+    $this->assertContains('Strong native URI patterns detected', $detector->getClassificationReasons($client));
+    $this->assertTrue($detector->detectNativeFromRedirectUris(['https://native.example/callback']));
+    $this->assertFalse($detector->detectNativeFromRedirectUris(['myapp:/callback']));
+    $result = $detector->detectClientType(['https://native.example/callback']);
+    $this->assertSame('desktop', $result['type']);
+    $this->assertSame('desktop', $result['details']['extension']);
+    $this->assertFalse($result['details']['custom_schemes_allowed']);
+    $this->assertFalse($result['details']['loopback_allowed']);
+    $policy = $detector->getEffectivePolicy($client);
+    $this->assertTrue($policy['enhanced_pkce']);
+    $this->assertFalse($policy['custom_schemes']);
+    $this->assertFalse($policy['loopback']);
+
+    $classified = new class($factory, $logger) extends NativeClientDetector {
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function classifyRedirectUri(string $uri): string {
+        return 'desktop';
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function analyzeRedirectUris(Consumer $client): float {
+        return 1.0;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function calculateNativeScore(Consumer $client): float {
+        return 0.8;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      public function isNativeClient(Consumer $client): bool {
+        return FALSE;
+      }
+
+    };
+    $this->assertSame('desktop', $classified->detectClientType(['https://example.org/callback'])['type']);
+    $this->assertSame(0.8, $classified->getDetectionConfidence($client));
+    $this->assertContains('Strong native URI patterns detected', $classified->getClassificationReasons($client));
+    $this->assertFalse($classified->getEffectivePolicy($client)['enhanced_pkce']);
+    $this->assertFalse($classified->getEffectivePolicy($client)['custom_schemes']);
+  }
+
+  /**
+   * Tests injected replacements, scoped policy recovery and cache entry points.
+   */
+  public function testDetectorCollaborators(): void {
+    $factory = $this->container->get('config.factory');
+    $logger = $this->container->get('logger.factory');
+    $classifier = new class() extends NativeClientClassifier {
+
+      /**
+       * {@inheritdoc}
+       */
+      public function handleEdgeCases(string $uri): string {
+        return 'desktop';
+      }
+
+    };
+    $description = new class() extends NativeClientDescription {
+
+      /**
+       * {@inheritdoc}
+       */
+      public function getTypeDetails(string $type, mixed $enhanced_pkce, \Closure $custom_allowed, \Closure $loopback_allowed): array {
+        return parent::getTypeDetails($type, $enhanced_pkce, $custom_allowed, $loopback_allowed) + ['replacement' => TRUE];
+      }
+
+    };
+    $policy = new class() extends NativeSecurityPolicy {
+
+      /**
+       * {@inheritdoc}
+       */
+      public function resolveBoolean(string $value, \Closure $automatic): bool {
+        return FALSE;
+      }
+
+    };
+    $detector = new NativeClientDetector($factory, $logger, NULL, $policy, $classifier, $description);
+    $this->assertSame('desktop', $detector->detectClientType(['unrecognized'])['type']);
+    $this->assertTrue($detector->detectClientType(['unrecognized'])['details']['replacement']);
+    $this->assertFalse($detector->getEffectivePolicy()['custom_schemes']);
+    $this->assertFalse($detector->getEffectivePolicy()['loopback']);
+    $original = new NativeClientDetector($factory, $logger);
+    $this->assertSame('web', $original->detectClientType(['unrecognized'])['type']);
+    $this->assertTrue($original->getEffectivePolicy()['custom_schemes']);
+
+    $native = Consumer::create(['label' => 'Cache native', 'native_app_override' => 'native']);
+    $native->save();
+    $web = Consumer::create(['label' => 'Cache web', 'native_app_override' => 'web']);
+    $web->save();
+    $override = $this->createMock(ConfigFactoryOverrideInterface::class);
+    $override->method('getCacheSuffix')->willReturn('native_detection_cache');
+    $override->method('loadOverrides')->willReturn([
+      'simple_oauth_native_apps.settings' => ['cache_detection_results' => TRUE],
+    ]);
+    $override->method('getCacheableMetadata')->willReturn(new CacheableMetadata());
+    $factory->addOverride($override);
+    $factory->reset();
+    $this->assertSame(1.0, $original->getDetectionConfidence($native));
+    $this->assertSame(0.0, $original->getDetectionConfidence($web));
+    $native->set('native_app_override', 'web');
+    $original->clearClientCache($native);
+    $this->assertSame(0.0, $original->getDetectionConfidence($native));
+    $native->set('native_app_override', 'native');
+    $original->clearCache();
+    $this->assertSame(1.0, $original->getDetectionConfidence($native));
+    $this->assertSame(0.0, $original->getDetectionConfidence($web));
+    // Re-entrant policy evaluation must restore the outer whole-record scope.
+    $this->config(ConsumerPolicyResolver::PREFIX . $native->id())->set('allow_loopback_override', 'web')->save();
+    $nested = new class($factory, $logger) extends NativeClientDetector {
+
+      /**
+       * The consumer used for a nested policy calculation.
+       *
+       * @var \Drupal\consumers\Entity\Consumer
+       */
+      public Consumer $other;
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function getConsumerEnhancedPkceOverride(Consumer $client): ?string {
+        if ($client !== $this->other) {
+          $this->getEffectivePolicy($this->other);
+        }
+        return parent::getConsumerEnhancedPkceOverride($client);
+      }
+
+    };
+    $nested->other = $web;
+    $this->assertFalse($nested->getEffectivePolicy($native)['loopback']);
+    $this->assertFalse($nested->getEffectivePolicy($web)['custom_schemes']);
+    $this->assertTrue($nested->getEffectivePolicy($native)['custom_schemes']);
+  }
+
+  /**
+   * Tests global legacy configuration imports retain accepted raw values.
+   */
+  public function testLegacyGlobalImport(): void {
+    foreach (['1', '0'] as $value) {
+      $source = $this->policyImportSource();
+      $name = 'simple_oauth_native_apps.settings';
+      $data = $source->read($name);
+      $data['allow'] = ['custom_uri_schemes' => $value, 'loopback_redirects' => $value];
+      $source->write($name, $data);
+      $this->policyImporter($source)->import();
+      $this->assertSame($data, $this->container->get('config.storage')->read($name));
+      $policy = $this->container->get('simple_oauth_native_apps.native_client_detector')->getEffectivePolicy();
+      $this->assertSame($value === '1', $policy['custom_schemes']);
+      $this->assertSame($value === '1', $policy['loopback']);
+    }
   }
 
   /**

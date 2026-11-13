@@ -9,6 +9,7 @@ use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\consumers\Entity\Consumer;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\simple_oauth_native_apps\Service\RedirectUriValidator;
+use Drupal\simple_oauth_native_apps\Service\RedirectPolicyValue;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;
@@ -137,7 +138,8 @@ class NativeAppRedirectUriValidator extends ConstraintValidator implements Conta
     if (!$this->redirectUriValidator->validateLoopbackInterface($uri)) {
       // Check if loopbacks are disabled.
       $config = $this->configFactory->get('simple_oauth_native_apps.settings');
-      if (!$config->get('allow.loopback_redirects')) {
+      $permission = RedirectPolicyValue::normalize($config->get('allow.loopback_redirects') ?? 'auto-detect');
+      if (!in_array($permission, ['native', 'auto-detect'], TRUE)) {
         $this->context->addViolation($constraint->loopbackDisallowedMessage, ['%uri' => $uri]);
         return;
       }
@@ -162,7 +164,8 @@ class NativeAppRedirectUriValidator extends ConstraintValidator implements Conta
 
       // Check if custom schemes are disabled.
       $config = $this->configFactory->get('simple_oauth_native_apps.settings');
-      if (!$config->get('allow.custom_uri_schemes')) {
+      $permission = RedirectPolicyValue::normalize($config->get('allow.custom_uri_schemes') ?? 'auto-detect');
+      if (!in_array($permission, ['native', 'auto-detect'], TRUE)) {
         $this->context->addViolation($constraint->customSchemeDisallowedMessage, ['%uri' => $uri]);
         return;
       }
