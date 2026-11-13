@@ -11,7 +11,7 @@ use Drupal\Core\Form\ConfigTarget;
 use Drupal\Core\Render\Element\Checkboxes;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\simple_oauth\Plugin\Oauth2GrantManagerInterface;
-use Drupal\simple_oauth_client_registration\Service\ClientRegistrationService;
+use Drupal\simple_oauth_client_registration\Service\ClientRegistrationAdministrationInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
@@ -32,7 +32,7 @@ final class ClientRegistrationSettingsForm extends ConfigFormBase {
    *   The typed config manager.
    * @param \Drupal\simple_oauth\Plugin\Oauth2GrantManagerInterface $grantManager
    *   The OAuth2 grant plugin manager.
-   * @param \Drupal\simple_oauth_client_registration\Service\ClientRegistrationService $registrationService
+   * @param \Drupal\simple_oauth_client_registration\Service\ClientRegistrationAdministrationInterface $registrationService
    *   The client management service.
    * @param \Symfony\Component\Serializer\Normalizer\DenormalizerInterface $normalizer
    *   The shared metadata denormalizer.
@@ -41,7 +41,7 @@ final class ClientRegistrationSettingsForm extends ConfigFormBase {
     ConfigFactoryInterface $config_factory,
     TypedConfigManagerInterface $typed_config_manager,
     protected Oauth2GrantManagerInterface $grantManager,
-    protected ClientRegistrationService $registrationService,
+    protected ClientRegistrationAdministrationInterface $registrationService,
     protected DenormalizerInterface $normalizer,
   ) {
     parent::__construct($config_factory, $typed_config_manager);

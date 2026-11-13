@@ -6,7 +6,7 @@ namespace Drupal\simple_oauth_client_registration\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
-use Drupal\simple_oauth_client_registration\Service\ClientRegistrationService;
+use Drupal\simple_oauth_client_registration\Service\ClientRegistrationOperationsInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Core\Cache\CacheableJsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -22,13 +22,13 @@ final class ClientRegistrationController extends ControllerBase {
   /**
    * Constructs a ClientRegistrationController object.
    *
-   * @param \Drupal\simple_oauth_client_registration\Service\ClientRegistrationService $registrationService
+   * @param \Drupal\simple_oauth_client_registration\Service\ClientRegistrationOperationsInterface $registrationService
    *   The client registration service.
    * @param \Symfony\Component\Serializer\SerializerInterface $serializer
    *   The serializer.
    */
   public function __construct(
-    protected readonly ClientRegistrationService $registrationService,
+    protected readonly ClientRegistrationOperationsInterface $registrationService,
     protected readonly SerializerInterface $serializer,
   ) {}
 
