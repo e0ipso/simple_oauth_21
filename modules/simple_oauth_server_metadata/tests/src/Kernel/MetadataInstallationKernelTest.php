@@ -49,6 +49,21 @@ final class MetadataInstallationKernelTest extends KernelTestBase {
   }
 
   /**
+   * Tests the registration endpoint is advertised only for open registration.
+   */
+  public function testRegistrationEndpointFollowsAccessSetting(): void {
+    $this->container->get('module_installer')->install(['simple_oauth_server_metadata']);
+    $discovery = $this->container->get('simple_oauth_server_metadata.endpoint_discovery');
+    $this->assertNotNull($discovery->getRegistrationEndpoint());
+    foreach (['permission', 'disabled'] as $access) {
+      $this->config('simple_oauth_client_registration.settings')->set('registration_access', $access)->save();
+      $this->assertNull($discovery->getRegistrationEndpoint(), $access);
+      $metadata = $this->container->get('simple_oauth_server_metadata.server_metadata')->getServerMetadata();
+      $this->assertArrayNotHasKey('registration_endpoint', $metadata, $access);
+    }
+  }
+
+  /**
    * Tests a syncing module install does not change imported settings.
    *
    * @param bool $explicit_endpoints

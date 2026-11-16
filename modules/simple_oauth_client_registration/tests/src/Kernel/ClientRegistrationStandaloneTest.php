@@ -7,7 +7,9 @@ namespace Drupal\Tests\simple_oauth_client_registration\Kernel;
 use Drupal\Core\Routing\UrlGeneratorInterface;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\simple_oauth_client_registration\Controller\ClientRegistrationController;
+use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\user\Entity\Role;
+use Drupal\user\Entity\User;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\HttpFoundation\Request;
@@ -65,6 +67,38 @@ final class ClientRegistrationStandaloneTest extends KernelTestBase {
     $this->assertFalse($storage->exists('simple_oauth_server_metadata.settings'));
     $this->assertFalse($this->container->get('module_handler')->moduleExists('simple_oauth_server_metadata'));
     $this->assertFalse($this->container->get('simple_oauth_client_registration.service.token')->validateRegistrationAccessToken($data['client_id'], $data['registration_access_token']));
+  }
+
+  /**
+   * Tests the registration endpoint follows the registration access setting.
+   */
+  public function testRegistrationAccessSetting(): void {
+    $this->installEntitySchema('user');
+    $this->installEntitySchema('file');
+    $this->installEntitySchema('consumer');
+    $this->installEntitySchema('oauth2_token');
+    $this->installConfig(['system', 'simple_oauth']);
+    Role::create(['id' => 'authenticated', 'label' => 'Authenticated'])->save();
+    Role::create(['id' => 'registrar', 'label' => 'Registrar', 'permissions' => ['register oauth clients']])->save();
+    $this->container->get('module_installer')->install(['simple_oauth_client_registration']);
+    $anonymous = new AnonymousUserSession();
+    $registrar = User::create(['name' => 'registrar', 'roles' => ['registrar']]);
+    $registrar->save();
+    $controller = ClientRegistrationController::create($this->container);
+    $config = $this->config('simple_oauth_client_registration.settings');
+
+    $this->assertSame('open', $config->get('registration_access'));
+    $this->assertTrue($controller->access($anonymous)->isAllowed());
+
+    $config->set('registration_access', 'permission')->save();
+    $this->assertFalse($controller->access($anonymous)->isAllowed());
+    $this->assertTrue($controller->access($registrar)->isAllowed());
+
+    $config->set('registration_access', 'disabled')->save();
+    $this->assertTrue($controller->access($registrar)->isForbidden());
+
+    $config->clear('registration_access')->save();
+    $this->assertTrue($controller->access($anonymous)->isAllowed());
   }
 
 }

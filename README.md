@@ -259,7 +259,7 @@ drush cache:rebuild
 - **administer simple_oauth entities**: Required to access the compliance dashboard and configuration
 - Individual sub-modules may have additional permission requirements:
   - Device flow: May require permissions for device verification interface
-  - Client registration: `POST /oauth/register` is public. Client management requires the registration access token issued for that client. The settings page requires `administer simple_oauth entities`.
+  - Client registration: `POST /oauth/register` is public by default; the client registration settings can restrict it to the `register oauth clients` permission or disable it. Client management requires the registration access token issued for that client. The settings page requires `administer simple_oauth entities`.
   - Server metadata: Public endpoint access (no special permissions needed)
 
 ## OAuth 2.1 Implementation Guide

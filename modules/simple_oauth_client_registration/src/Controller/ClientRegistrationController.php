@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Drupal\simple_oauth_client_registration\Controller;
 
+use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Access\AccessResultInterface;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
 use Drupal\simple_oauth_client_registration\Service\ClientRegistrationOperationsInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -40,6 +43,29 @@ final class ClientRegistrationController extends ControllerBase {
       $container->get('simple_oauth_client_registration.service.registration'),
       $container->get('serializer')
     );
+  }
+
+  /**
+   * Checks access to the client registration endpoint.
+   *
+   * Registration stays open when the setting is missing, so existing sites
+   * keep their behavior until an administrator changes it.
+   *
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The account making the request.
+   *
+   * @return \Drupal\Core\Access\AccessResultInterface
+   *   Allowed for open registration, or for accounts with the registration
+   *   permission when registration is restricted. Forbidden when disabled.
+   */
+  public function access(AccountInterface $account): AccessResultInterface {
+    $config = $this->config('simple_oauth_client_registration.settings');
+    $result = match ($config->get('registration_access') ?? 'open') {
+      'open' => AccessResult::allowed(),
+      'permission' => AccessResult::allowedIfHasPermission($account, 'register oauth clients'),
+      default => AccessResult::forbidden('Dynamic client registration is disabled.'),
+    };
+    return $result->addCacheableDependency($config);
   }
 
   /**

@@ -27,7 +27,7 @@ services:
     arguments: ['@simple_oauth_server_metadata.token_lookup']
   simple_oauth_server_metadata.endpoint_discovery:
     class: Drupal\simple_oauth_server_metadata\Service\EndpointDiscoveryService
-    arguments: ['@language_manager', '@module_handler']
+    arguments: ['@language_manager', '@module_handler', '@config.factory']
   simple_oauth_server_metadata.grant_type_discovery:
     class: Drupal\simple_oauth_server_metadata\Service\GrantTypeDiscoveryService
     arguments: ['@plugin.manager.oauth2_grant.processor', '@config.factory']

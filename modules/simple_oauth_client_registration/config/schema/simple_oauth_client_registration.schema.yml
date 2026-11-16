@@ -2,6 +2,14 @@ simple_oauth_client_registration.settings:
   type: config_object
   label: 'Client Registration Settings'
   mapping:
+    registration_access:
+      type: string
+      label: 'Who can register clients'
+      constraints:
+        Choice:
+          - open
+          - permission
+          - disabled
     default_grant_types:
       type: sequence
       label: 'Default grant types for DCR clients'

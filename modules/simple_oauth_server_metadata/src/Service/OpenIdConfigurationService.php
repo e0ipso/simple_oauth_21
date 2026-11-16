@@ -49,6 +49,7 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
     $this->cacheTags = [
       'config:simple_oauth_server_metadata.settings',
       'config:simple_oauth.settings',
+      'config:simple_oauth_client_registration.settings',
       'simple_oauth_server_metadata',
       'config:core.extension',
     ];

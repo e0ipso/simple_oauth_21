@@ -101,3 +101,13 @@ function simple_oauth_client_registration_uninstall($is_syncing): void {
   // exact route URL may be an administrator override: no ownership provenance
   // was stored by historical installs. Preserve those values on uninstall.
 }
+
+/**
+ * Keeps dynamic client registration open on existing sites.
+ */
+function simple_oauth_client_registration_update_10001(): void {
+  $config = \Drupal::configFactory()->getEditable('simple_oauth_client_registration.settings');
+  if ($config->get('registration_access') === NULL) {
+    $config->set('registration_access', 'open')->save(TRUE);
+  }
+}
