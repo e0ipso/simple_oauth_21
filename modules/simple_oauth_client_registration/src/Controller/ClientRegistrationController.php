@@ -69,6 +69,33 @@ final class ClientRegistrationController extends ControllerBase {
   }
 
   /**
+   * Builds the error response for a refused registration.
+   *
+   * Anonymous callers get 401 with a Bearer challenge when registration is
+   * restricted, so they know a token is required. Other refusals get 403.
+   *
+   * @return \Drupal\Core\Cache\CacheableJsonResponse
+   *   The JSON error response.
+   */
+  private function accessDeniedResponse(): CacheableJsonResponse {
+    $restricted = ($this->config('simple_oauth_client_registration.settings')->get('registration_access') ?? 'open') === 'permission';
+    $unauthenticated = $restricted && $this->currentUser()->isAnonymous();
+    $response = new CacheableJsonResponse([
+      'error' => 'access_denied',
+      'error_description' => $restricted ? 'Client registration requires a token with the register oauth clients permission.' : 'Dynamic client registration is disabled.',
+    ], $unauthenticated ? 401 : 403);
+    if ($unauthenticated) {
+      $response->headers->set('WWW-Authenticate', 'Bearer');
+    }
+    $response->setMaxAge(0);
+    $response->setPrivate();
+    $response->headers->set('Cache-Control', 'no-store, private');
+    $response->headers->set('Access-Control-Allow-Origin', '*');
+    $response->headers->set('Access-Control-Allow-Methods', Request::METHOD_POST);
+    return $response;
+  }
+
+  /**
    * Handles dynamic client registration.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
@@ -78,6 +105,9 @@ final class ClientRegistrationController extends ControllerBase {
    *   The JSON response containing RFC 7591 client registration response.
    */
   public function register(Request $request): CacheableJsonResponse {
+    if (!$this->access($this->currentUser())->isAllowed()) {
+      return $this->accessDeniedResponse();
+    }
     try {
       // Parse JSON request body.
       $content = $request->getContent();

@@ -186,6 +186,12 @@ class ServerMetadataService implements CacheableDependencyInterface {
         $value = $config->get($field);
       }
 
+      // Never advertise registration that is restricted or disabled, even
+      // when an endpoint URL is configured.
+      if ($field === 'registration_endpoint' && !$this->endpointDiscovery->isRegistrationOpen()) {
+        continue;
+      }
+
       // Auto-derive registration endpoint if not configured and route exists.
       if ($field === 'registration_endpoint' && !$value) {
         $value = $this->endpointDiscovery->getRegistrationEndpoint();

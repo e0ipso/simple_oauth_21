@@ -105,7 +105,7 @@ function simple_oauth_client_registration_uninstall($is_syncing): void {
 /**
  * Keeps dynamic client registration open on existing sites.
  */
-function simple_oauth_client_registration_update_10001(): void {
+function simple_oauth_client_registration_update_10002(): void {
   $config = \Drupal::configFactory()->getEditable('simple_oauth_client_registration.settings');
   if ($config->get('registration_access') === NULL) {
     $config->set('registration_access', 'open')->save(TRUE);

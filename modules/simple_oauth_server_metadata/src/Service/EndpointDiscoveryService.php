@@ -92,8 +92,7 @@ class EndpointDiscoveryService {
    *   registration is restricted or disabled.
    */
   public function getRegistrationEndpoint(): ?string {
-    $access = $this->configFactory?->get('simple_oauth_client_registration.settings')->get('registration_access');
-    if (($access ?? 'open') !== 'open') {
+    if (!$this->isRegistrationOpen()) {
       return NULL;
     }
     try {
@@ -103,6 +102,17 @@ class EndpointDiscoveryService {
       // Route doesn't exist, return NULL.
       return NULL;
     }
+  }
+
+  /**
+   * Checks whether dynamic client registration is open to everyone.
+   *
+   * @return bool
+   *   TRUE unless the client registration settings restrict or disable it.
+   */
+  public function isRegistrationOpen(): bool {
+    $access = $this->configFactory?->get('simple_oauth_client_registration.settings')->get('registration_access');
+    return ($access ?? 'open') === 'open';
   }
 
   /**

@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Drupal\Tests\simple_oauth_client_registration\Kernel;
 
 use Drupal\Core\Routing\UrlGeneratorInterface;
+use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\simple_oauth_client_registration\Controller\ClientRegistrationController;
-use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use PHPUnit\Framework\Attributes\Group;
@@ -99,6 +99,24 @@ final class ClientRegistrationStandaloneTest extends KernelTestBase {
 
     $config->clear('registration_access')->save();
     $this->assertTrue($controller->access($anonymous)->isAllowed());
+
+    $expected = ['open' => 201, 'permission' => 401, 'disabled' => 403];
+    foreach ($expected as $access => $status) {
+      $config->set('registration_access', $access)->save();
+      $server = [
+        'CONTENT_TYPE' => 'application/json',
+        'HTTP_ACCEPT' => 'application/json',
+      ];
+      $request = Request::create('/oauth/register', 'POST', server: $server, content: '{"redirect_uris":["https://example.org/callback"]}');
+      $response = $this->container->get('http_kernel')->handle($request);
+      $this->assertSame($status, $response->getStatusCode(), $access . ': ' . $response->getContent());
+      $this->assertStringContainsString('application/json', (string) $response->headers->get('Content-Type'), $access);
+      $this->assertSame('*', $response->headers->get('Access-Control-Allow-Origin'), $access);
+      if ($status !== 201) {
+        $this->assertSame('access_denied', json_decode((string) $response->getContent(), TRUE)['error'], $access);
+      }
+      $this->assertSame($status === 401 ? 'Bearer' : NULL, $response->headers->get('WWW-Authenticate'), $access);
+    }
   }
 
 }
