@@ -168,7 +168,8 @@ The authorization server metadata endpoint returns JSON metadata conforming to R
     "client_secret_basic",
     "client_secret_post"
   ],
-  "code_challenge_methods_supported": ["S256", "plain"],
+  "response_modes_supported": ["query"],
+  "code_challenge_methods_supported": ["S256"],
   "revocation_endpoint": "https://your-drupal-site.com/oauth/revoke",
   "introspection_endpoint": "https://your-drupal-site.com/oauth/introspect",
   "service_documentation": "https://your-drupal-site.com/docs/oauth"
@@ -202,11 +203,12 @@ The following fields are automatically discovered and included:
 
 #### Discovered Fields
 
-- **response_types_supported**: Available response types
+- **response_types_supported**: Response types of the enabled grant plugins (`["code"]` for the authorization code grant)
+- **response_modes_supported**: `["query"]` when the authorization code grant is enabled. That grant returns its response in the query component. Fragment and `form_post` are not implemented
 - **grant_types_supported**: Enabled grant types
 - **scopes_supported**: Available OAuth scopes
 - **token_endpoint_auth_methods_supported**: Client authentication methods
-- **code_challenge_methods_supported**: PKCE challenge methods (if PKCE enabled)
+- **code_challenge_methods_supported**: PKCE challenge methods. With PKCE enforcement enabled this is the list of enabled methods: `["S256"]` with the default configuration, and `["S256", "plain"]` on a site that enables `plain`. When enforcement is disabled or `simple_oauth_pkce` is not installed, it is always `["S256", "plain"]`
 
 #### Optional Fields (Configurable)
 
@@ -401,7 +403,7 @@ Identifies authentication methods by:
 
 - **Challenge Methods**: Advertises supported PKCE challenge methods
 - **Capability Detection**: Automatically detects PKCE module availability
-- **Method Support**: Lists S256 and plain methods based on configuration
+- **Method Support**: With enforcement enabled, lists the enabled methods (`["S256"]` by default, since `plain_enabled` is `false`). Lists `S256` and `plain` when enforcement is disabled or `simple_oauth_pkce` is absent
 
 ### OpenID Connect
 
@@ -457,7 +459,7 @@ Example debug log entries:
 ```
 server_metadata: Discovered authorization endpoint: /oauth/authorize
 server_metadata: Grant type 'authorization_code' detected and enabled
-server_metadata: PKCE challenge methods: S256, plain
+server_metadata: PKCE challenge methods: S256
 server_metadata: Metadata cache invalidated due to configuration change
 ```
 
@@ -526,6 +528,7 @@ This module implements:
 - ✅ **authorization_endpoint**: Authorization endpoint URL
 - ✅ **token_endpoint**: Token endpoint URL (if applicable)
 - ✅ **response_types_supported**: Supported response types
+- ✅ **response_modes_supported**: `["query"]`
 
 #### Optional Parameters (RFC 8414)
 

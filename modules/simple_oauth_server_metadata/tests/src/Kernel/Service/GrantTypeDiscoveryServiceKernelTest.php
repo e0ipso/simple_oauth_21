@@ -120,11 +120,7 @@ final class GrantTypeDiscoveryServiceKernelTest extends KernelTestBase {
     $this->config('simple_oauth.settings')->set('disable_openid_connect', FALSE)->save();
     $service = $this->container->get('simple_oauth_server_metadata.grant_type_discovery');
     self::assertSame(['code'], $service->getResponseTypesSupported());
-    self::assertEqualsCanonicalizing([
-      'query',
-      'fragment',
-      'form_post',
-    ], $service->getResponseModesSupported());
+    self::assertSame(['query'], $service->getResponseModesSupported());
   }
 
   /**

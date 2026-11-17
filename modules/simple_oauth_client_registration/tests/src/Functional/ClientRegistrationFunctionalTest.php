@@ -738,6 +738,11 @@ final class ClientRegistrationFunctionalTest extends BrowserTestBase {
       ['redirect_uris' => 'https://example.com/callback'],
       ['contacts' => ['admin@example.com', 17]],
       ['grant_types' => [[]]],
+      ['grant_types' => ['implicit']],
+      ['grant_types' => ['authorization_code', 'password']],
+      ['response_types' => ['token']],
+      ['response_types' => ['id_token']],
+      ['response_types' => ['code id_token']],
     ] as $invalid_metadata) {
       $response = $this->httpClient->post($this->buildUrl('/oauth/register'), [
         RequestOptions::JSON => $invalid_metadata + [

@@ -572,7 +572,8 @@ Similar pattern to `ResourceMetadataController`:
   'grant_types_supported' => ['authorization_code', 'refresh_token', ...],
   'scopes_supported' => ['read', 'write', ...],
   'token_endpoint_auth_methods_supported' => ['client_secret_basic', ...],
-  'code_challenge_methods_supported' => ['S256', 'plain'],
+  'response_modes_supported' => ['query'],
+  'code_challenge_methods_supported' => ['S256'], // The enabled methods; ['S256', 'plain'] if enforcement is disabled or simple_oauth_pkce is absent
 
   // OPTIONAL DISCOVERED (module-dependent)
   'registration_endpoint' => 'https://example.com/oauth/register',
@@ -936,12 +937,13 @@ getGrantTypesSupported(): array
   // Maps plugin IDs to OAuth grant type URNs
 
 getResponseTypesSupported(): array
-  // Returns supported OAuth response types
-  // From simple_oauth_server_metadata.settings
+  // Returns the response types of the enabled grant plugins
+  // (no setting; the old config key was removed)
 
 getResponseModesSupported(): array
-  // Returns supported OAuth response modes
-  // From simple_oauth_server_metadata.settings
+  // Returns ['query'] when the authorization code grant is enabled, else [].
+  // Fragment and form_post are not implemented
+  // (no setting; the old config key was removed)
 ```
 
 **Grant Type Mapping:**
@@ -988,7 +990,8 @@ getTokenEndpointAuthSigningAlgValuesSupported(): array
   // Returns: ['RS256', ...]
 
 getCodeChallengeMethodsSupported(): array
-  // Returns: ['S256', 'plain'] if PKCE module enabled
+  // With PKCE enforcement enabled: the enabled methods, ['S256'] by default
+  // Returns ['S256', 'plain'] if enforcement is disabled or simple_oauth_pkce is absent
 
 getClaimsSupported(): array
   // Returns OpenID Connect claims if not disabled
@@ -1169,14 +1172,10 @@ resource_documentation: ''
 resource_policy_uri: ''
 resource_tos_uri: ''
 
-# Response types and modes
-response_types_supported:
-  - 'code'
-  - 'id_token'
-  - 'code id_token'
-response_modes_supported:
-  - 'query'
-  - 'fragment'
+# The response_types_supported and response_modes_supported settings were
+# removed. A post_update function deletes stored copies. Response types come
+# from the grant plugins. The response mode is ['query'] when the
+# authorization code grant is enabled.
 ```
 
 #### Configuration Schema

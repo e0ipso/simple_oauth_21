@@ -94,11 +94,16 @@ final class OAuth21ComplianceService implements CacheableDependencyInterface {
 
     // RFC 7636 - PKCE.
     $pkce_status = $this->getModuleStatus('simple_oauth_pkce');
+    $pkce_compliance = $this->determineRfcStatus('simple_oauth_pkce');
     $rfcs['rfc_7636'] = [
-      'status' => $this->determineRfcStatus('simple_oauth_pkce'),
+      'status' => $pkce_compliance,
       'module' => 'simple_oauth_pkce',
       'enabled' => $pkce_status['enabled'],
-      'recommendation' => $pkce_status['enabled'] ? 'PKCE is enabled for OAuth 2.1 compliance' : 'Enable PKCE module for OAuth 2.1 compliance',
+      'recommendation' => match (TRUE) {
+        !$pkce_status['enabled'] => 'Enable PKCE module for OAuth 2.1 compliance',
+        $pkce_compliance === 'configured' => 'PKCE is enabled for OAuth 2.1 compliance',
+        default => 'Require PKCE with S256 only and disable the plain method for OAuth 2.1 compliance',
+      },
     ];
 
     // RFC 8414 - Server Metadata.
@@ -193,17 +198,24 @@ final class OAuth21ComplianceService implements CacheableDependencyInterface {
   /**
    * Checks PKCE configuration status.
    *
+   * PKCE is configured only when all of these hold: enforcement is
+   * 'mandatory', the S256 method is enabled and the plain method is disabled.
+   * OAuth 2.1 forbids the plain method (draft section 7.5.2), so a site that
+   * enables it is not compliant. A missing key counts as FALSE for the two
+   * method flags, matching the install defaults.
+   *
    * @param \Drupal\Core\Config\Config $config
    *   PKCE configuration object.
    *
    * @return string
-   *   Status: 'configured', 'needs_attention', or 'not_available'.
+   *   Status: 'configured' or 'needs_attention'.
    */
   private function checkPkceStatus(Config $config): string {
     $enforcement = $config->get('enforcement') ?? 'optional';
     $s256_enabled = (bool) ($config->get('s256_enabled') ?? FALSE);
+    $plain_enabled = (bool) ($config->get('plain_enabled') ?? FALSE);
 
-    return ($enforcement === 'mandatory' && $s256_enabled) ? 'configured' : 'needs_attention';
+    return ($enforcement === 'mandatory' && $s256_enabled && !$plain_enabled) ? 'configured' : 'needs_attention';
   }
 
   /**

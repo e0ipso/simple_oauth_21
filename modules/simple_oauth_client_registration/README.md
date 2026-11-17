@@ -416,14 +416,14 @@ Supported `token_endpoint_auth_method` values:
 
 ### Grant Types
 
-Supported OAuth 2.0 grant types:
+Supported grant types:
 
 - `authorization_code` - Standard authorization code flow
-- `implicit` - Implicit flow (deprecated)
-- `password` - Resource owner password credentials
 - `client_credentials` - Client credentials flow
 - `refresh_token` - Refresh token usage
 - `urn:ietf:params:oauth:grant-type:device_code` - Device authorization flow
+
+The grant types of other installed grant plugins are also accepted. The `implicit` and `password` grant types are always rejected, even when a grant plugin provides them. They are also left out of the default grant types that a client gets when it omits `grant_types`. Only the `code` response type is accepted. A rejected grant type or response type returns 400 `invalid_client_metadata`.
 
 ## Integration Examples
 

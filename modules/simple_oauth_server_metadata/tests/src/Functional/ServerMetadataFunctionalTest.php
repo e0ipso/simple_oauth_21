@@ -610,6 +610,7 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     $this->assertArrayHasKey('scopes_supported', $core_metadata);
     $this->assertArrayHasKey('token_endpoint_auth_methods_supported', $core_metadata);
     $this->assertArrayHasKey('code_challenge_methods_supported', $core_metadata);
+    $this->assertSame(['query'], $core_metadata['response_modes_supported']);
   }
 
   /**
@@ -860,12 +861,9 @@ final class ServerMetadataFunctionalTest extends BrowserTestBase {
     // Test that id_token_signing_alg_values_supported contains at least RS256.
     $this->assertContains('RS256', $metadata['id_token_signing_alg_values_supported']);
 
-    // Test that response_modes_supported contains expected values.
+    // The code grant returns the authorization response in the query.
     $this->assertArrayHasKey('response_modes_supported', $metadata);
-    $expected_modes = ['query', 'fragment', 'form_post'];
-    foreach ($expected_modes as $mode) {
-      $this->assertContains($mode, $metadata['response_modes_supported']);
-    }
+    $this->assertSame(['query'], $metadata['response_modes_supported']);
 
     // Test grant types supported includes required types.
     $this->assertArrayHasKey('grant_types_supported', $metadata);
