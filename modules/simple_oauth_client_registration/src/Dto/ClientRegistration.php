@@ -259,6 +259,23 @@ final class ClientRegistration {
   }
 
   /**
+   * Validates that no requested grant type is denied.
+   *
+   * @return void
+   *   No return value.
+   *
+   * @throws \InvalidArgumentException
+   *   If a requested grant type is in self::DENIED_GRANT_TYPES.
+   */
+  public function validateGrantTypes(): void {
+    foreach ($this->grantTypes as $grant_type) {
+      if (in_array($grant_type, self::DENIED_GRANT_TYPES, TRUE)) {
+        throw new \InvalidArgumentException('Invalid grant type: ' . $grant_type);
+      }
+    }
+  }
+
+  /**
    * Creates a new instance with additional response fields.
    *
    * @param string $clientId

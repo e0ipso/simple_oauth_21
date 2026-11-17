@@ -200,9 +200,9 @@ final class OAuth21ComplianceService implements CacheableDependencyInterface {
    *
    * PKCE is configured only when all of these hold: enforcement is
    * 'mandatory', the S256 method is enabled and the plain method is disabled.
-   * OAuth 2.1 and RFC 9700 allow plain only for clients that cannot compute
-   * SHA-256, so it must not be advertised by default. A missing key counts as
-   * FALSE for the two method flags, matching the install defaults.
+   * OAuth 2.1 forbids the plain method (draft section 7.5.2), so a site that
+   * enables it is not compliant. A missing key counts as FALSE for the two
+   * method flags, matching the install defaults.
    *
    * @param \Drupal\Core\Config\Config $config
    *   PKCE configuration object.

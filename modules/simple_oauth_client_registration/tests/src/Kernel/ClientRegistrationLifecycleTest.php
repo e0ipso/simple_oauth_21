@@ -517,6 +517,27 @@ final class ClientRegistrationLifecycleTest extends KernelTestBase {
   }
 
   /**
+   * Tests direct service callers cannot request a denied grant type.
+   */
+  public function testDeniedGrantTypesAreRejectedOutsideTheNormalizer(): void {
+    $count = $this->container->get('entity_type.manager')->getStorage('consumer')->getQuery()->accessCheck(FALSE)->count()->execute();
+    // Only "password" has a plugin here, so it would pass entity validation.
+    foreach (['password', 'implicit'] as $grant_type) {
+      try {
+        $this->registration()->registerClient(new ClientRegistration(
+          redirectUris: ['https://example.org/callback'],
+          grantTypes: ['authorization_code', $grant_type],
+        ));
+        $this->fail("Grant type $grant_type was registered.");
+      }
+      catch (\InvalidArgumentException $e) {
+        $this->assertSame('Invalid grant type: ' . $grant_type, $e->getMessage());
+      }
+    }
+    $this->assertSame($count, $this->container->get('entity_type.manager')->getStorage('consumer')->getQuery()->accessCheck(FALSE)->count()->execute());
+  }
+
+  /**
    * Tests missing, empty and direct-constructor contacts retain their meaning.
    */
   public function testContactsAndProjectionCompatibility(): void {

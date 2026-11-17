@@ -84,6 +84,7 @@ final class ClientRegistrationService implements ClientRegistrationOperationsInt
    */
   public function createConsumer(ClientRegistration $clientData): ConsumerInterface {
     $clientData->validateRedirectUris();
+    $clientData->validateGrantTypes();
 
     // Generate unique client ID.
     $client_id = $this->generateClientId();
