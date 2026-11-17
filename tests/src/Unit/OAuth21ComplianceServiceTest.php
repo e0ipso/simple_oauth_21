@@ -161,6 +161,8 @@ final class OAuth21ComplianceServiceTest extends UnitTestCase {
    *   The expected compliance status.
    * @param string $recommendation
    *   The expected recommendation.
+   *
+   * @dataProvider pkceStatusProvider
    */
   #[DataProvider('pkceStatusProvider')]
   public function testPkceStatus(?string $enforcement, ?bool $s256_enabled, ?bool $plain_enabled, string $status, string $recommendation): void {
