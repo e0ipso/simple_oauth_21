@@ -500,6 +500,23 @@ final class ClientRegistrationLifecycleTest extends KernelTestBase {
   }
 
   /**
+   * Tests configured defaults never grant a grant type removed by OAuth 2.1.
+   */
+  public function testDeniedGrantTypesAreRemovedFromDefaults(): void {
+    // The test module provides a "password" grant plugin.
+    $this->assertArrayHasKey('password', $this->container->get('plugin.manager.oauth2_grant.processor')->getDefinitions());
+    $form = ClientRegistrationSettingsForm::create($this->container)->buildForm([], new FormState());
+    $this->assertArrayNotHasKey('password', $form['grant_defaults']['default_grant_types']['#options']);
+    $this->assertArrayHasKey('authorization_code', $form['grant_defaults']['default_grant_types']['#options']);
+
+    $this->config('simple_oauth_client_registration.settings')
+      ->set('default_grant_types', ['password', 'authorization_code', 'implicit'])
+      ->save();
+    $consumer = $this->registration()->createConsumer(new ClientRegistration(redirectUris: ['https://example.org/callback']));
+    $this->assertSame(['authorization_code'], array_column($consumer->get('grant_types')->getValue(), 'value'));
+  }
+
+  /**
    * Tests missing, empty and direct-constructor contacts retain their meaning.
    */
   public function testContactsAndProjectionCompatibility(): void {

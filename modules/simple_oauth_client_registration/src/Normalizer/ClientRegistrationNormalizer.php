@@ -22,14 +22,6 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 final class ClientRegistrationNormalizer implements NormalizerInterface, DenormalizerInterface {
 
   /**
-   * Grant types removed by OAuth 2.1 that registration never accepts.
-   *
-   * Checked apart from the grant plugin merge so that a plugin providing one
-   * of these IDs cannot re-enable it.
-   */
-  private const DENIED_GRANT_TYPES = ['implicit', 'password'];
-
-  /**
    * The only response type OAuth 2.1 allows at the authorization endpoint.
    */
   private const ALLOWED_RESPONSE_TYPE = 'code';
@@ -245,7 +237,7 @@ final class ClientRegistrationNormalizer implements NormalizerInterface, Denorma
         $valid_grant_types = array_unique(array_merge($valid_grant_types, array_keys($this->grantManager->getDefinitions())));
       }
       foreach ($metadata['grant_types'] as $grant_type) {
-        if (in_array($grant_type, self::DENIED_GRANT_TYPES, TRUE) || !in_array($grant_type, $valid_grant_types, TRUE)) {
+        if (in_array($grant_type, ClientRegistration::DENIED_GRANT_TYPES, TRUE) || !in_array($grant_type, $valid_grant_types, TRUE)) {
           throw new BadRequestHttpException('Invalid grant type: ' . $grant_type);
         }
       }

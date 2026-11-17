@@ -11,6 +11,7 @@ use Drupal\Core\Form\ConfigTarget;
 use Drupal\Core\Render\Element\Checkboxes;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\simple_oauth\Plugin\Oauth2GrantManagerInterface;
+use Drupal\simple_oauth_client_registration\Dto\ClientRegistration;
 use Drupal\simple_oauth_client_registration\Service\ClientRegistrationAdministrationInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
@@ -90,7 +91,7 @@ final class ClientRegistrationSettingsForm extends ConfigFormBase {
       '#title' => $this->t('Default grant types for DCR clients'),
       '#options' => array_map(
         fn($definition) => $definition['label'],
-        $this->grantManager->getDefinitions()
+        array_diff_key($this->grantManager->getDefinitions(), array_flip(ClientRegistration::DENIED_GRANT_TYPES))
       ),
       '#config_target' => new ConfigTarget(
         'simple_oauth_client_registration.settings',

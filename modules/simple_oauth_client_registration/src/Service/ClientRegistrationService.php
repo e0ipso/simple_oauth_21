@@ -96,6 +96,8 @@ final class ClientRegistrationService implements ClientRegistrationOperationsInt
     // establish default values for omitted fields during registration.
     $config = $this->configFactory->get('simple_oauth_client_registration.settings');
     $default_grant_types = $config->get('default_grant_types') ?? ['authorization_code', 'refresh_token'];
+    // Stored defaults may predate the denylist or name a contrib grant plugin.
+    $default_grant_types = array_values(array_diff($default_grant_types, ClientRegistration::DENIED_GRANT_TYPES));
 
     // Map RFC 7591 fields to Consumer entity fields.
     $values = [

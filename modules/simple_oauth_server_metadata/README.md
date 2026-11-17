@@ -208,7 +208,7 @@ The following fields are automatically discovered and included:
 - **grant_types_supported**: Enabled grant types
 - **scopes_supported**: Available OAuth scopes
 - **token_endpoint_auth_methods_supported**: Client authentication methods
-- **code_challenge_methods_supported**: PKCE challenge methods. With PKCE enforcement enabled this is the list of enabled methods, `["S256"]` with the default configuration. `["S256", "plain"]` appears only when enforcement is disabled or `simple_oauth_pkce` is not installed
+- **code_challenge_methods_supported**: PKCE challenge methods. With PKCE enforcement enabled this is the list of enabled methods: `["S256"]` with the default configuration, and `["S256", "plain"]` on a site that enables `plain`. When enforcement is disabled or `simple_oauth_pkce` is not installed, it is always `["S256", "plain"]`
 
 #### Optional Fields (Configurable)
 

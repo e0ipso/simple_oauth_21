@@ -573,7 +573,7 @@ Similar pattern to `ResourceMetadataController`:
   'scopes_supported' => ['read', 'write', ...],
   'token_endpoint_auth_methods_supported' => ['client_secret_basic', ...],
   'response_modes_supported' => ['query'],
-  'code_challenge_methods_supported' => ['S256'], // ['S256', 'plain'] if enforcement is disabled or simple_oauth_pkce is absent
+  'code_challenge_methods_supported' => ['S256'], // The enabled methods; ['S256', 'plain'] if enforcement is disabled or simple_oauth_pkce is absent
 
   // OPTIONAL DISCOVERED (module-dependent)
   'registration_endpoint' => 'https://example.com/oauth/register',

@@ -12,6 +12,14 @@ namespace Drupal\simple_oauth_client_registration\Dto;
 final class ClientRegistration {
 
   /**
+   * Grant types removed by OAuth 2.1 that a registered client never gets.
+   *
+   * Applies to requested grant types and to configured defaults, also when a
+   * grant plugin provides one of these IDs.
+   */
+  public const DENIED_GRANT_TYPES = ['implicit', 'password'];
+
+  /**
    * Constructor.
    *
    * @param string|null $clientName
