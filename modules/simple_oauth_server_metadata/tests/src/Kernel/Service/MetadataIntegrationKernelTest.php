@@ -360,53 +360,61 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
   }
 
   /**
-   * Tests ordinary form saves retain ignored legacy response settings.
+   * Tests the settings form neither builds nor stores response settings.
    */
-  public function testResponseSettingsFormCompatibility(): void {
-    $legacy_types = ['token', 'id_token', 'code id_token'];
-    $legacy_modes = ['fragment'];
-    $this->config('simple_oauth_server_metadata.settings')
-      ->set('response_types_supported', $legacy_types)
-      ->set('response_modes_supported', $legacy_modes)
-      ->save();
+  public function testResponseSettingsAreNotStoredByForm(): void {
+    $legacy_keys = ['response_types_supported', 'response_modes_supported'];
     $builder = $this->container->get('form_builder');
     $form = $builder->getForm(ServerMetadataSettingsForm::class);
-    $this->assertArrayNotHasKey('response_types_supported', $form['openid_discovery']);
-    $this->assertArrayNotHasKey('response_modes_supported', $form['openid_discovery']);
-    $state = (new FormState())->setValues(['service_documentation' => 'https://updated.example/docs']);
-    $builder->submitForm(ServerMetadataSettingsForm::class, $state);
-    $this->assertSame([], $state->getErrors());
-    $config = $this->config('simple_oauth_server_metadata.settings');
-    $this->assertSame('https://updated.example/docs', $config->get('service_documentation'));
-    $this->assertSame($legacy_types, $config->get('response_types_supported'));
-    $this->assertSame($legacy_modes, $config->get('response_modes_supported'));
-    $server = $this->container->get('simple_oauth_server_metadata.server_metadata')->getServerMetadata();
-    $openid = $this->container->get('simple_oauth_server_metadata.openid_configuration')->getOpenIdConfiguration();
-    foreach ([$server, $openid] as $metadata) {
-      $this->assertSame(['code'], $metadata['response_types_supported']);
-      $this->assertSame(['query', 'fragment', 'form_post'], $metadata['response_modes_supported']);
+    foreach ($legacy_keys as $key) {
+      $this->assertArrayNotHasKey($key, $form['openid_discovery']);
     }
-    // Keep explicit external form-state submissions in their existing format.
+    $this->assertStringNotContainsString('fragment', (string) $form['openid_discovery']['response_capabilities']['#markup']);
+    $this->assertStringNotContainsString('form_post', (string) $form['openid_discovery']['response_capabilities']['#markup']);
+
+    // Explicit external submissions of the removed keys must be ignored
+    // instead of failing validation or reaching storage.
     $state = (new FormState())->setValues([
-      'response_types_supported' => ['code' => 'code', 'token' => 0],
-      'response_modes_supported' => ['query' => 'query', 'fragment' => 0],
+      'service_documentation' => 'https://updated.example/docs',
+      'response_types_supported' => [],
+      'response_modes_supported' => ['unsupported' => 'unsupported'],
     ]);
     $builder->submitForm(ServerMetadataSettingsForm::class, $state);
     $this->assertSame([], $state->getErrors());
     $config = $this->config('simple_oauth_server_metadata.settings');
-    $this->assertSame(['code'], $config->get('response_types_supported'));
-    $this->assertSame(['query'], $config->get('response_modes_supported'));
-    foreach ([
-      ['response_types_supported' => ['unsupported']],
-      ['response_types_supported' => 'code'],
-      ['response_modes_supported' => ['form_post']],
-    ] as $invalid) {
-      $state = (new FormState())->setValues($invalid);
-      $builder->submitForm(ServerMetadataSettingsForm::class, $state);
-      $this->assertArrayHasKey(array_key_first($invalid), $state->getErrors());
-      $this->assertSame(['code'], $this->config('simple_oauth_server_metadata.settings')->get('response_types_supported'));
-      $this->assertSame(['query'], $this->config('simple_oauth_server_metadata.settings')->get('response_modes_supported'));
-    }
+    $this->assertSame('https://updated.example/docs', $config->get('service_documentation'));
+    $this->assertSame([], array_intersect($legacy_keys, array_keys($config->getRawData())));
+  }
+
+  /**
+   * Tests the post update removes only the legacy response settings.
+   */
+  public function testRemoveLegacyResponseSettingsPostUpdate(): void {
+    $this->container->get('module_handler')->loadInclude('simple_oauth_server_metadata', 'php', 'simple_oauth_server_metadata.post_update');
+    $this->assertTrue(function_exists('simple_oauth_server_metadata_post_update_remove_legacy_response_settings'));
+
+    // The keys are no longer in the schema and the config API validates every
+    // save, so write the legacy data straight to storage to reproduce a site
+    // that installed an earlier version of the module.
+    $name = 'simple_oauth_server_metadata.settings';
+    $factory = $this->container->get('config.factory');
+    $storage = $this->container->get('config.storage');
+    $before = $storage->read($name);
+    $this->assertIsArray($before);
+    $storage->write($name, $before + [
+      'response_types_supported' => ['code', 'id_token'],
+      'response_modes_supported' => ['query', 'fragment'],
+    ]);
+    $factory->reset($name);
+    $this->assertArrayHasKey('response_types_supported', $factory->getEditable($name)->getRawData());
+
+    simple_oauth_server_metadata_post_update_remove_legacy_response_settings();
+
+    $factory->reset($name);
+    $after = $factory->getEditable($name)->getRawData();
+    $this->assertSame($before, $after);
+    $this->assertSame($before, $storage->read($name));
+    $this->assertSame('https://www.drupal.org/project/simple_oauth', $after['service_documentation']);
   }
 
   /**
@@ -467,14 +475,13 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
     foreach ($values as $field => $value) {
       $config->set($field, $value);
     }
-    $config->set('response_types_supported', ['id_token'])->save();
+    $config->save();
     $builder = $this->container->get('form_builder');
     $form = $builder->getForm(ServerMetadataSettingsForm::class);
     $object = ServerMetadataSettingsForm::create($this->container);
     // External callers may validate and submit only the provided values.
     $state = (new FormState())->setValues([
       'service_documentation' => 'https://updated.example/docs',
-      'response_types_supported' => NULL,
     ]);
     $object->validateForm($form, $state);
     $this->assertSame([], $state->getErrors());
@@ -486,7 +493,6 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
     foreach ($values as $field => $value) {
       $this->assertSame($value, $config->get($field));
     }
-    $this->assertSame(['id_token'], $config->get('response_types_supported'));
     $this->assertSame('https://updated.example/docs', $config->get('service_documentation'));
 
     $state = (new FormState())->setValues(['service_documentation' => 'https://partial.example/docs']);
@@ -707,19 +713,16 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
     $config = $this->config('simple_oauth_server_metadata.settings');
     $config->set('registration_endpoint', 'https://saved.example/Register')
       ->set('device_authorization_endpoint', 'https://saved.example/Device')
-      ->set('response_types_supported', ['id_token'])
       ->save();
     $object = ServerMetadataSettingsForm::create($this->container);
     $form = $this->container->get('form_builder')->getForm(ServerMetadataSettingsForm::class);
     $state = (new FormState())->setValues([
       'device_authorization_endpoint' => NULL,
-      'response_types_supported' => NULL,
     ]);
     $object->submitForm($form, $state);
     $config = $this->config($config->getName());
     $this->assertSame('https://saved.example/Register', $config->get('registration_endpoint'));
     $this->assertNull($config->get('device_authorization_endpoint'));
-    $this->assertSame(['id_token'], $config->get('response_types_supported'));
   }
 
   /**

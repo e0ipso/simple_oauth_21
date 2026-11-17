@@ -22,6 +22,19 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 final class ClientRegistrationNormalizer implements NormalizerInterface, DenormalizerInterface {
 
   /**
+   * Grant types removed by OAuth 2.1 that registration never accepts.
+   *
+   * Checked apart from the grant plugin merge so that a plugin providing one
+   * of these IDs cannot re-enable it.
+   */
+  private const DENIED_GRANT_TYPES = ['implicit', 'password'];
+
+  /**
+   * The only response type OAuth 2.1 allows at the authorization endpoint.
+   */
+  private const ALLOWED_RESPONSE_TYPE = 'code';
+
+  /**
    * Constructs the registration normalizer.
    *
    * @param \Drupal\simple_oauth_client_registration\Service\RegistrationTokenService $tokenService
@@ -224,8 +237,6 @@ final class ClientRegistrationNormalizer implements NormalizerInterface, Denorma
       }
       $valid_grant_types = [
         'authorization_code',
-        'implicit',
-        'password',
         'client_credentials',
         'refresh_token',
         'urn:ietf:params:oauth:grant-type:device_code',
@@ -234,7 +245,7 @@ final class ClientRegistrationNormalizer implements NormalizerInterface, Denorma
         $valid_grant_types = array_unique(array_merge($valid_grant_types, array_keys($this->grantManager->getDefinitions())));
       }
       foreach ($metadata['grant_types'] as $grant_type) {
-        if (!in_array($grant_type, $valid_grant_types, TRUE)) {
+        if (in_array($grant_type, self::DENIED_GRANT_TYPES, TRUE) || !in_array($grant_type, $valid_grant_types, TRUE)) {
           throw new BadRequestHttpException('Invalid grant type: ' . $grant_type);
         }
       }
@@ -245,14 +256,11 @@ final class ClientRegistrationNormalizer implements NormalizerInterface, Denorma
       if (!is_array($metadata['response_types'])) {
         throw new BadRequestHttpException('response_types must be an array');
       }
-      $valid_response_types = ['code', 'token', 'id_token'];
       foreach ($metadata['response_types'] as $response_type) {
-        // Response types can be space-separated combinations.
-        $types = explode(' ', $response_type);
-        foreach ($types as $type) {
-          if (!in_array($type, $valid_response_types, TRUE)) {
-            throw new BadRequestHttpException('Invalid response type: ' . $type);
-          }
+        // Combinations such as "code id_token" are rejected on purpose: they
+        // return tokens from the authorization endpoint.
+        if ($response_type !== self::ALLOWED_RESPONSE_TYPE) {
+          throw new BadRequestHttpException('Invalid response type: ' . $response_type);
         }
       }
     }

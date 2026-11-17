@@ -15,6 +15,7 @@ use Drupal\Core\Routing\RouteProviderInterface;
 use Drupal\simple_oauth_21\Service\OAuth21ComplianceService;
 use Drupal\simple_oauth_server_metadata\Service\ServerMetadataService;
 use Drupal\Tests\UnitTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Routing\Exception\RouteNotFoundException;
 
@@ -145,6 +146,69 @@ final class OAuth21ComplianceServiceTest extends UnitTestCase {
       ], $service->getRfcComplianceStatus()['rfc_8252']);
       self::assertContains('config:simple_oauth_native_apps.settings', $service->getCacheTags());
     }
+  }
+
+  /**
+   * Tests PKCE is only configured with mandatory S256 and no plain method.
+   *
+   * @param string|null $enforcement
+   *   The PKCE enforcement setting.
+   * @param bool|null $s256_enabled
+   *   Whether S256 is enabled; NULL when the key is missing.
+   * @param bool|null $plain_enabled
+   *   Whether plain is enabled; NULL when the key is missing.
+   * @param string $status
+   *   The expected compliance status.
+   * @param string $recommendation
+   *   The expected recommendation.
+   */
+  #[DataProvider('pkceStatusProvider')]
+  public function testPkceStatus(?string $enforcement, ?bool $s256_enabled, ?bool $plain_enabled, string $status, string $recommendation): void {
+    $modules = $this->createMock(ModuleHandlerInterface::class);
+    $modules->method('moduleExists')->willReturnCallback(
+      static fn(string $name): bool => $name === 'simple_oauth_pkce'
+    );
+    $config = $this->createMock(Config::class);
+    $config->method('isNew')->willReturn(FALSE);
+    $config->method('getCacheContexts')->willReturn([]);
+    $config->method('getCacheTags')->willReturn([]);
+    $config->method('getCacheMaxAge')->willReturn(-1);
+    $config->method('get')->willReturnMap([
+      ['enforcement', $enforcement],
+      ['s256_enabled', $s256_enabled],
+      ['plain_enabled', $plain_enabled],
+    ]);
+    $factory = $this->createMock(ConfigFactoryInterface::class);
+    $factory->method('get')->willReturn($config);
+    $routes = $this->createMock(RouteProviderInterface::class);
+    $routes->method('getRouteByName')->willThrowException(new RouteNotFoundException());
+    $service = new OAuth21ComplianceService($modules, $factory, $routes);
+    $result = $service->getRfcComplianceStatus()['rfc_7636'];
+    self::assertSame($status, $result['status']);
+    self::assertSame($recommendation, $result['recommendation']);
+  }
+
+  /**
+   * Provides PKCE enforcement, S256 and plain combinations.
+   *
+   * @return array<string, array{0: string|null, 1: bool|null, 2: bool|null, 3: string, 4: string}>
+   *   Test cases keyed by description.
+   */
+  public static function pkceStatusProvider(): array {
+    $configured = 'PKCE is enabled for OAuth 2.1 compliance';
+    $attention = 'Require PKCE with S256 only and disable the plain method for OAuth 2.1 compliance';
+    return [
+      'mandatory, S256, no plain' => ['mandatory', TRUE, FALSE, 'configured', $configured],
+      'mandatory, S256, plain key missing' => ['mandatory', TRUE, NULL, 'configured', $configured],
+      'mandatory, S256, plain' => ['mandatory', TRUE, TRUE, 'needs_attention', $attention],
+      'mandatory, no S256, no plain' => ['mandatory', FALSE, FALSE, 'needs_attention', $attention],
+      'mandatory, no S256, plain' => ['mandatory', FALSE, TRUE, 'needs_attention', $attention],
+      'optional, S256, no plain' => ['optional', TRUE, FALSE, 'needs_attention', $attention],
+      'optional, S256, plain' => ['optional', TRUE, TRUE, 'needs_attention', $attention],
+      'disabled, S256, no plain' => ['disabled', TRUE, FALSE, 'needs_attention', $attention],
+      'disabled, no S256, plain' => ['disabled', FALSE, TRUE, 'needs_attention', $attention],
+      'enforcement key missing' => [NULL, TRUE, FALSE, 'needs_attention', $attention],
+    ];
   }
 
   /**
