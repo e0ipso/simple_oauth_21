@@ -423,7 +423,7 @@ Supported grant types:
 - `refresh_token` - Refresh token usage
 - `urn:ietf:params:oauth:grant-type:device_code` - Device authorization flow
 
-The `implicit` and `password` grant types are always rejected, even when a grant plugin provides them. Only the `code` response type is accepted. A request with any other grant type or response type returns 400 `invalid_client_metadata`.
+The grant types of other installed grant plugins are also accepted. The `implicit` and `password` grant types are always rejected, even when a grant plugin provides them. Only the `code` response type is accepted. A rejected grant type or response type returns 400 `invalid_client_metadata`.
 
 ## Integration Examples
 

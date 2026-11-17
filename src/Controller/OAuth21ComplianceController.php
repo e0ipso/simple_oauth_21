@@ -201,6 +201,7 @@ final class OAuth21ComplianceController extends ControllerBase {
     $known = [
       'PKCE is enabled for OAuth 2.1 compliance' => $this->t('PKCE is enabled for OAuth 2.1 compliance'),
       'Enable PKCE module for OAuth 2.1 compliance' => $this->t('Enable PKCE module for OAuth 2.1 compliance'),
+      'Require PKCE with S256 only and disable the plain method for OAuth 2.1 compliance' => $this->t('Require PKCE with S256 only and disable the plain method for OAuth 2.1 compliance'),
       'Enable server metadata module for better client integration' => $this->t('Enable server metadata module for better client integration'),
       'Server metadata is available for discovery' => $this->t('Server metadata is available for discovery'),
       'Native app security features are enabled' => $this->t('Native app security features are enabled'),

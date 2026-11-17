@@ -156,8 +156,12 @@ final class OAuth21ComplianceControllerTest extends KernelTestBase {
     $translate = new \ReflectionMethod(OAuth21ComplianceController::class, 'translateRecommendation');
     $unknown = '<script>future message</script>';
     self::assertSame($unknown, $translate->invoke($controller, $unknown));
-    $known = 'Server metadata discovery is unavailable; check the metadata module service registration';
-    self::assertSame('translated: ' . $known, $translate->invoke($controller, $known));
+    foreach ([
+      'Server metadata discovery is unavailable; check the metadata module service registration',
+      'Require PKCE with S256 only and disable the plain method for OAuth 2.1 compliance',
+    ] as $known) {
+      self::assertSame('translated: ' . $known, $translate->invoke($controller, $known));
+    }
   }
 
 }
