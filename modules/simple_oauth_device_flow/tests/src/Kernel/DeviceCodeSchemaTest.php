@@ -98,12 +98,12 @@ final class DeviceCodeSchemaTest extends KernelTestBase {
     $schema = $database->schema();
     $before = $this->snapshotRows();
     $repository = $this->container->get('entity.last_installed_schema.repository');
-    $fields_before = $repository->getLastInstalledFieldStorageDefinitions('oauth2_device_code');
+    $fields_before = $this->snapshotFieldStorageDefinitions($repository->getLastInstalledFieldStorageDefinitions('oauth2_device_code'));
     $this->assertSame(SqlContentEntityStorageSchema::class, $repository->getLastInstalledDefinition('oauth2_device_code')->getHandlerClass('storage_schema'));
     simple_oauth_device_flow_update_10001();
     $this->assertSame($before, $this->snapshotRows());
     $this->assertSame(DeviceCodeStorageSchema::class, $repository->getLastInstalledDefinition('oauth2_device_code')->getHandlerClass('storage_schema'));
-    $this->assertEquals($fields_before, $repository->getLastInstalledFieldStorageDefinitions('oauth2_device_code'));
+    $this->assertEquals($fields_before, $this->snapshotFieldStorageDefinitions($repository->getLastInstalledFieldStorageDefinitions('oauth2_device_code')));
     $tracked = $this->container->get('keyvalue')->get('entity.storage_schema.sql')->get('oauth2_device_code.entity_schema_data');
     $this->assertSame(['user_code'], $tracked['oauth2_device_code']['unique keys']['user_code']);
     foreach (['client_id', 'expires_at', 'user_id'] as $index) {
@@ -250,6 +250,28 @@ final class DeviceCodeSchemaTest extends KernelTestBase {
       'base' => array_map(static fn(object $row): array => (array) $row, $database->select('oauth2_device_code', 'd')->fields('d')->orderBy('device_code')->execute()->fetchAll()),
       'scopes' => array_map(static fn(object $row): array => (array) $row, $database->select('oauth2_device_code__scopes', 's')->fields('s')->orderBy('entity_id')->orderBy('delta')->execute()->fetchAll()),
     ];
+  }
+
+  /**
+   * Copies installed field storage definitions for update comparisons.
+   *
+   * The repository can return the same instances before and after an update,
+   * or reload them from storage. Copy them, then resolve the lazily cached
+   * schema, so the comparison does not depend on the repository cache.
+   *
+   * @param \Drupal\Core\Field\FieldStorageDefinitionInterface[] $definitions
+   *   The installed field storage definitions, keyed by field name.
+   *
+   * @return \Drupal\Core\Field\FieldStorageDefinitionInterface[]
+   *   Independent copies with resolved schemas, keyed by field name.
+   */
+  private function snapshotFieldStorageDefinitions(array $definitions): array {
+    $copies = [];
+    foreach ($definitions as $name => $definition) {
+      $copies[$name] = clone $definition;
+      $copies[$name]->getSchema();
+    }
+    return $copies;
   }
 
   /**
