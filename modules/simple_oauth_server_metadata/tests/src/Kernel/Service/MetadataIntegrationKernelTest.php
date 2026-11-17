@@ -597,7 +597,7 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
   public function testSparseDiscoveryLists(): void {
     $grant_values = [
       'getResponseTypesSupported' => ['response_types_supported', [2 => 'code']],
-      'getResponseModesSupported' => ['response_modes_supported', [2 => 'query', 5 => 'fragment', 8 => 'form_post']],
+      'getResponseModesSupported' => ['response_modes_supported', [5 => 'query']],
       'getGrantTypesSupported' => ['grant_types_supported', [2 => 'authorization_code', 5 => 'refresh_token']],
     ];
     $claim_values = [
@@ -863,9 +863,18 @@ final class MetadataIntegrationKernelTest extends KernelTestBase {
   }
 
   /**
-   * Tests optional and disabled PKCE policy and both configured method toggles.
+   * Tests installed, optional and disabled PKCE policy and method toggles.
    */
   public function testPkcePolicyCapabilities(): void {
+    // A new install must advertise only the methods the policy accepts, so
+    // clients never pick the weaker plain method from discovery.
+    $responses = [
+      ServerMetadataController::create($this->container)->__invoke(),
+      OpenIdConfigurationController::create($this->container)->configuration(),
+    ];
+    foreach ($responses as $response) {
+      $this->assertSame(['S256'], json_decode($response->getContent(), TRUE)['code_challenge_methods_supported']);
+    }
     $without_policy = new ClaimsAuthDiscoveryService($this->container->get('config.factory'));
     $this->assertSame(['S256', 'plain'], $without_policy->getCodeChallengeMethodsSupported());
     $config = $this->config('simple_oauth_pkce.settings');
