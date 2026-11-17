@@ -94,7 +94,8 @@
     "Lcobucci",
     "Refinable",
     "multibyte",
-    "preimage"
+    "preimage",
+    "kenkeep"
   ],
   "ignorePaths": [
     "node_modules/**",
