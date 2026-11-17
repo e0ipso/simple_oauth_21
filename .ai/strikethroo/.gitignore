@@ -5,22 +5,8 @@
 # can preserve local edits and report template conflicts.
 config/config.yaml
 
-# Code review gate artifacts.
-#
-# The report-only review gate writes a recorded base commit and review.xml into
-# the plan it is reviewing. A failed review may also leave reviewer-output.txt
-# for diagnosis. These files are machine-generated output for one execution.
-#
-# Ignoring it also keeps the gate from reviewing itself. The reviewed diff runs
-# from the recorded base against the working tree, and untracked files are in
-# scope. The gate synthesizes an add-diff for each one. These rules keep its own
-# output out because the gate enumerates untracked paths with
-# `git ls-files --others --exclude-standard`.
-#
-# Both locations are listed because a completed plan directory is moved from
-# plans/ to archive/ wholesale, carrying its review/ directory with it.
-plans/*/review/
-archive/*/review/
+/plans
+/archive
 
 # Dispatch-availability cache.
 #
