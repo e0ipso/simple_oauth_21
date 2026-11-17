@@ -259,31 +259,6 @@ final class ClientRegistration {
   }
 
   /**
-   * Validates the shape of the requested grant types and the denylist.
-   *
-   * The list must contain only strings, as the normalizer requires. The field
-   * API reads a nested item such as ['value' => 'password'] as a grant type,
-   * so such an item would otherwise bypass the denylist.
-   *
-   * @return void
-   *   No return value.
-   *
-   * @throws \InvalidArgumentException
-   *   If the grant types are not a list of strings, or if a requested grant
-   *   type is in self::DENIED_GRANT_TYPES.
-   */
-  public function validateGrantTypes(): void {
-    if (!array_is_list($this->grantTypes) || array_filter($this->grantTypes, static fn ($grant_type): bool => !is_string($grant_type))) {
-      throw new \InvalidArgumentException('grant_types must be a list of strings');
-    }
-    foreach ($this->grantTypes as $grant_type) {
-      if (in_array($grant_type, self::DENIED_GRANT_TYPES, TRUE)) {
-        throw new \InvalidArgumentException('Invalid grant type: ' . $grant_type);
-      }
-    }
-  }
-
-  /**
    * Creates a new instance with additional response fields.
    *
    * @param string $clientId

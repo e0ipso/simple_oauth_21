@@ -500,52 +500,61 @@ final class ClientRegistrationLifecycleTest extends KernelTestBase {
   }
 
   /**
-   * Tests configured defaults never grant a grant type removed by OAuth 2.1.
+   * Tests that no registration path gives a client a denied grant type.
+   *
+   * The test module provides a "password" grant plugin, so a "password" value
+   * that reaches the consumer would pass entity validation.
    */
-  public function testDeniedGrantTypesAreRemovedFromDefaults(): void {
-    // The test module provides a "password" grant plugin.
+  public function testRegistrationNeverGrantsDeniedTypes(): void {
     $this->assertArrayHasKey('password', $this->container->get('plugin.manager.oauth2_grant.processor')->getDefinitions());
     $form = ClientRegistrationSettingsForm::create($this->container)->buildForm([], new FormState());
     $this->assertArrayNotHasKey('password', $form['grant_defaults']['default_grant_types']['#options']);
     $this->assertArrayHasKey('authorization_code', $form['grant_defaults']['default_grant_types']['#options']);
 
-    $this->config('simple_oauth_client_registration.settings')
-      ->set('default_grant_types', ['password', 'authorization_code', 'implicit'])
-      ->save();
-    $consumer = $this->registration()->createConsumer(new ClientRegistration(redirectUris: ['https://example.org/callback']));
-    $this->assertSame(['authorization_code'], array_column($consumer->get('grant_types')->getValue(), 'value'));
-  }
+    $storage = $this->container->get('entity_type.manager')->getStorage('consumer');
+    $count = (int) $storage->getQuery()->accessCheck(FALSE)->count()->execute();
+    $register = fn (array $grant_types): array => $this->registration()->registerClient(new ClientRegistration(
+      redirectUris: ['https://example.org/callback'],
+      grantTypes: $grant_types,
+    ));
 
-  /**
-   * Tests direct service callers cannot request a denied grant type.
-   */
-  public function testDeniedGrantTypesAreRejectedOutsideTheNormalizer(): void {
-    $count = $this->container->get('entity_type.manager')->getStorage('consumer')->getQuery()->accessCheck(FALSE)->count()->execute();
-    // Only "password" has a plugin here, so it would pass entity validation.
-    foreach (['password', 'implicit'] as $grant_type) {
+    // Requested grant types. An empty list selects the configured defaults.
+    $cases = [
+      [['authorization_code', 'password'], 'Invalid grant type: password'],
+      [['implicit'], 'Invalid grant type: implicit'],
+      // The field API reads a nested item as its "value" property.
+      [[['value' => 'password']], 'grant_types must be a list of strings'],
+      [['grant' => 'authorization_code'], 'grant_types must be a list of strings'],
+      [[1], 'grant_types must be a list of strings'],
+      // Case and whitespace variants have no grant plugin.
+      [['PASSWORD'], 'Invalid client metadata'],
+      [[' password'], 'Invalid client metadata'],
+    ];
+    $settings = $this->config('simple_oauth_client_registration.settings');
+    // Stored defaults may predate the denylist. Nothing is left to grant here.
+    $settings->set('default_grant_types', ['password', 'implicit'])->save();
+    $cases[] = [[], 'Invalid client metadata'];
+    foreach ($cases as [$grant_types, $message]) {
       try {
-        $this->registration()->registerClient(new ClientRegistration(
-          redirectUris: ['https://example.org/callback'],
-          grantTypes: ['authorization_code', $grant_type],
-        ));
-        $this->fail("Grant type $grant_type was registered.");
+        $register($grant_types);
+        $this->fail('Registered grant types ' . json_encode($grant_types));
       }
-      catch (\InvalidArgumentException $e) {
-        $this->assertSame('Invalid grant type: ' . $grant_type, $e->getMessage());
+      catch (\InvalidArgumentException | BadRequestHttpException $e) {
+        $this->assertSame($message, $e->getMessage(), json_encode($grant_types));
       }
     }
-    // The field API reads a nested item as its "value" property.
-    try {
-      $this->registration()->registerClient(new ClientRegistration(
-        redirectUris: ['https://example.org/callback'],
-        grantTypes: [['value' => 'password']],
-      ));
-      $this->fail('A nested grant type item was registered.');
-    }
-    catch (\InvalidArgumentException $e) {
-      $this->assertSame('grant_types must be a list of strings', $e->getMessage());
-    }
-    $this->assertSame($count, $this->container->get('entity_type.manager')->getStorage('consumer')->getQuery()->accessCheck(FALSE)->count()->execute());
+    $this->assertSame($count, (int) $storage->getQuery()->accessCheck(FALSE)->count()->execute());
+
+    // Only "password" has a plugin, so only the denylist keeps it out here.
+    $settings->set('default_grant_types', ['password', 'authorization_code'])->save();
+    $client = $register([]);
+    $this->assertSame(['authorization_code'], array_column($this->consumer($client['client_id'])->get('grant_types')->getValue(), 'value'));
+
+    $this->assertSame(0, (int) $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('grant_types', ClientRegistration::DENIED_GRANT_TYPES, 'IN')
+      ->count()
+      ->execute());
   }
 
   /**
