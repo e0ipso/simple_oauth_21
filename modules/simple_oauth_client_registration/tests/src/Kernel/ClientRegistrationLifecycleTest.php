@@ -534,6 +534,17 @@ final class ClientRegistrationLifecycleTest extends KernelTestBase {
         $this->assertSame('Invalid grant type: ' . $grant_type, $e->getMessage());
       }
     }
+    // The field API reads a nested item as its "value" property.
+    try {
+      $this->registration()->registerClient(new ClientRegistration(
+        redirectUris: ['https://example.org/callback'],
+        grantTypes: [['value' => 'password']],
+      ));
+      $this->fail('A nested grant type item was registered.');
+    }
+    catch (\InvalidArgumentException $e) {
+      $this->assertSame('grant_types must be a list of strings', $e->getMessage());
+    }
     $this->assertSame($count, $this->container->get('entity_type.manager')->getStorage('consumer')->getQuery()->accessCheck(FALSE)->count()->execute());
   }
 
