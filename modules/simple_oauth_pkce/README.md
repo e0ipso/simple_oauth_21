@@ -12,7 +12,7 @@ OAuth 2.1 mandates PKCE for all authorization code flows to prevent authorizatio
 
 - **Mandatory PKCE Enforcement**: Site-wide PKCE requirements for OAuth 2.1 compliance
 - **S256 Challenge Method**: SHA256-based challenge method (OAuth 2.1 recommended)
-- **Plain Method Support**: Legacy plain text method (configurable for backward compatibility)
+- **Plain Method Support**: Legacy plain text method. It is off by default on new installs (`plain_enabled: false`). Existing sites keep their stored value. The compliance dashboard reports PKCE as needing attention while plain is enabled
 - **Comprehensive Validation**: Detailed PKCE parameter validation and error reporting
 
 ## Features
@@ -81,7 +81,7 @@ enforcement: 'mandatory' # disabled/optional/mandatory
 
 ```yaml
 s256_enabled: true # Enable SHA256 challenge method
-plain_enabled: false # Enable plain text challenge method
+plain_enabled: false # Enable plain text challenge method (install default: false)
 ```
 
 ### OAuth 2.1 Recommended Configuration
