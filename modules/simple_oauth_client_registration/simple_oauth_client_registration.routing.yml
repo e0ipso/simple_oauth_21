@@ -9,11 +9,15 @@ simple_oauth_client_registration.register:
     _title: 'OAuth 2.0 Client Registration'
   methods: [POST]
   requirements:
-    # Public endpoint per RFC 7591 - no authentication required
+    # Public route. The controller applies the registration access setting
+    # and returns RFC 7591 JSON errors when registration is not allowed.
     _access: 'TRUE'
   options:
     _format: 'json'
     no_cache: TRUE
+    # Bearer tokens only: browser sessions cannot register clients, so a
+    # cross-site request cannot register a client as a logged-in user.
+    _auth: ['oauth2']
 
 simple_oauth_client_registration.manage:
   path: '/oauth/register/{client_id}'

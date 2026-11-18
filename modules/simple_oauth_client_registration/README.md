@@ -78,7 +78,7 @@ dependency versions supported by the chosen Drupal release.
 
 ### Access control
 
-`POST /oauth/register` is public and does not require authentication. The module does not provide a registration-access permission or a setting to require authentication for client creation.
+`POST /oauth/register` is open by default and does not require authentication, as RFC 7591 section 3 recommends. Set **Who can register clients** on the settings page to restrict registration to users with the `register oauth clients` permission, or to disable it. In the restricted mode, callers authenticate with an OAuth bearer token whose scopes grant that permission; the endpoint ignores browser sessions. Anonymous callers get `401` with a `Bearer` challenge, and refused callers get `403`, both with an `access_denied` JSON error. When registration is not open, the server metadata and the OpenID configuration do not advertise `registration_endpoint`, even when one is configured. The setting is stored in `simple_oauth_client_registration.settings.registration_access` with the values `open`, `permission` or `disabled`.
 
 Client management at `/oauth/register/{client_id}` requires `Authorization: Bearer {registration_access_token}` using the token returned when that client was registered. Client credentials and OAuth access tokens do not replace this token, and a registration token cannot manage another client.
 

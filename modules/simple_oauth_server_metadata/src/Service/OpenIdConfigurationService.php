@@ -49,6 +49,7 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
     $this->cacheTags = [
       'config:simple_oauth_server_metadata.settings',
       'config:simple_oauth.settings',
+      'config:simple_oauth_client_registration.settings',
       'simple_oauth_server_metadata',
       'config:core.extension',
     ];
@@ -101,8 +102,8 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
       'oauth_authorization_server_metadata_endpoint' => $this->endpointDiscoveryService->getOauthServerMetadataEndpoint(),
     ];
 
-    // Add registration endpoint if available.
-    $registration_endpoint = $config->get('registration_endpoint');
+    // Add registration endpoint if available and registration is open.
+    $registration_endpoint = $this->endpointDiscoveryService->isRegistrationOpen() ? $config->get('registration_endpoint') : NULL;
     if ($registration_endpoint === NULL || $registration_endpoint === '') {
       $registration_endpoint = $this->endpointDiscoveryService->getRegistrationEndpoint();
     }

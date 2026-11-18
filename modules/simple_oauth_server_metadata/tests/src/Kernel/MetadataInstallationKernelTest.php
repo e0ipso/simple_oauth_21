@@ -49,6 +49,27 @@ final class MetadataInstallationKernelTest extends KernelTestBase {
   }
 
   /**
+   * Tests the registration endpoint is advertised only for open registration.
+   */
+  public function testRegistrationEndpointFollowsAccessSetting(): void {
+    $this->container->get('module_installer')->install(['simple_oauth_server_metadata']);
+    $discovery = $this->container->get('simple_oauth_server_metadata.endpoint_discovery');
+    $this->assertNotNull($discovery->getRegistrationEndpoint());
+    $this->config('simple_oauth_server_metadata.settings')->set('registration_endpoint', 'https://example.org/oauth/register')->save();
+    foreach (['permission', 'disabled'] as $access) {
+      $this->config('simple_oauth_client_registration.settings')->set('registration_access', $access)->save();
+      $this->assertNull($discovery->getRegistrationEndpoint(), $access);
+      $metadata = $this->container->get('simple_oauth_server_metadata.server_metadata')->getServerMetadata();
+      $this->assertArrayNotHasKey('registration_endpoint', $metadata, $access);
+      $openid = $this->container->get('simple_oauth_server_metadata.openid_configuration')->getOpenIdConfiguration();
+      $this->assertArrayNotHasKey('registration_endpoint', $openid, $access);
+    }
+    $this->config('simple_oauth_client_registration.settings')->set('registration_access', 'open')->save();
+    $metadata = $this->container->get('simple_oauth_server_metadata.server_metadata')->getServerMetadata();
+    $this->assertSame('https://example.org/oauth/register', $metadata['registration_endpoint']);
+  }
+
+  /**
    * Tests a syncing module install does not change imported settings.
    *
    * @param bool $explicit_endpoints

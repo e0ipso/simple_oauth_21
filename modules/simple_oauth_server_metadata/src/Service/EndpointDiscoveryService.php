@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\simple_oauth_server_metadata\Service;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
@@ -21,10 +22,13 @@ class EndpointDiscoveryService {
    *   The language manager.
    * @param \Drupal\Core\Extension\ModuleHandlerInterface $moduleHandler
    *   The module handler service.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface|null $configFactory
+   *   The config factory, used to read the client registration access setting.
    */
   public function __construct(
     private readonly LanguageManagerInterface $languageManager,
     private readonly ModuleHandlerInterface $moduleHandler,
+    private readonly ?ConfigFactoryInterface $configFactory = NULL,
   ) {}
 
   /**
@@ -84,9 +88,13 @@ class EndpointDiscoveryService {
    * Gets the registration endpoint URL if available.
    *
    * @return string|null
-   *   The registration endpoint URL, or NULL if not available.
+   *   The registration endpoint URL, or NULL if the route does not exist or
+   *   registration is restricted or disabled.
    */
   public function getRegistrationEndpoint(): ?string {
+    if (!$this->isRegistrationOpen()) {
+      return NULL;
+    }
     try {
       return $this->endpointUrl('simple_oauth_client_registration.register');
     }
@@ -94,6 +102,17 @@ class EndpointDiscoveryService {
       // Route doesn't exist, return NULL.
       return NULL;
     }
+  }
+
+  /**
+   * Checks whether dynamic client registration is open to everyone.
+   *
+   * @return bool
+   *   TRUE unless the client registration settings restrict or disable it.
+   */
+  public function isRegistrationOpen(): bool {
+    $access = $this->configFactory?->get('simple_oauth_client_registration.settings')->get('registration_access');
+    return ($access ?? 'open') === 'open';
   }
 
   /**
