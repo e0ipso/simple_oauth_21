@@ -35,50 +35,50 @@
       "source": "e0ipso/strikethroo",
       "sourceType": "github",
       "skillPath": "skills/st-code-review/SKILL.md",
-      "computedHash": "a52796040e41f7715ea80d41bcce4ab8a5dd42c3b39bb56b2cf443ef246da37c",
-      "commit": "0b2ff9d57a990071fe604a39f089246e3b560754"
+      "computedHash": "2c5101d3406ea959f6b4d2e001b7d4744f1e5001ade1801d5913caeaa6e7de18",
+      "commit": "145cd57e0c6b60e28c0827d36c1c316e54577dad"
     },
     "st-create-plan": {
       "source": "e0ipso/strikethroo",
       "sourceType": "github",
       "skillPath": "skills/st-create-plan/SKILL.md",
-      "computedHash": "a0eaaea62c2046bcde71bf8238bba73d6fcdee85ef7201a34a8075f6a9779f59",
-      "commit": "0b2ff9d57a990071fe604a39f089246e3b560754"
+      "computedHash": "442702c771c74a23904670a0aa73fecdbd7aebebdbce5dd28f406814f91f5a1e",
+      "commit": "145cd57e0c6b60e28c0827d36c1c316e54577dad"
     },
     "st-execute-blueprint": {
       "source": "e0ipso/strikethroo",
       "sourceType": "github",
       "skillPath": "skills/st-execute-blueprint/SKILL.md",
-      "computedHash": "8f029ab9b8eb9faa13e34fa3934cc0ac0e684fc485b2d6ead6edb2bb65a733bf",
-      "commit": "0b2ff9d57a990071fe604a39f089246e3b560754"
+      "computedHash": "0e3800e7fc8c57b7203707aa26b0536489ee43bee7e12653a3d0b7cec37ce39c",
+      "commit": "145cd57e0c6b60e28c0827d36c1c316e54577dad"
     },
     "st-execute-task": {
       "source": "e0ipso/strikethroo",
       "sourceType": "github",
       "skillPath": "skills/st-execute-task/SKILL.md",
-      "computedHash": "8effbb9f4f8c88381a07d78ea1502885b4a31fb7bffe0424599817caa8dc215e",
-      "commit": "0b2ff9d57a990071fe604a39f089246e3b560754"
+      "computedHash": "f204f152342d200491e0e65f8fe95b1d78039f9f9f908db527a750a99d97f093",
+      "commit": "145cd57e0c6b60e28c0827d36c1c316e54577dad"
     },
     "st-full-workflow": {
       "source": "e0ipso/strikethroo",
       "sourceType": "github",
       "skillPath": "skills/st-full-workflow/SKILL.md",
-      "computedHash": "4f3495719ba6ad341eb3e2b26736982461d47933062b9bb1e2d072dd9dac602e",
-      "commit": "0b2ff9d57a990071fe604a39f089246e3b560754"
+      "computedHash": "ef37502fd7cd33a2e7f6b0a984e1776d867f7e80120cbf9d21aa977d5b173a2b",
+      "commit": "145cd57e0c6b60e28c0827d36c1c316e54577dad"
     },
     "st-generate-tasks": {
       "source": "e0ipso/strikethroo",
       "sourceType": "github",
       "skillPath": "skills/st-generate-tasks/SKILL.md",
-      "computedHash": "7d548483e4cbcf6981bb8de378d3eb88a5a1431f5584dd439591a796abd12c67",
-      "commit": "0b2ff9d57a990071fe604a39f089246e3b560754"
+      "computedHash": "2ef50bf44aab9b0d38171992bbeaccc184262e94e8d767f58f27a4100560284d",
+      "commit": "145cd57e0c6b60e28c0827d36c1c316e54577dad"
     },
     "st-refine-plan": {
       "source": "e0ipso/strikethroo",
       "sourceType": "github",
       "skillPath": "skills/st-refine-plan/SKILL.md",
-      "computedHash": "317ed4e1af39c4a49240de2245a4be703cdb8a15eb3a82ee924ced5caaeddc99",
-      "commit": "0b2ff9d57a990071fe604a39f089246e3b560754"
+      "computedHash": "9d06300a158097c002885b03c22af54c8d9969992f3462fedb92f43a87834cd4",
+      "commit": "145cd57e0c6b60e28c0827d36c1c316e54577dad"
     }
   }
 }
