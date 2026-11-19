@@ -11,6 +11,9 @@ complexity_score: [1-10]  # Required on every newly generated task
 # Optional configured routing profile, assigned atomically during task generation.
 # execution_profile: "profile-name"
 ---
+
+Detect if T3 code is being used. If so, use T3 delegates and orchestration for dispatching and managing tasks.
+
 # [TASK-TITLE]
 
 ## Objective
