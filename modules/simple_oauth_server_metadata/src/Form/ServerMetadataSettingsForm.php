@@ -156,7 +156,7 @@ final class ServerMetadataSettingsForm extends ConfigFormBase {
     $form['openid_discovery']['response_capabilities'] = [
       '#type' => 'item',
       '#title' => $this->t('Response capabilities'),
-      '#markup' => $this->t('Response types are discovered from available grant plugins. OpenID Connect adds ID tokens at the token endpoint for code flow; it does not enable implicit or hybrid authorization responses. Discovery retains the advertised query, fragment, and form_post modes for compatibility. Advertising a mode does not enable it at the authorization endpoint. Stored response type and mode settings are retained for configuration compatibility and do not control discovery.'),
+      '#markup' => $this->t('Response types come from the available grant plugins. OpenID Connect adds ID tokens at the token endpoint for the authorization code flow; it does not enable implicit or hybrid authorization responses. Discovery advertises the query response mode only.'),
     ];
 
     // Policy URLs section.
@@ -269,24 +269,6 @@ final class ServerMetadataSettingsForm extends ConfigFormBase {
    * {@inheritdoc}
    */
   public function validateForm(array &$form, FormStateInterface $form_state) {
-    // FormBuilder discards values without input elements. Accept explicit
-    // legacy submissions while retaining the former checkbox value choices.
-    $legacy_choices = [
-      'response_types_supported' => ['code', 'token', 'id_token', 'code id_token'],
-      'response_modes_supported' => ['query', 'fragment'],
-    ];
-    foreach ($legacy_choices as $field => $choices) {
-      $input = $form_state->getValue($field, $form_state->getUserInput()[$field] ?? NULL);
-      if ($input === NULL) {
-        continue;
-      }
-      if (!is_array($input) || array_filter($input, static fn($value): bool => (bool) $value && !in_array($value, $choices, TRUE)) !== []) {
-        $form_state->setErrorByName($field, $this->t('Invalid response capability selection.'));
-        $input = [];
-      }
-      $form_state->setValue($field, $input);
-    }
-
     // Convert textarea arrays to proper arrays and validate.
     $array_fields = ['ui_locales_supported', 'additional_claims_supported', 'additional_signing_algorithms'];
     foreach ($array_fields as $field) {
@@ -336,13 +318,6 @@ final class ServerMetadataSettingsForm extends ConfigFormBase {
       }
     }
 
-    // Validate OpenID Connect Discovery fields.
-    // Validate at least one response type is selected.
-    $response_types = array_filter($form_state->getValue('response_types_supported') ?: []);
-    if ($form_state->hasValue('response_types_supported') && empty($response_types)) {
-      $form_state->setErrorByName('response_types_supported', $this->t('At least one response type must be selected for OpenID Connect Discovery.'));
-    }
-
     parent::validateForm($form, $form_state);
   }
 
@@ -366,8 +341,6 @@ final class ServerMetadataSettingsForm extends ConfigFormBase {
       'resource_documentation',
       'resource_policy_uri',
       'resource_tos_uri',
-      'response_types_supported',
-      'response_modes_supported',
     ];
 
     foreach ($fields as $field) {
@@ -377,16 +350,6 @@ final class ServerMetadataSettingsForm extends ConfigFormBase {
         continue;
       }
       $value = $form_state->getValue($field);
-
-      // Handle checkbox arrays (response types and modes).
-      if (in_array($field, ['response_types_supported', 'response_modes_supported'])) {
-        // Retain the legacy behavior for explicit NULL capability values.
-        if ($value === NULL) {
-          continue;
-        }
-        // Filter out unchecked values (FALSE) and get only the checked ones.
-        $value = array_values(array_filter($value));
-      }
 
       // Don't save empty strings or empty arrays.
       if (empty($value)) {

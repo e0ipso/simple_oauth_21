@@ -215,7 +215,7 @@ class OpenIdConfigurationService implements CacheableDependencyInterface {
    *   Array of supported response modes.
    */
   protected function getSupportedResponseModes(): array {
-    return ['query', 'fragment', 'form_post'];
+    return $this->grantTypeDiscoveryService->getResponseModesSupported();
   }
 
   /**

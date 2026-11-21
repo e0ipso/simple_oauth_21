@@ -127,7 +127,9 @@ class ClaimsAuthDiscoveryService implements CacheableDependencyInterface {
     if ($this->pkceSettings !== NULL && !$this->pkceSettings->isDisabled()) {
       return $this->pkceSettings->getSupportedMethods();
     }
-    // Disabled global enforcement leaves upstream PKCE capabilities intact.
+    // Without the module's PKCE policy (enforcement disabled or
+    // simple_oauth_pkce absent), league accepts both S256 and plain, which
+    // RFC 7636 permits, so discovery reports both.
     return ['S256', 'plain'];
   }
 

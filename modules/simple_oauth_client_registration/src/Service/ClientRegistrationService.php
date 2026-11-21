@@ -84,6 +84,7 @@ final class ClientRegistrationService implements ClientRegistrationOperationsInt
    */
   public function createConsumer(ClientRegistration $clientData): ConsumerInterface {
     $clientData->validateRedirectUris();
+    $grant_types = $this->resolveGrantTypes($clientData->grantTypes);
 
     // Generate unique client ID.
     $client_id = $this->generateClientId();
@@ -91,18 +92,12 @@ final class ClientRegistrationService implements ClientRegistrationOperationsInt
     // Determine if client should be confidential.
     $is_confidential = $clientData->isConfidential();
 
-    // Determine default grant types based on configuration.
-    // RFC 7591 Section 3.2.1 grants the authorization server the authority to
-    // establish default values for omitted fields during registration.
-    $config = $this->configFactory->get('simple_oauth_client_registration.settings');
-    $default_grant_types = $config->get('default_grant_types') ?? ['authorization_code', 'refresh_token'];
-
     // Map RFC 7591 fields to Consumer entity fields.
     $values = [
       'client_id' => $client_id,
       'label' => $clientData->clientName ?? 'Dynamically Registered Client',
       'description' => 'Client registered via RFC 7591 Dynamic Client Registration',
-      'grant_types' => $clientData->grantTypes ?: $default_grant_types,
+      'grant_types' => $grant_types,
       'redirect' => $clientData->redirectUris,
       'confidential' => $is_confidential,
       'roles' => ['authenticated'],
@@ -437,6 +432,51 @@ final class ClientRegistrationService implements ClientRegistrationOperationsInt
       $this->resetAfterRollback();
       throw $e;
     }
+  }
+
+  /**
+   * Resolves the grant types of a new client and enforces the denylist.
+   *
+   * Every grant list a registration can produce passes through this method:
+   * the requested grant types, or the configured defaults when none are
+   * requested. RFC 7591 Section 3.1 lets the server provision defaults for
+   * omitted fields. The entity field rejects IDs without a grant plugin, so
+   * only the denylist and the list shape are checked here.
+   *
+   * @param array $requested
+   *   The grant types from the registration DTO, or an empty array.
+   *
+   * @return string[]
+   *   The grant types to store on the consumer.
+   *
+   * @throws \InvalidArgumentException
+   *   If the grant types are not a list of strings, or if the client requests
+   *   a grant type in ClientRegistration::DENIED_GRANT_TYPES.
+   */
+  private function resolveGrantTypes(array $requested): array {
+    $use_defaults = $requested === [];
+    $grant_types = $requested;
+    if ($use_defaults) {
+      $config = $this->configFactory->get('simple_oauth_client_registration.settings');
+      $grant_types = $config->get('default_grant_types') ?? ['authorization_code', 'refresh_token'];
+    }
+
+    // The field API reads a nested item such as ['value' => 'password'] as a
+    // grant type, so only a flat list of strings is safe to compare.
+    if (!is_array($grant_types) || !array_is_list($grant_types) || array_filter($grant_types, static fn ($grant_type): bool => !is_string($grant_type))) {
+      throw new \InvalidArgumentException('grant_types must be a list of strings');
+    }
+
+    if ($use_defaults) {
+      // Stored defaults may predate the denylist.
+      return array_values(array_diff($grant_types, ClientRegistration::DENIED_GRANT_TYPES));
+    }
+    foreach ($grant_types as $grant_type) {
+      if (in_array($grant_type, ClientRegistration::DENIED_GRANT_TYPES, TRUE)) {
+        throw new \InvalidArgumentException('Invalid grant type: ' . $grant_type);
+      }
+    }
+    return $grant_types;
   }
 
   /**

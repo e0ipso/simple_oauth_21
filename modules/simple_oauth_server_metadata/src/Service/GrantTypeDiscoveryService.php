@@ -104,20 +104,15 @@ class GrantTypeDiscoveryService {
     $response_modes = [];
     $grant_types = $this->getGrantTypesSupported();
 
-    // Check for authorization code grant which supports different response
-    // modes.
     $has_authorization_code = array_intersect(
       ['authorization_code', 'code'],
       $grant_types
     );
 
     if (!empty($has_authorization_code)) {
-      // Standard OAuth 2.0 response modes.
+      // The code grant redirects with the authorization response in the query
+      // component. No other response mode is implemented.
       $response_modes[] = 'query';
-      $response_modes[] = 'fragment';
-
-      // Form post response mode is also supported.
-      $response_modes[] = 'form_post';
     }
 
     return $response_modes;

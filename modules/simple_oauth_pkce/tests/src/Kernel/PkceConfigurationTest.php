@@ -65,7 +65,8 @@ final class PkceConfigurationTest extends EntityKernelTestBase {
     // Test default values match OAuth 2.1 recommendations.
     $this->assertEquals('mandatory', $config->get('enforcement'));
     $this->assertTrue($config->get('s256_enabled'));
-    $this->assertTrue($config->get('plain_enabled'));
+    // The plain method is excluded by default per OAuth 2.1.
+    $this->assertFalse($config->get('plain_enabled'));
   }
 
   /**
@@ -75,13 +76,32 @@ final class PkceConfigurationTest extends EntityKernelTestBase {
     // Test default methods.
     $this->assertEquals('mandatory', $this->pkceSettings->getEnforcementLevel());
     $this->assertTrue($this->pkceSettings->isS256Enabled());
-    $this->assertTrue($this->pkceSettings->isPlainEnabled());
+    $this->assertFalse($this->pkceSettings->isPlainEnabled());
     $this->assertTrue($this->pkceSettings->isMandatory());
     $this->assertFalse($this->pkceSettings->isDisabled());
 
-    $supported_methods = $this->pkceSettings->getSupportedMethods();
-    $this->assertContains('S256', $supported_methods);
-    $this->assertContains('plain', $supported_methods);
+    $this->assertSame(['S256'], $this->pkceSettings->getSupportedMethods());
+  }
+
+  /**
+   * Tests the installed defaults reject a challenge without a method.
+   *
+   * RFC 7636 treats an omitted code_challenge_method as plain, which the
+   * default configuration does not enable.
+   */
+  public function testInstalledDefaultsRejectChallengeWithoutMethod(): void {
+    $request = Request::create('/oauth/authorize', 'GET', [
+      'response_type' => 'code',
+      'code_challenge' => 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk',
+    ]);
+    $request->attributes->set('_route', 'oauth2_token.authorize');
+    $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+    $this->container->get('simple_oauth_pkce.policy_subscriber')->onRequest($event);
+
+    $this->assertTrue($event->hasResponse());
+    $response = $event->getResponse();
+    $this->assertSame(400, $response->getStatusCode());
+    $this->assertSame('invalid_request', json_decode($response->getContent(), TRUE, 512, JSON_THROW_ON_ERROR)['error']);
   }
 
   /**

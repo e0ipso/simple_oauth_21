@@ -253,7 +253,7 @@ Provides OpenID Connect discovery metadata for client configuration.
   "token_endpoint": "https://example.com/oauth/token",
   "userinfo_endpoint": "https://example.com/oauth/userinfo",
   "jwks_uri": "https://example.com/oauth/jwks",
-  "response_types_supported": ["code", "token", "id_token"],
+  "response_types_supported": ["code"],
   "subject_types_supported": ["public"],
   "id_token_signing_alg_values_supported": ["RS256"],
   "scopes_supported": ["openid", "profile", "email"],
