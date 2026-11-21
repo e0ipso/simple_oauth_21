@@ -7,103 +7,71 @@ created: [YYYY-MM-DD]
 # Plan: [Descriptive Plan Title]
 
 ## Original Work Order
-[The unmodified user input that was used to generate this plan, as a quote]
+[The user input, quoted unchanged]
 
-## Plan Clarifications [only add it if clarifications were necessary]
-[Clarification questions and answers in table format]
+## Plan Clarifications [only if questions were asked]
+[Questions and answers as a table]
 
 ## Executive Summary
-
-[Provide a 2-3 paragraph overview of the plan. Include:
-- What the plan accomplishes
-- Why this approach was chosen
-- Key benefits and outcomes expected]
+[2-3 paragraphs: what the plan does, why this approach, expected outcomes]
 
 ## Context
 
 ### Current State vs Target State
-[Create a table that compares the current state with the target state in the different aspects of the implementation. Include a column on why the change is necessary.]
-
-Example:
-
-| Current State            | Target State | Why?                      |
-|--------------------------| ------------ |---------------------------|
-| Users have to click twice | Users can click once | We want to improve the UX |
-| The button is small | The button is bigger | Fix site design           |
-| ... | ... | ...                       |
+| Current State | Target State | Why? |
+|---------------|--------------|------|
+| ... | ... | ... |
 
 ### Background
-[Any additional context, requirements, constraints, any solutions that we tried that didn't work, or relevant history that informs the implementation approach.]
+[Constraints, failed attempts, and history that affect the approach]
+
+## Existing Solutions Considered
+[Core, this module, its dependencies, then drupal.org. One row per candidate.]
+
+| Candidate | Where | Decision | Why |
+|-----------|-------|----------|-----|
+| ... | core / this module / dependency / drupal.org | used / rejected / upstream patch | ... |
 
 ## Architectural Approach
-[Provide an overview of the implementation strategy, key architectural decisions, and technical approach. Break down into major components or phases using ### subheadings. Add a mermaid diagram summary.]
+[Strategy and key decisions, with a mermaid diagram. One ### subsection per component, each with an **Objective** and its design rationale.]
 
-### [Component/Stage 1 Name]
-**Objective**: [What this component accomplishes and why it's important]
+## Public API and Backwards Compatibility
+[Public API added, changed, or deprecated (services, interfaces, plugin types, hooks, events, config keys, routes, permissions). For each deprecation, the replacement and removal release. "None" if only `@internal` code changes.]
 
-[Detailed & concise explanation of implementation approach, key technical decisions, specifications, and rationale for design choices.]
+## Configuration, Schema, and Update Path
+[New or changed keys with location (`config/install` or `config/optional`), schema, and default. Update functions for existing sites: `hook_update_N()` for schema, `hook_post_update_NAME()` for data and configuration.]
 
-### [Component/Stage 2 Name]
-**Objective**: [What this component accomplishes and why it's important]
+## Test Plan
+[One row per behavior, following "Test tiers" in `.ai/strikethroo/config/shared/drupal-contrib.md`. For Unit or Kernel, say why the behavior is scoped to that tier.]
 
-[Detailed & concise explanation of implementation approach, key technical decisions, specifications, and rationale for design choices.]
-
-### [Additional Components as Needed]
-[Continue with additional technical components or phases following the same pattern]
+| Behavior | Tier | Helper method | Why this tier |
+|----------|------|---------------|---------------|
+| ... | Unit / Kernel / Functional / FunctionalJavascript | ... | ... |
 
 ## Risk Considerations and Mitigation Strategies
-
-<details>
-<summary>Technical Risks</summary>
-- **[Specific Technical Risk]**: [Description of the technical challenge or limitation]
-    - **Mitigation**: [Specific strategy to address this technical risk]
-</details>
-
-<details>
-<summary>Implementation Risks</summary>
-- **[Specific Implementation Risk]**: [Description of implementation-related challenge]
-    - **Mitigation**: [Specific strategy to address this implementation risk]
-</details>
-
-[Additional Risk Categories as Needed: continue with other risk categories such as Integration Risks, Quality Risks, Resource Risks, etc.]
+- **[Risk]** (technical, implementation, integration, ...): [description]
+  - **Mitigation**: [strategy]
 
 ## Success Criteria
-
-### Primary Success Criteria
-1. [Measurable outcome 1]
-2. [Measurable outcome 2]
-3. [Measurable outcome 3]
+1. [Measurable outcome]
 
 ## Self Validation
-
-[Describe the concrete steps an LLM should execute after all tasks are completed to verify the implementation works correctly. These must be actionable verification procedures that inspect the real system — not just running pre-existing tests.
-
-Examples of good validation steps:
-- Use Playwright CLI to open a browser, navigate to the affected pages, and take screenshots to confirm the UI renders correctly
-- Run a CLI command to query the database and verify the expected configuration or content exists
-- Use `curl` or a browser automation tool to exercise the new API endpoints and confirm correct responses
-- Take a screenshot of the form/page/component and visually verify the expected elements are present
-- Run the application and interact with the new feature end-to-end, capturing evidence of success
-
-Avoid vague statements like "verify it works" or "ensure quality". Each step must be a specific, executable action.]
+[Specific, executable steps that inspect the real system after all tasks, beyond running existing tests. Examples:
+- `ddev drush en <module> -y` installs without errors
+- `ddev drush config:get <module>.settings` shows the defaults
+- `ddev drush php:eval` calls the new service and prints its result
+- `ddev drush updb -y` runs the new update functions
+- after `ddev drush pmu <module> -y`, no `<module>.*` configuration remains
+- UI work only: Playwright CLI screenshot of the page]
 
 ## Documentation
-
-[Required documentation updates to existing documentation, either human-focused documentation like README.md or AI-facing documentation like AGENTS.md and related configuration files.]
+[Updates to README.md, AGENTS.md, and related files]
 
 ## Resource Requirements
-
-### Development Skills
-[Required technical expertise and specialized knowledge areas needed for successful implementation]
-
-### Technical Infrastructure
-[Tools, libraries, frameworks, and systems needed for development and deployment]
-
-### [Additional Resource Categories as Needed]
-[Other resources such as external dependencies, research access, third-party services, etc.]
+[Skills, tools, and external dependencies needed]
 
 ## Integration Strategy
-[Optional section - how this work integrates with existing systems]
+[Optional: how this work integrates with existing systems]
 
 ## Notes
-[Optional section - any additional considerations, constraints, or important context]
+[Optional: other considerations]

@@ -1,30 +1,26 @@
 # TASK_EXECUTION_ROUTING Hook
 
-Runs during task generation, after every task file for the plan exists and
-before the execution blueprint is generated.
+Runs during task generation, after all task files exist and before the
+blueprint.
 
 ## Classification contract
 
-- Execution profiles are defined in the `execution_routing` section of
-  `.ai/strikethroo/config/config.yaml`. Their descriptions are the
-  routing contract: match each newly generated task against them using the
-  full task content already in your context — `skills`, `complexity_score`,
-  objective, acceptance criteria, technical requirements, and integration
-  surface. Do not reread task files to reconstruct information you already
-  have.
-- Classify every generated task exactly once, using only configured profile
-  names. Never guess or invent a model, harness, or profile name.
-- The task-to-profile mapping file is temporary. The selected profile name is
-  durable task metadata, persisted by the routing helper as exactly one
-  `execution_profile` field. Concrete execution targets are selected later at
-  task dispatch and are never persisted during generation.
-- Any routing failure aborts task generation before blueprint generation.
-  Never continue with partially routed tasks.
+- Match each new task to a profile in `execution_routing` in
+  `.ai/strikethroo/config/config.yaml`; the profile descriptions are the
+  contract. Use the task content already in context (`skills`,
+  `complexity_score`, objective, acceptance criteria, requirements,
+  integration surface); do not reread task files.
+- Classify each task once, with configured profile names only. Never invent a
+  model, harness, or profile.
+- The routing helper persists only the `execution_profile` field; the mapping
+  file is temporary, and targets are chosen at dispatch.
+- Any routing failure aborts task generation before the blueprint.
 
 ## Project-specific guidance
 
-Add project-specific classification guidance here, for example:
-
-- Prefer the most capable profile for tasks touching authentication,
-  payments, or data migrations.
-- Treat documentation-only or configuration-only tasks as routine work.
+- Use the most capable profile for access control, permissions, update
+  functions, entity or field storage, render cache metadata, or public API
+  and deprecations.
+- Use the documentation profile only for README, `hook_help()`, `.api.php`
+  docblocks, and `.info.yml` or `composer.json` edits that add no dependency.
+  Configuration schema changes are implementation work.

@@ -1,25 +1,16 @@
 # POST_PHASE Hook
 
-## Phase Post-Execution
+Before the next phase:
 
-Before moving to the next phase:
+- Run `ddev phpcs` and `ddev phpstan` on the phase's changed files and fix
+  every error (`ddev phpcbf` fixes some).
+- Run the phase's new or changed Unit tests (`ddev phpunit --filter
+  <TestClass>`). Higher tiers wait for POST_EXECUTION.
+- Run `ddev drush cr` if the phase changed services, routes, plugins, hooks,
+  or templates.
+- Commit the phase with a descriptive conventional commit (subject and body).
+- In the blueprint, prefix the phase title with ✅ and its tasks with ✔️, and
+  set those tasks to `completed`.
 
-- Run lint and/or format checks if this hook defines them for your project. If none are defined here, skip this step.
-- Create a descriptive conventional commit for the phase (subject and body).
-
-### Execution Monitoring
-
-#### Progress Tracking
-
-Update the list of tasks from the plan document to add the status of each task
-and phase. Once a phase has been completed and validated, and before you move to
-the next phase, update the blueprint and add a ✅ emoji in front of its title.
-Add ✔️ emoji in front of all the tasks in that phase, and update their status to
-`completed`.
-
-#### Task Status Updates
-Valid status transitions:
-- `pending` → `in-progress` (when agent starts)
-- `in-progress` → `completed` (successful execution)
-- `in-progress` → `failed` (execution error)
-- `failed` → `in-progress` (retry attempt)
+Valid task status transitions: `pending` → `in-progress` → `completed` or
+`failed`; `failed` → `in-progress` to retry.

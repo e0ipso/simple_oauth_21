@@ -1,42 +1,46 @@
 # PRE_PLAN Hook
 
-## Scope Control Guidelines
+Read `.ai/strikethroo/config/shared/drupal-contrib.md`. With the kenkeep
+Drupal pack, also read the `contrib/`, `architecture/`, `data-cache/`, and
+`security/` branch indexes.
 
-**Critical: Implement ONLY what is explicitly requested**
+## Existing solutions first
 
-- **Minimal Viable Implementation**: Build exactly what the user asked for, nothing more
-- **Question Everything Extra**: If not directly mentioned by the user, don't add it
-- **Avoid Feature Creep**: Resist the urge to add "helpful" features or "nice-to-have" additions
-- **YAGNI Principle**: _You Aren't Gonna Need It_ - don't build for hypothetical future needs
-- **Do NOT add backwards compatibility, unless requested**: If there is a potential BC break, ask the user if they want to BC support. Do not assume the want it.
+Search in order and stop at the first fit:
 
-**Common Scope Creep Anti-Patterns to Avoid:**
-1. Adding extra commands or features "for completeness"
-2. Creating infrastructure for future features that weren't requested
-3. Building abstractions or frameworks when simple solutions suffice
-4. Adding configuration options not specifically mentioned
-5. Implementing error handling beyond what's necessary for the core request
-6. Creating documentation or help systems unless explicitly requested
+1. Drupal core (API, plugin type, field type, or module).
+2. This module: reuse or extend; never add a second implementation.
+3. Modules in `.info.yml` and `composer.json`.
+4. drupal.org projects: check `core_version_requirement` support, security
+   advisory coverage, maintenance status, and recent releases. These add a
+   dependency, so ask the user first.
 
-**When in doubt, ask**: "Is this feature explicitly mentioned in the user's request?"
+Record each candidate and decision in the plan. If the fix belongs in another
+project, propose an upstream issue and patch instead of a copy.
 
-## Simplicity Principles
+## Scope and simplicity
 
-**Favor maintainability over cleverness**
+Build only what the user explicitly asked for (YAGNI). No extra commands,
+infrastructure for future features, abstractions, configuration options,
+error handling, or documentation that the request does not need. If unsure,
+ask whether the request mentions it. Prefer the simplest working solution,
+standard Drupal patterns (services, plugins, events, hooks), and the standard
+module layout (`src/`, `config/`, `templates/`, `tests/src/<Tier>`).
 
-- **Simple Solutions First**: Choose the most straightforward approach that meets requirements
-- **Avoid Over-Engineering**: Don't create complex systems when simple ones work
-- **Readable Code**: Write code that others can easily understand and modify
-- **Standard Patterns**: Use established patterns rather than inventing new ones
-- **Minimal Dependencies**: Add external dependencies only when essential, but do not re-invent the wheel
-- **Clear Structure**: Organize code in obvious, predictable ways
+## Backwards compatibility
 
-**Remember**: A working simple solution is better than a complex "perfect" one.
+Keep public API compatible (see the shared rules). A needed API change gets a
+deprecation path and a removal release. Confirm that a requested breaking
+change targets a new major release.
+
+## Tests
+
+Plan tests with the "Test tiers" rules in the shared file, including the
+final-phase test task.
 
 ## Critical Notes
 
-- Never generate a partial or assumed plan without adequate context
-- Prioritize accuracy over speed
-- Consider both technical and non-technical aspects
-- Use the plan template in .ai/strikethroo/config/templates/PLAN_TEMPLATE.md
-- DO NOT create or list any tasks or phases during the plan creation. This will be done in a later step. Stick to writing the PRD (Project Requirements Document).
+- Do not write a partial or assumed plan; get the context first. Prefer
+  accuracy over speed.
+- Use `.ai/strikethroo/config/templates/PLAN_TEMPLATE.md`.
+- Do not create tasks or phases; a later step does that.

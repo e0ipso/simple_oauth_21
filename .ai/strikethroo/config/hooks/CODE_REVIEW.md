@@ -1,44 +1,53 @@
 # CODE_REVIEW Hook
 
-## Automated Code Review Gate
+After opt-in (`code_review.enabled: true`), this is the mandate for the review
+that runs after blueprint execution, once lint, tests, and Self Validation
+pass. A reviewer in a clean session reads the plan's full diff and emits
+findings, which are checked against the vendored schema and recorded. The gate
+only reports: nothing is applied, and the implementer decides what to act on.
 
-After explicit opt-in through `code_review.enabled: true`, use this hook as the mandate for a review step that runs at the end of blueprint execution, after the mechanical gates (lint, tests, Self Validation) report success. A reviewer on a discovered external harness critiques the plan's cumulative diff and emits findings. The findings are validated against the vendored schema and recorded.
+## Mandate
 
-The gate reports; it does not decide. Nothing is applied automatically, and the implementer reads the recorded findings and chooses what to act on.
+Report only:
 
-## Mandate: Conformance and Defects Only
+- **Requirement conformance:** the code does not do what the plan explicitly
+  asks.
+- **Demonstrable defects:** runtime failure, wrong behavior, a broken declared
+  contract, a security hole, data loss, or breakage elsewhere in the plan.
 
-The reviewer checks the diff against the **plan's stated requirements** and for **demonstrable defects**. It does **not** raise general code-quality opinions, style notes, design critiques, or taste judgments. The linter owns style. Every finding must cite concrete evidence and trace to:
+Cite concrete evidence for each finding. Style (the linter's job), design
+critique, taste, SOLID concerns, and `\Drupal::` use are out of scope.
 
-- An explicit requirement stated in the plan, **or**
-- A demonstrable defect in the code as written
+### Drupal defects
 
-Anything else is out of scope and must not be included in findings.
+If `.ai/kenkeep/nodes/drupal/` exists, read the `security/` and
+`data-cache/cache-render/` branch indexes.
 
-## Finding Categories In Scope
+- A content entity query with no `accessCheck()`.
+- A route with no access requirement, or one that admits the wrong users.
+- Unescaped user data: `#markup` or `Markup::create()` with unfiltered input,
+  or `|raw` in Twig.
+- SQL concatenated with input.
+- Render output that varies by user, route, configuration, or entity without
+  the matching cache context or tag.
+- A configuration key read by code with no schema entry, no `config/install`
+  default, or no update function for existing sites.
+- A module, class, or service used but not declared in `.info.yml` or
+  `composer.json`.
+- Public API (not `@internal`) removed or changed without deprecation.
 
-- **Requirement conformance**: the code does not implement what the plan explicitly asked for
-- **Demonstrable defects**: the code fails at runtime, produces wrong behaviour, violates a contract it declares, has a security hole, causes data loss, or breaks something else in the plan
+## Severity and confidence
 
-## Severity and Confidence
+Advisory labels for sorting; nothing filters on them.
 
-Both are advisory triage labels carried on every finding so that whoever reads the review can sort it. Nothing thresholds on them and nothing is filtered out before the implementer sees it.
+- Severity: `critical` (data loss, security hole, crash, or corruption on a
+  reachable path), `major` (wrong behavior or broken contract), `minor`
+  (bounded: edge case or maintenance hazard), `info` (no defect).
+- Confidence: `high` (traced from the diff alone), `medium` (rests on one
+  unverified assumption), `low` (speculative). Do not upgrade a guess.
 
-Severity, from most to least consequential:
+## Guarantee
 
-- `critical`: causes data loss, a security hole, a crash, or corruption on a path real usage reaches
-- `major`: produces wrong behaviour or breaks a documented contract; nothing destroyed
-- `minor`: real but bounded (mishandled edge case, maintenance hazard); behaviour correct today
-- `info`: no defect (recorded context, a question for the author)
-
-Confidence, from most to least sure:
-
-- `high`: the evidence is in the code that was read, and the failure traces from the diff alone
-- `medium`: likely real, but rests on one assumption that was not verified (how a caller behaves, what a dependency guarantees, what a requirement was)
-- `low`: speculative (failure scenario imagined rather than traced, constraint invented, intent could not be inferred)
-
-Confidence matters most when it is low. LLM reviewers overstate certainty, so a reviewer that marks its own guess as `medium` is doing the reader a service. Record the label honestly rather than upgrading it to be taken seriously.
-
-## What the Gate Guarantees
-
-Exactly one thing, and it is enforced in code rather than here: a review that could not be certified is never reported as a clean one. A findings document that is absent or invalid against the schema halts the gate and says which happened. If `xmllint` is absent, the gate skips before dispatch; a skip is never reported as a pass. "The reviewer found nothing" and "the reviewer never ran" are never collapsed into each other.
+The code, not this file, enforces it: an uncertified review is never reported
+as clean. A missing or schema-invalid findings document halts the gate and
+says which. Without `xmllint` the gate skips, and a skip is never a pass.

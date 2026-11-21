@@ -1,24 +1,35 @@
 # POST_EXECUTION Hook
 
+Read `.ai/strikethroo/config/shared/drupal-contrib.md` first.
+
 ## Validation Gates
 
-Before marking the blueprint as complete, verify:
+Before you mark the blueprint complete:
 
-- [ ] All linting rules must pass without errors. If no linter is configured, skip this step
-- [ ] All tests must pass successfully. If no test suite is configured, skip this step
-- [ ] Verify all tasks in the plan have `status: "completed"` in their frontmatter
-- [ ] Verify that the AGENTS.md documentation or related documents are still correct after this plan execution
-- [ ] Execute the **Self Validation** steps defined in the plan document. These are concrete verification procedures (e.g., Playwright browser checks, database CLI queries, screenshots) that confirm the implementation works in the real system. If any step fails, treat it as a validation gate failure
+- [ ] `ddev phpcs` and `ddev phpstan` pass for the whole module; `ddev eslint`
+  and `ddev stylelint` too if the plan changed JavaScript or CSS.
+- [ ] Then, with nothing else running, `ddev phpunit` passes. This is the only
+  run of Kernel, Functional, and FunctionalJavascript tests.
+- [ ] New or changed configuration keys have schema, and `config/install` has
+  no site-specific values.
+- [ ] `ddev drush en <module> -y`, then `ddev drush pmu <module> -y`, then
+  `ddev drush php:eval "print_r(\Drupal::configFactory()->listAll('<module>.'));"`
+  prints an empty array.
+- [ ] If the plan added update functions, `ddev drush updb -y` runs them
+  without errors on the enabled module.
+- [ ] `.info.yml` and `composer.json` declare every used module, and
+  `core_version_requirement` matches `drupal/core`.
+- [ ] Every task has `status: "completed"`.
+- [ ] The README, `<module>.api.php` (new hooks), and AGENTS.md are correct.
+- [ ] The plan's **Self Validation** steps pass.
 
 ## Cleanup
-Assess whether the current plan has left tech debt behind or if it has created dead code. None of those are acceptable. Fix them and leave behind the most maintainable code change possible.
 
-Backwards compatibility and legacy support are only tolerated if explicitly expressed by the user. Unless it is called out in the plan, you are to assume that backwards compatibility layers are tech debt that should be eliminated.
+Remove tech debt and dead code the plan left behind, but never public API:
+that follows the deprecation path.
 
 ## Failure Behavior
 
-If any validation gate fails:
-
-- **Document the failure** in the plan file with details about which gate failed
-- **Provide actionable next steps** for resolving the failure in a new task for the plan, following `<root>/config/templates/TASK_TEMPLATE.md`
-- **Execute the task** using the `st-execute-task` skill
+If a gate fails, record which one in the plan, add a fix task following
+`<root>/config/templates/TASK_TEMPLATE.md`, run it with the `st-execute-task`
+skill, and run every gate again.

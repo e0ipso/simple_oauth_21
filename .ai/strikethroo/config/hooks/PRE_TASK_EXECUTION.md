@@ -1,15 +1,24 @@
 # PRE_TASK_EXECUTION Hook
 
-## Test-Driven Development: RED → GREEN → REFACTOR
+Read `.ai/strikethroo/config/shared/drupal-contrib.md`. With the kenkeep
+Drupal pack, also read `quality/index.md` and the branch index for the task's
+`skills` (for example `architecture/`, `data-cache/`, `security/`,
+`presentation/`, `processing/`, `tooling/`).
 
-Before writing production code for this task, follow this cycle for each increment:
+## Tests
 
-1. **RED** — Write one failing test and run it; confirm it fails for the
-   expected reason.
-2. **GREEN** — Write the minimal code to pass it (YAGNI); confirm it passes.
-3. **REFACTOR** — Clean up with the test green; re-run and confirm still green.
+Add tests only where the plan's Test Plan calls for them; otherwise say why
+and implement directly.
 
-Apply this only to the meaningful tests the test philosophy calls for (custom
-logic, critical paths, edge cases) — not to trivial, CRUD, or framework code.
-If a task warrants no new test under that philosophy, state why and implement
-directly.
+- **Unit:** RED (write one failing test, run only it with
+  `ddev phpunit --filter <TestClass>`, confirm the failure reason), GREEN
+  (minimal code to pass), REFACTOR (clean up, run it again).
+- **Kernel and higher:** follow "One class, one method" and "When tests run"
+  in the shared rules.
+
+## Before you mark the task complete
+
+- `ddev phpcs` and `ddev phpstan` pass on your changed files.
+- New configuration keys have schema.
+- New classes use constructor injection, not `\Drupal::`.
+- Public API changes have the deprecation the plan describes.
