@@ -79,6 +79,18 @@ final class ClientRegistrationSettingsForm extends ConfigFormBase {
    * {@inheritdoc}
    */
   public function buildForm(array $form, FormStateInterface $form_state): array {
+    $form['registration_access'] = [
+      '#type' => 'radios',
+      '#title' => $this->t('Who can register clients'),
+      '#options' => [
+        'open' => $this->t('Anyone, without authentication'),
+        'permission' => $this->t('Only users with the "Register OAuth clients" permission'),
+        'disabled' => $this->t('Nobody: registration is disabled'),
+      ],
+      '#config_target' => 'simple_oauth_client_registration.settings:registration_access',
+      '#description' => $this->t('<strong>RFC 7591 Section 3:</strong> open registration lets clients obtain a client ID without prior arrangement. Restrict or disable it when every client is registered by an administrator. When registration is not open, the server metadata no longer advertises the registration endpoint. Existing clients can still manage their registration with their registration access token.'),
+    ];
+
     $form['grant_defaults'] = [
       '#type' => 'details',
       '#title' => $this->t('Grant Type Defaults'),

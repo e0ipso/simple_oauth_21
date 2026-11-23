@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Drupal\Tests\simple_oauth_client_registration\Kernel;
 
 use Drupal\Core\Routing\UrlGeneratorInterface;
+use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\simple_oauth_client_registration\Controller\ClientRegistrationController;
 use Drupal\user\Entity\Role;
+use Drupal\user\Entity\User;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\HttpFoundation\Request;
@@ -65,6 +67,56 @@ final class ClientRegistrationStandaloneTest extends KernelTestBase {
     $this->assertFalse($storage->exists('simple_oauth_server_metadata.settings'));
     $this->assertFalse($this->container->get('module_handler')->moduleExists('simple_oauth_server_metadata'));
     $this->assertFalse($this->container->get('simple_oauth_client_registration.service.token')->validateRegistrationAccessToken($data['client_id'], $data['registration_access_token']));
+  }
+
+  /**
+   * Tests the registration endpoint follows the registration access setting.
+   */
+  public function testRegistrationAccessSetting(): void {
+    $this->installEntitySchema('user');
+    $this->installEntitySchema('file');
+    $this->installEntitySchema('consumer');
+    $this->installEntitySchema('oauth2_token');
+    $this->installConfig(['system', 'simple_oauth']);
+    Role::create(['id' => 'authenticated', 'label' => 'Authenticated'])->save();
+    Role::create(['id' => 'registrar', 'label' => 'Registrar', 'permissions' => ['register oauth clients']])->save();
+    $this->container->get('module_installer')->install(['simple_oauth_client_registration']);
+    $anonymous = new AnonymousUserSession();
+    $registrar = User::create(['name' => 'registrar', 'roles' => ['registrar']]);
+    $registrar->save();
+    $controller = ClientRegistrationController::create($this->container);
+    $config = $this->config('simple_oauth_client_registration.settings');
+
+    $this->assertSame('open', $config->get('registration_access'));
+    $this->assertTrue($controller->access($anonymous)->isAllowed());
+
+    $config->set('registration_access', 'permission')->save();
+    $this->assertFalse($controller->access($anonymous)->isAllowed());
+    $this->assertTrue($controller->access($registrar)->isAllowed());
+
+    $config->set('registration_access', 'disabled')->save();
+    $this->assertTrue($controller->access($registrar)->isForbidden());
+
+    $config->clear('registration_access')->save();
+    $this->assertTrue($controller->access($anonymous)->isAllowed());
+
+    $expected = ['open' => 201, 'permission' => 401, 'disabled' => 403];
+    foreach ($expected as $access => $status) {
+      $config->set('registration_access', $access)->save();
+      $server = [
+        'CONTENT_TYPE' => 'application/json',
+        'HTTP_ACCEPT' => 'application/json',
+      ];
+      $request = Request::create('/oauth/register', 'POST', server: $server, content: '{"redirect_uris":["https://example.org/callback"]}');
+      $response = $this->container->get('http_kernel')->handle($request);
+      $this->assertSame($status, $response->getStatusCode(), $access . ': ' . $response->getContent());
+      $this->assertStringContainsString('application/json', (string) $response->headers->get('Content-Type'), $access);
+      $this->assertSame('*', $response->headers->get('Access-Control-Allow-Origin'), $access);
+      if ($status !== 201) {
+        $this->assertSame('access_denied', json_decode((string) $response->getContent(), TRUE)['error'], $access);
+      }
+      $this->assertSame($status === 401 ? 'Bearer' : NULL, $response->headers->get('WWW-Authenticate'), $access);
+    }
   }
 
 }

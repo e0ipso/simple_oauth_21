@@ -1,0 +1,4 @@
+register oauth clients:
+  title: 'Register OAuth clients'
+  description: 'Register clients through the dynamic client registration endpoint when registration is restricted to this permission.'
+  restrict access: TRUE
