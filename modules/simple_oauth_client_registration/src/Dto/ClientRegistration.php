@@ -220,7 +220,7 @@ final class ClientRegistration {
    * Validates redirect transport before creating or updating a consumer.
    *
    * Explicit web clients require HTTPS. When application_type is omitted,
-   * native custom schemes and literal loopback addresses remain supported.
+   * native custom schemes and loopback addresses remain supported.
    *
    * @return void
    *   No return value.
@@ -244,9 +244,10 @@ final class ClientRegistration {
         continue;
       }
       if ($this->applicationType !== 'web') {
-        // RFC 8252 permits HTTP only for literal loopback IP redirects.
-        $host = parse_url($uri, PHP_URL_HOST);
-        if ($scheme === 'http' && in_array($host, ['127.0.0.1', '[::1]'], TRUE)) {
+        // HTTP is permitted only for loopback redirects. RFC 8252 prefers the
+        // IP literals, but MCP clients register the name "localhost".
+        $host = strtolower((string) parse_url($uri, PHP_URL_HOST));
+        if ($scheme === 'http' && in_array($host, ['127.0.0.1', '[::1]', 'localhost'], TRUE)) {
           continue;
         }
         if ($scheme !== 'http') {
